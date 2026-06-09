@@ -1,6 +1,8 @@
 import type { Ticket } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";
+import { getSlaCountdownPreviewForTicket, slaCountdownClassName } from "@/lib/sla-display";
 import { formatLastResponseHours } from "@/lib/ticket-activity";
+import { getResoAndListingValues } from "@/lib/ticket-search";
 import type { SortOrder } from "@/lib/user-preferences";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Search } from "lucide-react";
 
@@ -41,14 +43,14 @@ export function TicketList({
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zendesk-muted" />
           <input
             type="search"
-            placeholder="Search tickets..."
+            placeholder="Search tickets"
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             className="w-full rounded border border-zendesk-border py-2 pl-9 pr-3 text-sm outline-none focus:border-zendesk-green"
           />
         </div>
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-[10px] text-zendesk-muted">Sort by last response</span>
+          <span className="text-[10px] text-zendesk-muted">Sort by submitted (Col A)</span>
           <button
             type="button"
             onClick={() => onSortOrderChange(sortOrder === "desc" ? "asc" : "desc")}
@@ -78,6 +80,16 @@ export function TicketList({
         )}
         {tickets.map((ticket) => {
           const lastResponseLabel = formatLastResponseHours(ticket.lastResponseAt);
+          const slaPreview = getSlaCountdownPreviewForTicket(ticket);
+          const [reso, listing] = getResoAndListingValues(ticket);
+          const idHint =
+            reso && listing
+              ? `Reso ${reso} · Listing ${listing}`
+              : reso
+                ? `Reso ${reso}`
+                : listing
+                  ? `Listing ${listing}`
+                  : null;
           return (
             <button
               key={ticket.rowId}
@@ -90,6 +102,14 @@ export function TicketList({
               <div className="flex items-start justify-between gap-2">
                 <p className="line-clamp-1 text-sm font-medium">{ticket.subject || "No subject"}</p>
                 <div className="flex shrink-0 items-center gap-1">
+                  {ticket.needsInitialResponse && (
+                    <span
+                      className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                      title="No initial response within 48 hours"
+                    >
+                      48h+
+                    </span>
+                  )}
                   {lastResponseLabel && (
                     <span
                       className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-zendesk-muted"
@@ -98,9 +118,12 @@ export function TicketList({
                       {lastResponseLabel}
                     </span>
                   )}
-                  {ticket.slaBreached && (
-                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                      SLA
+                  {slaPreview && (
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${slaCountdownClassName(slaPreview.tone)}`}
+                      title={`SLA due ${ticket.slaDueAt ? new Date(ticket.slaDueAt).toLocaleString() : ""}`}
+                    >
+                      {slaPreview.label}
                     </span>
                   )}
                 </div>
@@ -108,6 +131,9 @@ export function TicketList({
               <p className="mt-0.5 line-clamp-1 text-xs text-zendesk-muted">
                 {ticket.requesterName || ticket.requesterEmail}
               </p>
+              {idHint && (
+                <p className="mt-0.5 line-clamp-1 font-mono text-[10px] text-zendesk-muted">{idHint}</p>
+              )}
               <div className="mt-1 flex items-center justify-between text-xs text-zendesk-muted">
                 <span>{statusLabel(ticket.status)}</span>
                 <span>{ticket.timestamp?.slice(0, 10)}</span>

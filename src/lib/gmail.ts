@@ -7,9 +7,11 @@ import { getGoogleAuthClient, getSignedInUser } from "./google-auth";
 import {
   addThreadMessage,
   claimGmailThreadForTicket,
+  getGmailThreadImportCutoff,
   getThreadMessages,
   getTicketRowIdForGmailThread,
   pruneMismatchedThreadMessages,
+  reopenPendingOnCustomerReply,
   resolveTicketGmailThreadId,
 } from "./overlay-db";
 
@@ -76,6 +78,18 @@ function appendSignatureToBody(
   signatureHtml: string
 ): { plain: string; html?: string } {
   const trimmed = userBody.trim();
+  const isHtml = /<[a-z][\s\S]*>/i.test(trimmed);
+
+  if (isHtml) {
+    const plain = stripHtmlToText(trimmed);
+    if (!signatureHtml) return { plain, html: trimmed };
+
+    const signaturePlain = stripHtmlToText(signatureHtml);
+    const plainWithSig = signaturePlain ? `${plain}\n\n--\n${signaturePlain}` : plain;
+    const htmlBody = [trimmed, "<br><br>", signatureHtml].join("");
+    return { plain: plainWithSig, html: htmlBody };
+  }
+
   if (!signatureHtml) return { plain: trimmed };
 
   const signaturePlain = stripHtmlToText(signatureHtml);
@@ -205,7 +219,8 @@ async function importThreadMessages(
   ticketRowId: string,
   requesterEmail: string,
   agentEmail: string,
-  knownIds: Set<string>
+  knownIds: Set<string>,
+  importCutoff: string | null
 ): Promise<void> {
   const owner = getTicketRowIdForGmailThread(threadId);
   if (owner && owner !== ticketRowId) return;
@@ -229,6 +244,10 @@ async function importThreadMessages(
     const parsed = parseGmailMessage(full.data, ticketRowId, requesterEmail, agentEmail);
     if (!parsed || parsed.gmailThreadId !== threadId) continue;
 
+    if (importCutoff && new Date(parsed.sentAt).getTime() < new Date(importCutoff).getTime()) {
+      continue;
+    }
+
     addThreadMessage(parsed);
     knownIds.add(ref.id);
   }
@@ -241,14 +260,18 @@ async function importThreadMessages(
 export async function syncGmailThreadForTicket(params: {
   ticketRowId: string;
   requesterEmail: string;
-}): Promise<ThreadMessage[]> {
+}): Promise<{ messages: ThreadMessage[]; statusReopened: boolean }> {
   const gmail = await getGmailClient();
 
   pruneMismatchedThreadMessages(params.ticketRowId);
   const threadId = resolveTicketGmailThreadId(params.ticketRowId);
 
   if (!gmail || !threadId || !params.requesterEmail.trim()) {
-    return getThreadMessages(params.ticketRowId);
+    const statusReopened = reopenPendingOnCustomerReply(params.ticketRowId);
+    return {
+      messages: getThreadMessages(params.ticketRowId),
+      statusReopened,
+    };
   }
 
   const agentEmail = await resolveSenderEmail();
@@ -257,20 +280,26 @@ export async function syncGmailThreadForTicket(params: {
     existing.map((m) => m.gmailMessageId).filter((id): id is string => Boolean(id))
   );
 
+  const importCutoff = getGmailThreadImportCutoff(params.ticketRowId);
+
   await importThreadMessages(
     gmail,
     threadId,
     params.ticketRowId,
     params.requesterEmail,
     agentEmail,
-    knownIds
+    knownIds,
+    importCutoff
   );
 
   pruneMismatchedThreadMessages(params.ticketRowId);
 
-  return getThreadMessages(params.ticketRowId).sort(
+  const statusReopened = reopenPendingOnCustomerReply(params.ticketRowId);
+  const messages = getThreadMessages(params.ticketRowId).sort(
     (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
   );
+
+  return { messages, statusReopened };
 }
 
 export async function sendReplyEmail(params: {

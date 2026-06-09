@@ -1,11 +1,22 @@
 import type { Ticket } from "./types";
 import { resolveLastResponseAt } from "./ticket-activity";
-import { getLastThreadResponseMap } from "./overlay-db";
+import { needsInitialResponse, ticketHasOutboundResponse } from "./ticket-priority";
+import { getLastThreadResponseMap, getOutboundTicketIds } from "./overlay-db";
 
 export function enrichTicketsWithLastResponse(tickets: Ticket[]): Ticket[] {
   const threadLast = getLastThreadResponseMap();
-  return tickets.map((ticket) => ({
-    ...ticket,
-    lastResponseAt: resolveLastResponseAt(ticket, threadLast.get(ticket.rowId)),
-  }));
+  const outboundIds = getOutboundTicketIds();
+
+  return tickets.map((ticket) => {
+    const withResponse = {
+      ...ticket,
+      lastResponseAt: resolveLastResponseAt(ticket, threadLast.get(ticket.rowId)),
+    };
+    return {
+      ...withResponse,
+      needsInitialResponse: needsInitialResponse(withResponse, outboundIds),
+    };
+  });
 }
+
+export { getOutboundTicketIds, ticketHasOutboundResponse };

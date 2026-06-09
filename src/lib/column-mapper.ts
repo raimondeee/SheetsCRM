@@ -13,6 +13,7 @@ const HEADER_PATTERNS: { role: ColumnRole; patterns: RegExp[] }[] = [
   },
   { role: "status", patterns: [/status/i, /state/i, /stage/i, /workflow/i] },
   { role: "contactReason", patterns: [/contact\s*reason/i, /^reason$/i, /inquiry\s*type/i] },
+  { role: "userEmailed", patterns: [/user\s*emailed/i, /emailed\s*user/i, /email\s*sent/i] },
   {
     role: "marketManager",
     patterns: [
@@ -25,6 +26,14 @@ const HEADER_PATTERNS: { role: ColumnRole; patterns: RegExp[] }[] = [
   },
   { role: "caseSummary", patterns: [/case\s*summary/i, /admin\s*notes/i, /summary/i] },
   { role: "airbnbUserId", patterns: [/airbnb\s*user\s*id/i, /user\s*id/i, /host\s*id/i] },
+  {
+    role: "reservationCode",
+    patterns: [/reservation\s*code/i, /^reso$/i, /confirmation\s*code/i, /booking\s*code/i],
+  },
+  {
+    role: "listingId",
+    patterns: [/listing\s*id/i, /^listing$/i, /property\s*id/i, /space\s*id/i],
+  },
   {
     role: "internalToolK",
     patterns: [/tool.*k/i, /internal.*k/i, /account.*id/i, /customer.*id/i, /portal/i],
@@ -96,8 +105,11 @@ function applyFixedPositions(mappings: ColumnMapping[]): void {
   const fixed: { role: ColumnRole; index: number }[] = [
     { role: "rowKey", index: EXAMPLE_COLUMN_POSITIONS.rowKey.index },
     { role: "email", index: EXAMPLE_COLUMN_POSITIONS.email.index },
+    { role: "reservationCode", index: EXAMPLE_COLUMN_POSITIONS.reservationCode.index },
+    { role: "listingId", index: EXAMPLE_COLUMN_POSITIONS.listingId.index },
     { role: "marketManager", index: EXAMPLE_COLUMN_POSITIONS.marketManager.index },
     { role: "contactReason", index: EXAMPLE_COLUMN_POSITIONS.contactReason.index },
+    { role: "userEmailed", index: EXAMPLE_COLUMN_POSITIONS.userEmailed.index },
     { role: "internalToolK", index: EXAMPLE_COLUMN_POSITIONS.internalToolK.index },
     { role: "internalToolM", index: EXAMPLE_COLUMN_POSITIONS.internalToolM.index },
     { role: "status", index: EXAMPLE_COLUMN_POSITIONS.status.index },

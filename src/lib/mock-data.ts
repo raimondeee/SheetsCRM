@@ -6,7 +6,7 @@ import { mergeOverlayOntoTicket } from "./overlay-db";
 export function getMockTickets(): Ticket[] {
   const base: Omit<
     Ticket,
-    "status" | "slaHours" | "slaDueAt" | "slaBreached" | "lastResponseAt"
+    "status" | "slaHours" | "slaDueAt" | "slaBreached" | "lastResponseAt" | "needsInitialResponse"
   >[] = [
     {
       rowId: `${EXAMPLE_SPREADSHEET_ID}:Form Responses:2`,
@@ -15,6 +15,7 @@ export function getMockTickets(): Ticket[] {
       sheetName: "Form Responses",
       timestamp: "2026-06-07 09:14:22",
       requesterEmail: "alex.morgan@acmecorp.com",
+      columnD: "alex.morgan@acmecorp.com",
       requesterName: "Alex Morgan",
       subject: "Billing discrepancy on invoice #8842",
       description:
@@ -25,6 +26,8 @@ export function getMockTickets(): Ticket[] {
       sheetCaseSummary: "Double charge confirmed on 3/15. Credit pending.",
       adminNotes: "",
       airbnbUserId: "USR-8842",
+      reservationCode: "HMQW5Y3BCF",
+      listingId: "1441333127016254063",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-8842",
         m: "https://dashboard.internal.example/accounts/ACC-12091",
@@ -39,6 +42,7 @@ export function getMockTickets(): Ticket[] {
       sheetName: "Form Responses",
       timestamp: "2026-06-07 11:30:05",
       requesterEmail: "sarah.kim@northwind.io",
+      columnD: "sarah.kim@northwind.io",
       requesterName: "Sarah Kim",
       subject: "API rate limit increase request",
       description: "Our production traffic spiked. Need temporary rate limit bump for 48h.",
@@ -48,6 +52,8 @@ export function getMockTickets(): Ticket[] {
       sheetCaseSummary: "Temporary bump approved through Friday.",
       adminNotes: "",
       airbnbUserId: "USR-3310",
+      reservationCode: "",
+      listingId: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-3310",
         m: "https://metrics.internal.example/tenants/TNT-991",
@@ -62,6 +68,7 @@ export function getMockTickets(): Ticket[] {
       sheetName: "Form Responses",
       timestamp: "2026-06-08 08:02:17",
       requesterEmail: "devops@brightline.co",
+      columnD: "devops@brightline.co",
       requesterName: "Brightline DevOps",
       subject: "SSO configuration failing for Okta",
       description: "SAML assertion rejected after cert rotation yesterday.",
@@ -71,6 +78,8 @@ export function getMockTickets(): Ticket[] {
       sheetCaseSummary: "",
       adminNotes: "",
       airbnbUserId: "USR-5501",
+      reservationCode: "",
+      listingId: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-5501",
         m: "https://sso.internal.example/orgs/ORG-5501",
@@ -84,10 +93,11 @@ export function getMockTickets(): Ticket[] {
     mergeOverlayOntoTicket({
       ...t,
       status: "new",
-      slaHours: 24,
-      slaDueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      slaHours: 48,
+      slaDueAt: null,
       slaBreached: false,
       lastResponseAt: null,
+      needsInitialResponse: false,
     })
   );
 }

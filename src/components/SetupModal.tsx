@@ -9,6 +9,7 @@ import {
   RECOMMENDED_ROLES,
   roleLabel,
 } from "@/lib/column-roles";
+import { MarketManagersPanel } from "./MarketManagersPanel";
 import { Search, X } from "lucide-react";
 
 interface SetupModalProps {
@@ -18,6 +19,7 @@ interface SetupModalProps {
 }
 
 export function SetupModal({ config, onClose, onSaved }: SetupModalProps) {
+  const [activeTab, setActiveTab] = useState<"sheet" | "managers">("sheet");
   const [sheetUrl, setSheetUrl] = useState(config?.sheetUrl ?? EXAMPLE_SHEET_URL);
   const [analyzed, setAnalyzed] = useState<SheetConfig | null>(config);
   const [analysisNote, setAnalysisNote] = useState<string | null>(null);
@@ -108,9 +110,9 @@ export function SetupModal({ config, onClose, onSaved }: SetupModalProps) {
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-zendesk-border px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold">Sheet & column mapping</h2>
+            <h2 className="text-lg font-semibold">Setup</h2>
             <p className="text-sm text-zendesk-muted">
-              Paste any agent&apos;s intake sheet URL, analyze headers, then remap columns as needed.
+              Connect your intake sheet and manage the Market Manager email directory.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1 hover:bg-gray-100">
@@ -118,7 +120,36 @@ export function SetupModal({ config, onClose, onSaved }: SetupModalProps) {
           </button>
         </div>
 
+        <div className="flex gap-1 border-b border-zendesk-border px-6 pt-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab("sheet")}
+            className={`rounded-t px-4 py-2 text-sm font-medium ${
+              activeTab === "sheet"
+                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
+                : "text-zendesk-muted hover:text-gray-900"
+            }`}
+          >
+            Sheet mapping
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("managers")}
+            className={`rounded-t px-4 py-2 text-sm font-medium ${
+              activeTab === "managers"
+                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
+                : "text-zendesk-muted hover:text-gray-900"
+            }`}
+          >
+            Market managers
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto px-6 py-4">
+          {activeTab === "managers" ? (
+            <MarketManagersPanel />
+          ) : (
+            <>
           <label className="block text-sm font-medium">Google Sheet URL</label>
           <input
             type="url"
@@ -251,20 +282,24 @@ export function SetupModal({ config, onClose, onSaved }: SetupModalProps) {
               </div>
             </div>
           )}
+            </>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zendesk-border px-6 py-4">
           <button type="button" onClick={onClose} className="rounded px-4 py-2 text-sm hover:bg-gray-100">
-            Cancel
+            Close
           </button>
-          <button
-            type="button"
-            onClick={save}
-            disabled={!analyzed || saving}
-            className="rounded bg-zendesk-green px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save mapping"}
-          </button>
+          {activeTab === "sheet" && (
+            <button
+              type="button"
+              onClick={save}
+              disabled={!analyzed || saving}
+              className="rounded bg-zendesk-green px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save mapping"}
+            </button>
+          )}
         </div>
       </div>
     </div>

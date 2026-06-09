@@ -25,3 +25,38 @@ body {
   background: #c2c8cc;
   border-radius: 4px;
 }
+
+.reply-draft-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: #87929d;
+  pointer-events: none;
+}
+
+.reply-draft-editor p {
+  margin: 0 0 0.75rem;
+}
+
+.reply-draft-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.reply-draft-editor ul {
+  list-style: disc;
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.reply-draft-editor ol {
+  list-style: decimal;
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.reply-draft-editor li {
+  margin: 0.125rem 0;
+}
+
+.reply-draft-editor li > ul,
+.reply-draft-editor li > ol {
+  margin: 0.25rem 0 0.35rem;
+}

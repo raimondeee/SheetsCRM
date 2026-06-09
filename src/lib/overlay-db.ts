@@ -1,9 +1,27 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { v4 as uuidv4 } from "uuid";
+import { buildThreadLinkNoticeBody } from "./gmail-thread-link";
 import type { SheetConfig, ThreadMessage, Ticket } from "./types";
 import { normalizeSheetConfig } from "./column-mapper";
-import { crmStatusLabel, mapSheetStatusToCrmId } from "./status-mapper";
+import {
+  crmStatusLabel,
+  mapCrmStatusToSheetValue,
+  mapSheetStatusToCrmId,
+  normalizeStatusId,
+} from "./status-mapper";
+import {
+  getReopenOnCustomerReplyStatus,
+  resolveAutomatedReopenStatus,
+} from "./status-automation";
+import { resolveTicketAirbnbUserId } from "./airbnb-user-id";
+import {
+  computeDefaultSlaDueAt,
+  DEFAULT_SLA_HOURS,
+  shouldShowSlaTimer,
+} from "./sla-display";
+import type { AirbnbUserIdSource } from "./airbnb-user-id";
 
 const DB_PATH = process.env.OVERLAY_DB_PATH || path.join(process.cwd(), "data", "overlay.db");
 
@@ -98,11 +116,43 @@ function getDb(): Database.Database {
     /* column exists */
   }
   try {
+    db.exec(`ALTER TABLE ticket_overlay ADD COLUMN contact_reason TEXT`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    db.exec(`ALTER TABLE ticket_overlay ADD COLUMN contact_reason_source TEXT NOT NULL DEFAULT 'sheet'`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    db.exec(`ALTER TABLE ticket_overlay ADD COLUMN status_changed_at TEXT`);
+  } catch {
+    /* column exists */
+  }
+  try {
     db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_overlay_gmail_thread ON ticket_overlay(gmail_thread_id) WHERE gmail_thread_id IS NOT NULL`
     );
   } catch {
     /* index exists */
+  }
+  try {
+    db.exec(`ALTER TABLE ticket_overlay ADD COLUMN gmail_thread_linked_at TEXT`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    db.exec(`ALTER TABLE ticket_overlay ADD COLUMN crm_airbnb_user_id TEXT`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    db.exec(
+      `ALTER TABLE ticket_overlay ADD COLUMN airbnb_user_id_source TEXT NOT NULL DEFAULT 'sheet'`
+    );
+  } catch {
+    /* column exists */
   }
 
   return db;
@@ -141,15 +191,20 @@ export interface TicketOverlay {
   adminNotesSource: "sheet" | "crm";
   sheetCaseSummary: string | null;
   gmailThreadId: string | null;
+  contactReason: string | null;
+  contactReasonSource: "sheet" | "crm";
+  statusChangedAt: string | null;
   slaHours: number;
   slaDueAt: string | null;
+  crmAirbnbUserId: string | null;
+  airbnbUserIdSource: AirbnbUserIdSource;
   exists: boolean;
 }
 
 function readOverlayRow(rowId: string): TicketOverlay {
   const row = getDb()
     .prepare(
-      "SELECT status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, sla_hours, sla_due_at FROM ticket_overlay WHERE row_id = ?"
+      "SELECT status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, contact_reason, contact_reason_source, status_changed_at, sla_hours, sla_due_at, crm_airbnb_user_id, airbnb_user_id_source FROM ticket_overlay WHERE row_id = ?"
     )
     .get(rowId) as
     | {
@@ -161,8 +216,13 @@ function readOverlayRow(rowId: string): TicketOverlay {
         admin_notes_source: string;
         sheet_case_summary: string | null;
         gmail_thread_id: string | null;
+        contact_reason: string | null;
+        contact_reason_source: string;
+        status_changed_at: string | null;
         sla_hours: number;
         sla_due_at: string | null;
+        crm_airbnb_user_id: string | null;
+        airbnb_user_id_source: string;
       }
     | undefined;
 
@@ -176,14 +236,24 @@ function readOverlayRow(rowId: string): TicketOverlay {
       adminNotesSource: "sheet",
       sheetCaseSummary: null,
       gmailThreadId: null,
-      slaHours: 24,
+      contactReason: null,
+      contactReasonSource: "sheet",
+      statusChangedAt: null,
+      slaHours: DEFAULT_SLA_HOURS,
       slaDueAt: null,
+      crmAirbnbUserId: null,
+      airbnbUserIdSource: "sheet",
       exists: false,
     };
   }
 
+  const airbnbUserIdSource =
+    row.airbnb_user_id_source === "crm" || row.airbnb_user_id_source === "column_d"
+      ? row.airbnb_user_id_source
+      : "sheet";
+
   return {
-    status: row.status,
+    status: normalizeStatusId(row.status),
     statusSource: row.status_source === "crm" ? "crm" : "sheet",
     sheetStatus: row.sheet_status,
     crmSubject: row.crm_subject,
@@ -191,8 +261,13 @@ function readOverlayRow(rowId: string): TicketOverlay {
     adminNotesSource: row.admin_notes_source === "crm" ? "crm" : "sheet",
     sheetCaseSummary: row.sheet_case_summary,
     gmailThreadId: row.gmail_thread_id,
+    contactReason: row.contact_reason,
+    contactReasonSource: row.contact_reason_source === "crm" ? "crm" : "sheet",
+    statusChangedAt: row.status_changed_at,
     slaHours: row.sla_hours,
     slaDueAt: row.sla_due_at,
+    crmAirbnbUserId: row.crm_airbnb_user_id,
+    airbnbUserIdSource,
     exists: true,
   };
 }
@@ -210,8 +285,13 @@ type OverlayFields = {
   adminNotesSource: "sheet" | "crm";
   sheetCaseSummary: string | null;
   gmailThreadId: string | null;
+  contactReason: string | null;
+  contactReasonSource: "sheet" | "crm";
+  statusChangedAt: string | null;
   slaHours: number;
   slaDueAt: string | null;
+  crmAirbnbUserId: string | null;
+  airbnbUserIdSource: AirbnbUserIdSource;
 };
 
 function upsertOverlayRow(
@@ -223,8 +303,8 @@ function upsertOverlayRow(
   const now = new Date().toISOString();
   getDb()
     .prepare(
-      `INSERT INTO ticket_overlay (row_id, status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, sla_hours, sla_due_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ticket_overlay (row_id, status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, contact_reason, contact_reason_source, status_changed_at, sla_hours, sla_due_at, crm_airbnb_user_id, airbnb_user_id_source, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(row_id) DO UPDATE SET
          status = excluded.status,
          status_source = excluded.status_source,
@@ -234,8 +314,13 @@ function upsertOverlayRow(
          admin_notes_source = excluded.admin_notes_source,
          sheet_case_summary = excluded.sheet_case_summary,
          gmail_thread_id = COALESCE(excluded.gmail_thread_id, ticket_overlay.gmail_thread_id),
+         contact_reason = excluded.contact_reason,
+         contact_reason_source = excluded.contact_reason_source,
+         status_changed_at = excluded.status_changed_at,
          sla_hours = excluded.sla_hours,
          sla_due_at = excluded.sla_due_at,
+         crm_airbnb_user_id = excluded.crm_airbnb_user_id,
+         airbnb_user_id_source = excluded.airbnb_user_id_source,
          updated_at = excluded.updated_at`
     )
     .run(
@@ -248,15 +333,65 @@ function upsertOverlayRow(
       merged.adminNotesSource,
       merged.sheetCaseSummary,
       merged.gmailThreadId,
+      merged.contactReason,
+      merged.contactReasonSource,
+      merged.statusChangedAt,
       merged.slaHours,
       merged.slaDueAt,
+      merged.crmAirbnbUserId,
+      merged.airbnbUserIdSource,
       now
     );
 }
 
 export function updateTicketStatus(rowId: string, status: string): void {
   const existing = readOverlayRow(rowId);
-  upsertOverlayRow(rowId, overlayFields(existing), { status, statusSource: "crm" });
+  const normalizedStatus = normalizeStatusId(status);
+  const now = new Date().toISOString();
+  let statusChangedAt = existing.statusChangedAt;
+
+  if (normalizedStatus === "pending" || normalizedStatus === "longterm_hold") {
+    statusChangedAt = now;
+  } else if (
+    normalizedStatus === "open" &&
+    (existing.status === "pending" || existing.status === "longterm_hold")
+  ) {
+    statusChangedAt = null;
+  }
+
+  const sheetStatus = mapCrmStatusToSheetValue(normalizedStatus);
+  upsertOverlayRow(rowId, overlayFields(existing), {
+    status: normalizedStatus,
+    statusSource: "crm",
+    statusChangedAt,
+    sheetStatus: sheetStatus ?? existing.sheetStatus,
+  });
+}
+
+export function updateTicketAirbnbUserId(rowId: string, userId: string): void {
+  const existing = readOverlayRow(rowId);
+  const trimmed = userId.trim();
+  upsertOverlayRow(rowId, overlayFields(existing), {
+    crmAirbnbUserId: trimmed || null,
+    airbnbUserIdSource: "crm",
+  });
+}
+
+export function markAirbnbUserIdFromColumnD(rowId: string, userId: string): void {
+  const existing = readOverlayRow(rowId);
+  const trimmed = userId.trim();
+  upsertOverlayRow(rowId, overlayFields(existing), {
+    crmAirbnbUserId: trimmed || null,
+    airbnbUserIdSource: "column_d",
+  });
+}
+
+export function updateTicketContactReason(rowId: string, contactReason: string): void {
+  const existing = readOverlayRow(rowId);
+  upsertOverlayRow(rowId, overlayFields(existing), {
+    contactReason: contactReason.trim() || null,
+    contactReasonSource: "crm",
+  });
 }
 
 export function updateTicketSubject(rowId: string, subject: string): void {
@@ -279,8 +414,13 @@ function overlayFields(existing: TicketOverlay): OverlayFields {
     adminNotesSource: existing.adminNotesSource,
     sheetCaseSummary: existing.sheetCaseSummary,
     gmailThreadId: existing.gmailThreadId,
+    contactReason: existing.contactReason,
+    contactReasonSource: existing.contactReasonSource,
+    statusChangedAt: existing.statusChangedAt,
     slaHours: existing.slaHours,
     slaDueAt: existing.slaDueAt,
+    crmAirbnbUserId: existing.crmAirbnbUserId,
+    airbnbUserIdSource: existing.airbnbUserIdSource,
   };
 }
 
@@ -314,6 +454,62 @@ export function claimGmailThreadForTicket(ticketRowId: string, threadId: string)
   }
 }
 
+export function getGmailThreadImportCutoff(ticketRowId: string): string | null {
+  const row = getDb()
+    .prepare("SELECT gmail_thread_linked_at FROM ticket_overlay WHERE row_id = ?")
+    .get(ticketRowId) as { gmail_thread_linked_at: string | null } | undefined;
+  return row?.gmail_thread_linked_at ?? null;
+}
+
+export function linkExistingGmailThread(
+  ticketRowId: string,
+  threadId: string
+): { ok: true; message: ThreadMessage } | { ok: false; error: string } {
+  const trimmed = threadId.trim();
+  if (!trimmed) return { ok: false, error: "Gmail thread ID is required" };
+
+  const existing = readOverlayRow(ticketRowId);
+  if (existing.gmailThreadId === trimmed) {
+    return { ok: false, error: "This ticket is already linked to this Gmail thread" };
+  }
+  if (existing.gmailThreadId && existing.gmailThreadId !== trimmed) {
+    return { ok: false, error: "This ticket is already linked to a different Gmail thread" };
+  }
+
+  if (!claimGmailThreadForTicket(ticketRowId, trimmed)) {
+    const owner = getTicketRowIdForGmailThread(trimmed);
+    if (owner && owner !== ticketRowId) {
+      return { ok: false, error: "This Gmail thread is already linked to another ticket" };
+    }
+    return { ok: false, error: "Could not link Gmail thread" };
+  }
+
+  const linkedAt = new Date();
+  const linkedAtIso = linkedAt.toISOString();
+  getDb()
+    .prepare(
+      "UPDATE ticket_overlay SET gmail_thread_linked_at = ?, updated_at = ? WHERE row_id = ?"
+    )
+    .run(linkedAtIso, linkedAtIso, ticketRowId);
+
+  const message: ThreadMessage = {
+    id: uuidv4(),
+    ticketRowId,
+    direction: "system",
+    from: "SheetsCRM",
+    to: "",
+    cc: null,
+    subject: "Gmail thread linked",
+    body: buildThreadLinkNoticeBody(linkedAt),
+    gmailMessageId: null,
+    gmailThreadId: trimmed,
+    sentAt: linkedAtIso,
+  };
+  addThreadMessage(message);
+
+  return { ok: true, message };
+}
+
 function getAllThreadMessagesRaw(ticketRowId: string): ThreadMessage[] {
   const rows = getDb()
     .prepare("SELECT * FROM thread_messages WHERE ticket_row_id = ? ORDER BY sent_at ASC")
@@ -344,6 +540,40 @@ function getAllThreadMessagesRaw(ticketRowId: string): ThreadMessage[] {
     gmailThreadId: r.gmail_thread_id,
     sentAt: r.sent_at,
   }));
+}
+
+/** Latest inbound/outbound message direction for a ticket (ignores system notes). */
+export function getLatestConversationDirection(
+  ticketRowId: string
+): "inbound" | "outbound" | null {
+  const row = getDb()
+    .prepare(
+      `SELECT direction FROM thread_messages
+       WHERE ticket_row_id = ? AND direction IN ('inbound', 'outbound')
+       ORDER BY sent_at DESC
+       LIMIT 1`
+    )
+    .get(ticketRowId) as { direction: string } | undefined;
+
+  if (!row) return null;
+  return row.direction as "inbound" | "outbound";
+}
+
+/** Move pending → open when the customer sent the latest email. */
+export function reopenPendingOnCustomerReply(ticketRowId: string): boolean {
+  const overlay = readOverlayRow(ticketRowId);
+  const reopen = getReopenOnCustomerReplyStatus(
+    overlay.status,
+    getLatestConversationDirection(ticketRowId)
+  );
+  if (!reopen) return false;
+
+  upsertOverlayRow(ticketRowId, overlayFields(overlay), {
+    status: reopen,
+    statusSource: "crm",
+    statusChangedAt: null,
+  });
+  return true;
 }
 
 /** Latest thread message time per ticket (batch). */
@@ -417,18 +647,57 @@ export function addThreadMessage(message: ThreadMessage): void {
     );
 }
 
-export function mergeOverlayOntoTicket(ticket: Ticket): Ticket {
+export function getOutboundTicketIds(): Set<string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT ticket_row_id FROM thread_messages WHERE direction = 'outbound'`
+    )
+    .all() as Array<{ ticket_row_id: string }>;
+  return new Set(rows.map((r) => r.ticket_row_id));
+}
+
+export function applyStatusAutomations(tickets: Ticket[]): Ticket[] {
+  return tickets.map((ticket) => {
+    const overlay = readOverlayRow(ticket.rowId);
+    const reopen = resolveAutomatedReopenStatus(
+      overlay.status,
+      overlay.statusChangedAt,
+      getLatestConversationDirection(ticket.rowId)
+    );
+    if (!reopen) return ticket;
+
+    upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
+      status: reopen,
+      statusSource: "crm",
+      statusChangedAt: null,
+    });
+
+    return { ...ticket, status: reopen };
+  });
+}
+
+export function mergeOverlayOntoTicket(ticket: Ticket, sheetAirbnbUserId?: string): Ticket {
   const overlay = readOverlayRow(ticket.rowId);
+  const sheetAd = sheetAirbnbUserId ?? ticket.airbnbUserId;
   const mappedFromSheet = mapSheetStatusToCrmId(ticket.sheetStatus);
   const sheetStatusValue = ticket.sheetStatus.trim() || null;
   const sheetCaseSummaryValue = ticket.sheetCaseSummary.trim() || null;
 
+  const sheetContactReason = ticket.contactReason.trim() || null;
+
   let status = overlay.status;
   let statusSource = overlay.statusSource;
+  let contactReason = sheetContactReason ?? "";
+  let contactReasonSource = overlay.contactReasonSource;
 
   if (!overlay.exists) {
     status = mappedFromSheet;
     statusSource = "sheet";
+    contactReasonSource = "sheet";
+    const slaHours = DEFAULT_SLA_HOURS;
+    const slaDueAt = shouldShowSlaTimer({ status, timestamp: ticket.timestamp })
+      ? computeDefaultSlaDueAt(ticket.timestamp, slaHours)
+      : null;
     upsertOverlayRow(ticket.rowId, {
       status,
       statusSource,
@@ -438,44 +707,98 @@ export function mergeOverlayOntoTicket(ticket: Ticket): Ticket {
       adminNotesSource: "sheet",
       sheetCaseSummary: sheetCaseSummaryValue,
       gmailThreadId: overlay.gmailThreadId,
-      slaHours: overlay.slaHours,
-      slaDueAt: overlay.slaDueAt,
+      contactReason: sheetContactReason,
+      contactReasonSource: "sheet",
+      statusChangedAt: null,
+      slaHours,
+      slaDueAt,
+      crmAirbnbUserId: null,
+      airbnbUserIdSource: "sheet",
     });
-  } else if (statusSource === "sheet") {
-    const sheetChanged = sheetStatusValue !== overlay.sheetStatus;
-    if (sheetChanged || overlay.sheetStatus === null) {
-      status = mappedFromSheet;
+  } else {
+    if (contactReasonSource === "sheet" && sheetContactReason !== overlay.contactReason) {
+      contactReason = sheetContactReason ?? "";
       upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
-        status,
-        statusSource: "sheet",
-        sheetStatus: sheetStatusValue,
-        sheetCaseSummary: sheetCaseSummaryValue,
-        adminNotes: sheetCaseSummaryValue,
-        adminNotesSource: "sheet",
+        contactReason: sheetContactReason,
+        contactReasonSource: "sheet",
       });
-    } else if (sheetCaseSummaryValue !== overlay.sheetCaseSummary) {
-      upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
-        sheetCaseSummary: sheetCaseSummaryValue,
-        adminNotes: sheetCaseSummaryValue,
-        adminNotesSource: "sheet",
-        gmailThreadId: overlay.gmailThreadId,
-      });
+    } else if (contactReasonSource === "crm" && overlay.contactReason) {
+      contactReason = overlay.contactReason;
+    }
+
+    if (statusSource === "sheet") {
+      const sheetChanged = sheetStatusValue !== overlay.sheetStatus;
+      if (sheetChanged || overlay.sheetStatus === null) {
+        status = mappedFromSheet;
+        upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
+          status,
+          statusSource: "sheet",
+          sheetStatus: sheetStatusValue,
+          sheetCaseSummary: sheetCaseSummaryValue,
+          adminNotes: sheetCaseSummaryValue,
+          adminNotesSource: "sheet",
+        });
+      } else if (sheetCaseSummaryValue !== overlay.sheetCaseSummary) {
+        upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
+          sheetCaseSummary: sheetCaseSummaryValue,
+          adminNotes: sheetCaseSummaryValue,
+          adminNotesSource: "sheet",
+          gmailThreadId: overlay.gmailThreadId,
+        });
+      }
+    } else if (statusSource === "crm") {
+      status = overlay.status;
     }
   }
 
   const refreshed = readOverlayRow(ticket.rowId);
-  const slaDueAt = refreshed.slaDueAt;
+  const reopen = resolveAutomatedReopenStatus(
+    refreshed.status,
+    refreshed.statusChangedAt,
+    getLatestConversationDirection(ticket.rowId)
+  );
+  if (reopen) {
+    upsertOverlayRow(ticket.rowId, overlayFields(refreshed), {
+      status: reopen,
+      statusSource: "crm",
+      statusChangedAt: null,
+    });
+    status = reopen;
+  } else {
+    status = refreshed.status;
+  }
+
+  if (refreshed.contactReasonSource === "crm" && refreshed.contactReason) {
+    contactReason = refreshed.contactReason;
+  } else if (refreshed.contactReason) {
+    contactReason = refreshed.contactReason;
+  }
+
+  const slaHours = refreshed.slaHours || DEFAULT_SLA_HOURS;
+  const slaEligible = shouldShowSlaTimer({ status, timestamp: ticket.timestamp });
+  let slaDueAt = slaEligible ? refreshed.slaDueAt : null;
+  if (slaEligible && !slaDueAt && slaHours > 0) {
+    slaDueAt = computeDefaultSlaDueAt(ticket.timestamp, slaHours);
+    upsertOverlayRow(ticket.rowId, overlayFields(refreshed), { slaDueAt });
+  }
   const slaBreached = slaDueAt ? new Date(slaDueAt) < new Date() : false;
   const subject = refreshed.crmSubject?.trim() || ticket.subject;
+  const airbnbUserId = resolveTicketAirbnbUserId(sheetAd, ticket.columnD, refreshed);
 
   return {
     ...ticket,
     subject,
+    contactReason,
     status,
+    airbnbUserId,
     adminNotes: ticket.sheetCaseSummary.trim(),
-    sheetStatus: ticket.sheetStatus || crmStatusLabel(status),
-    slaHours: refreshed.slaHours,
+    sheetStatus:
+      refreshed.statusSource === "crm"
+        ? refreshed.sheetStatus || crmStatusLabel(status)
+        : ticket.sheetStatus || crmStatusLabel(status),
+    slaHours,
     slaDueAt,
     slaBreached,
+    needsInitialResponse: false,
   };
 }

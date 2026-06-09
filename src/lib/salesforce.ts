@@ -9,9 +9,9 @@ export function getSalesforceSearchBaseUrl(): string {
   );
 }
 
-/** Mirrors Google Sheets ENCODEURL — handles +, @, and other special characters in emails. */
-export function buildSalesforceUnifiedSearchUrl(email: string): string | null {
-  const trimmed = email.trim();
+/** Unified search URL — query is typically the value from sheet Column D. */
+export function buildSalesforceUnifiedSearchUrl(query: string): string | null {
+  const trimmed = query.trim();
   if (!trimmed) return null;
 
   const base = getSalesforceSearchBaseUrl().replace(/\?.*$/, "");

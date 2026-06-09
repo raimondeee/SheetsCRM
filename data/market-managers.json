@@ -1,0 +1,405 @@
+{
+  "updatedAt": "2026-06-09T00:03:35.304Z",
+  "managers": [
+    {
+      "name": "Alejandro Antonucci",
+      "email": "alejandro.antonucci@ext.airbnb.com"
+    },
+    {
+      "name": "Alesia Georgiou",
+      "email": "alesia.georgiou@ext.airbnb.com"
+    },
+    {
+      "name": "Amar Koul",
+      "email": "amar.koul@ext.airbnb.com"
+    },
+    {
+      "name": "Amy Smith",
+      "email": "amy.smith@airbnb.com"
+    },
+    {
+      "name": "Andrew Sparling",
+      "email": "andrew.sparling@ext.airbnb.com"
+    },
+    {
+      "name": "Angela James",
+      "email": "angela.james@airbnb.com"
+    },
+    {
+      "name": "Angus Carter",
+      "email": "angus.carter@airbnb.com"
+    },
+    {
+      "name": "Antonio Gomez Garcia",
+      "email": "antonio.gomez@airbnb.com"
+    },
+    {
+      "name": "Benson Leng",
+      "email": "benson.leng@ext.airbnb.com"
+    },
+    {
+      "name": "Bonnie Stevenson",
+      "email": "bonnie.stevenson@airbnb.com"
+    },
+    {
+      "name": "Carlie Armstrong",
+      "email": "carlie.armstrong@ext.airbnb.com"
+    },
+    {
+      "name": "Caroline Ellis",
+      "email": "caroline.ellis@airbnb.com"
+    },
+    {
+      "name": "Caroline Ludwig",
+      "email": "caroline.ludwig@airbnb.com"
+    },
+    {
+      "name": "Chris Valente",
+      "email": "chris.valente@airbnb.com"
+    },
+    {
+      "name": "Christian Robinson",
+      "email": "christian.robinson@airbnb.com"
+    },
+    {
+      "name": "Christophe Handous",
+      "email": "christophe.handous@airbnb.com"
+    },
+    {
+      "name": "Cody Perrault",
+      "email": "cody.perrault@airbnb.com"
+    },
+    {
+      "name": "Daniela Girardi",
+      "email": "daniela.girardi@airbnb.com"
+    },
+    {
+      "name": "Daniele Amarossi",
+      "email": "daniele.amarossi@ext.airbnb.com"
+    },
+    {
+      "name": "Danielle Silvers",
+      "email": "danielle.silvers@airbnb.com"
+    },
+    {
+      "name": "Dario Cirella",
+      "email": "dario.cirella@airbnb.com"
+    },
+    {
+      "name": "Delmarshae Walker",
+      "email": "delmarshae.walker@airbnb.com"
+    },
+    {
+      "name": "Dionne Chu",
+      "email": "dionne.chu@airbnb.com"
+    },
+    {
+      "name": "Divya Dwivedi",
+      "email": "divya.dwivedi@airbnb.com"
+    },
+    {
+      "name": "Emily Gale",
+      "email": "emily.gale@ext.airbnb.com"
+    },
+    {
+      "name": "Emma Rosenberg",
+      "email": "emma.rosenberg@airbnb.com"
+    },
+    {
+      "name": "Enrico Federici",
+      "email": "enrico.federici@airbnb.com"
+    },
+    {
+      "name": "Enrico Pani",
+      "email": "enrico.pani@airbnb.com"
+    },
+    {
+      "name": "Erica Carranza",
+      "email": "erica.carranza@airbnb.com"
+    },
+    {
+      "name": "Essie Atherton",
+      "email": "essie.atherton@ext.airbnb.com"
+    },
+    {
+      "name": "Florence Liew",
+      "email": "florence.liew@ext.airbnb.com"
+    },
+    {
+      "name": "Grace Leone",
+      "email": "grace.leone@airbnb.com"
+    },
+    {
+      "name": "Ha Mansukhani",
+      "email": "ha.mansukhani@airbnb.com"
+    },
+    {
+      "name": "Haley Freedman",
+      "email": "haley.freedman@airbnb.com"
+    },
+    {
+      "name": "Irine Bochorishvili",
+      "email": "irine.bochorishvili@airbnb.com"
+    },
+    {
+      "name": "Jen Gillette",
+      "email": "jen.gillette@airbnb.com"
+    },
+    {
+      "name": "Joe Rudy",
+      "email": "joe.rudy@ext.airbnb.com"
+    },
+    {
+      "name": "Joe Yeadon",
+      "email": "joe.yeadon@airbnb.com"
+    },
+    {
+      "name": "Josh Tillipman",
+      "email": "josh.tillipman@airbnb.com"
+    },
+    {
+      "name": "Julia Firmacion",
+      "email": "julia.firmacion@airbnb.com"
+    },
+    {
+      "name": "Julie Carbone",
+      "email": "julie.carbone@airbnb.com"
+    },
+    {
+      "name": "Kaiting Yap",
+      "email": "kaiting.yap@airbnb.com"
+    },
+    {
+      "name": "Kara York",
+      "email": "kara.york@ext.airbnb.com"
+    },
+    {
+      "name": "Karin Parker",
+      "email": "karin.cao@airbnb.com"
+    },
+    {
+      "name": "Kat Knitter",
+      "email": "kat.knitter@airbnb.com"
+    },
+    {
+      "name": "Katelyn Sinclair",
+      "email": "katelyn.sinclair@ext.airbnb.com"
+    },
+    {
+      "name": "Katherine Petrillo",
+      "email": "katherine.petrillo@airbnb.com"
+    },
+    {
+      "name": "Kelly Correia",
+      "email": "kelly.correia@airbnb.com"
+    },
+    {
+      "name": "Keshav Tan",
+      "email": "keshav.tan@airbnb.com"
+    },
+    {
+      "name": "Krista Slocum",
+      "email": "krista.slocum@ext.airbnb.com"
+    },
+    {
+      "name": "Kristina Prusnek",
+      "email": "kristina.prusnek@airbnb.com"
+    },
+    {
+      "name": "Lauren Baysinger",
+      "email": "lauren.baysinger@airbnb.com"
+    },
+    {
+      "name": "Lea Gouvenou",
+      "email": "lea.gouvenou@airbnb.com"
+    },
+    {
+      "name": "Lea-Victoria Gottwald",
+      "email": "leavictoria.gottwald@airbnb.com"
+    },
+    {
+      "name": "Lisbet Alvarez",
+      "email": "lisbet.alvarez@airbnb.com"
+    },
+    {
+      "name": "Luis Pincay",
+      "email": "l.pincay@airbnb.com"
+    },
+    {
+      "name": "Maddie Beck",
+      "email": "maddie.beck@airbnb.com"
+    },
+    {
+      "name": "Malika Singh",
+      "email": "malika.singh@ext.airbnb.com"
+    },
+    {
+      "name": "Margaret McLaughlin",
+      "email": "margaret.mclaughlin@airbnb.com"
+    },
+    {
+      "name": "Marina Reasoner",
+      "email": "marina.reasoner@airbnb.com"
+    },
+    {
+      "name": "Michael Rollins",
+      "email": "michael.rollins@airbnb.com"
+    },
+    {
+      "name": "Mike Davidson",
+      "email": "mike.davidson@airbnb.com"
+    },
+    {
+      "name": "Olga Zilinska",
+      "email": "olga.zilinska@airbnb.com"
+    },
+    {
+      "name": "Pavitra Pothpan",
+      "email": "pavitra.pothpan@ext.airbnb.com"
+    },
+    {
+      "name": "Quentin Poyet",
+      "email": "quentin.poyet@ext.airbnb.com"
+    },
+    {
+      "name": "Rina Riku",
+      "email": "rina.riku@ext.airbnb.com"
+    },
+    {
+      "name": "Rinchen Lama",
+      "email": "rinchen.lama@ext.airbnb.com"
+    },
+    {
+      "name": "Robert Jackson",
+      "email": "robert.jackson@ext.airbnb.com"
+    },
+    {
+      "name": "Rocio Lopez",
+      "email": "rocio.lopez@ext.airbnb.com"
+    },
+    {
+      "name": "Roraima Ruiz",
+      "email": "roraima.ruiz@airbnb.com"
+    },
+    {
+      "name": "Ryan Hackett",
+      "email": "ryan.hackett@airbnb.com"
+    },
+    {
+      "name": "Sajuto Tio",
+      "email": "sajuto.tio@airbnb.com"
+    },
+    {
+      "name": "Sara Beach",
+      "email": "sara.beach@airbnb.com"
+    },
+    {
+      "name": "Sarah Poupineau",
+      "email": "sarah.poupineau@airbnb.com"
+    },
+    {
+      "name": "Sean Gannon",
+      "email": "sean.gannon@airbnb.com"
+    },
+    {
+      "name": "Sera Hyde",
+      "email": "sera.hyde@airbnb.com"
+    },
+    {
+      "name": "Serena Taylor",
+      "email": "serena.taylor@airbnb.com"
+    },
+    {
+      "name": "Shalin Bhandari",
+      "email": "shalin.bhandari@airbnb.com"
+    },
+    {
+      "name": "Shannon Ho",
+      "email": "shannon.ho@airbnb.com"
+    },
+    {
+      "name": "Shea Caruthers",
+      "email": "shea.caruthers@airbnb.com"
+    },
+    {
+      "name": "Shivang Sethiya",
+      "email": "shivang.sethiya@ext.airbnb.com"
+    },
+    {
+      "name": "Shota Inoue",
+      "email": "shota.inoue@airbnb.com"
+    },
+    {
+      "name": "Silvia Franco Rodriguez",
+      "email": "silvia.franco@airbnb.com"
+    },
+    {
+      "name": "Sooyeon Kim",
+      "email": "sooyeon.kim@ext.airbnb.com"
+    },
+    {
+      "name": "Stella Xu",
+      "email": "stella.xu@airbnb.com"
+    },
+    {
+      "name": "Stephan Hamel",
+      "email": "stephan.hamel@airbnb.com"
+    },
+    {
+      "name": "Stephanie Kerr",
+      "email": "stephanie.kerr@airbnb.com"
+    },
+    {
+      "name": "Takako Araki",
+      "email": "takako.araki@airbnb.com"
+    },
+    {
+      "name": "Taylor Knight",
+      "email": "taylor.knight@airbnb.com"
+    },
+    {
+      "name": "Thales Henrique Andrade",
+      "email": "thales.henriquearaujoandrade@airbnb.com"
+    },
+    {
+      "name": "Thrish Martin",
+      "email": "thrish.martin@airbnb.com"
+    },
+    {
+      "name": "Tom Bonini",
+      "email": "tom.bonini@airbnb.com"
+    },
+    {
+      "name": "Tracy Powers",
+      "email": "tracy.powers@airbnb.com"
+    },
+    {
+      "name": "Varun Vij",
+      "email": "varun.vij@airbnb.com"
+    },
+    {
+      "name": "Victoria Savarese",
+      "email": "victoria.savarese@airbnb.com"
+    },
+    {
+      "name": "Vivian Takach",
+      "email": "vivian.takach@airbnb.com"
+    },
+    {
+      "name": "Wiebke Eilermann",
+      "email": "wiebke.eilermann@ext.airbnb.com"
+    },
+    {
+      "name": "Xi Wang",
+      "email": "xi.wang@airbnb.com"
+    },
+    {
+      "name": "Yuri Santos Tartaglia",
+      "email": "yuri.tartaglia@airbnb.com"
+    },
+    {
+      "name": "Zoe Tatiner",
+      "email": "zoe.tatiner@airbnb.com"
+    }
+  ]
+}

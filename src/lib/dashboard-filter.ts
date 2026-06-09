@@ -1,0 +1,63 @@
+import type { Ticket } from "./types";
+import { shortMarketManagerLabel } from "./dashboard-stats";
+import { parseSheetTimestamp } from "./ticket-activity";
+
+export interface DashboardFilter {
+  contactReason?: string;
+  marketManager?: string;
+  requesterName?: string;
+  statusBucket?: "Resolved" | "Pending";
+  weekLabel?: string;
+}
+
+export function applyDashboardFilter(tickets: Ticket[], filter: DashboardFilter | null): Ticket[] {
+  if (!filter || Object.keys(filter).length === 0) return tickets;
+
+  return tickets.filter((ticket) => {
+    if (filter.contactReason && ticket.contactReason.trim() !== filter.contactReason) {
+      return false;
+    }
+    if (
+      filter.marketManager &&
+      shortMarketManagerLabel(ticket.marketManager) !== filter.marketManager &&
+      ticket.marketManager.trim() !== filter.marketManager
+    ) {
+      return false;
+    }
+    if (filter.requesterName && ticket.requesterName.trim() !== filter.requesterName) {
+      return false;
+    }
+    if (filter.statusBucket) {
+      const resolved = /resolved|solved|closed|complete|done/i.test(ticket.sheetStatus);
+      const pending = /pending|awaiting|waiting|open|in progress|new/i.test(ticket.sheetStatus);
+      if (filter.statusBucket === "Resolved" && !resolved) return false;
+      if (filter.statusBucket === "Pending" && !pending) return false;
+    }
+    if (filter.weekLabel) {
+      const d = parseSheetTimestamp(ticket.timestamp);
+      if (!d) return false;
+      const weekStart = getWeekStartSunday(d);
+      const label = `${weekStart.getMonth() + 1}/${weekStart.getDate()}/${weekStart.getFullYear()}`;
+      if (label !== filter.weekLabel) return false;
+    }
+    return true;
+  });
+}
+
+function getWeekStartSunday(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+
+export function dashboardFilterLabel(filter: DashboardFilter | null): string | null {
+  if (!filter) return null;
+  const parts: string[] = [];
+  if (filter.contactReason) parts.push(`Reason: ${filter.contactReason}`);
+  if (filter.marketManager) parts.push(`MM: ${filter.marketManager}`);
+  if (filter.requesterName) parts.push(`Host: ${filter.requesterName}`);
+  if (filter.statusBucket) parts.push(`Status: ${filter.statusBucket}`);
+  if (filter.weekLabel) parts.push(`Week: ${filter.weekLabel}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}

@@ -13,6 +13,9 @@ export type ColumnRole =
   | "internalToolM"
   | "internalToolR"
   | "airbnbUserId"
+  | "reservationCode"
+  | "listingId"
+  | "userEmailed"
   | "unknown";
 
 export interface ColumnMapping {
@@ -45,6 +48,8 @@ export interface Ticket {
   sheetName: string;
   timestamp: string;
   requesterEmail: string;
+  /** Value from sheet Column D (Salesforce search) */
+  columnD: string;
   requesterName: string;
   subject: string;
   description: string;
@@ -60,6 +65,10 @@ export interface Ticket {
   adminNotes: string;
   /** Airbnb User ID from sheet Column AD */
   airbnbUserId: string;
+  /** Reservation code from sheet Column E */
+  reservationCode: string;
+  /** Listing ID from sheet Column F */
+  listingId: string;
   /** CRM overlay status */
   status: string;
   internalTools: {
@@ -72,13 +81,15 @@ export interface Ticket {
   slaBreached: boolean;
   /** Latest thread message or intake timestamp — used for sorting and age display */
   lastResponseAt: string | null;
+  /** No agent reply yet and past initial-response SLA */
+  needsInitialResponse: boolean;
   raw: Record<string, string>;
 }
 
 export interface ThreadMessage {
   id: string;
   ticketRowId: string;
-  direction: "inbound" | "outbound";
+  direction: "inbound" | "outbound" | "system";
   from: string;
   to: string;
   cc: string | null;
@@ -99,9 +110,19 @@ export const DEFAULT_STATUSES: StatusOption[] = [
   { id: "new", label: "New", color: "#30aabc" },
   { id: "open", label: "Open", color: "#038153" },
   { id: "pending", label: "Pending", color: "#bf5000" },
-  { id: "on_hold", label: "On hold", color: "#68737d" },
-  { id: "solved", label: "Solved", color: "#87929d" },
+  { id: "resolved", label: "Resolved", color: "#87929d" },
+  { id: "do_not_action", label: "Do Not Action", color: "#4b5563" },
+  { id: "longterm_hold", label: "Longterm Hold/Bugs", color: "#68737d" },
 ];
+
+/** Column N values synced from CRM (excludes CRM-only New). */
+export const SHEET_STATUS_VALUES = [
+  "Open",
+  "Pending",
+  "Resolved",
+  "Do Not Action",
+  "Longterm Hold/Bugs",
+] as const;
 
 export const COLUMN_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 

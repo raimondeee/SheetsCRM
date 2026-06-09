@@ -1,11 +1,33 @@
 import type { Ticket } from "./types";
 import type { SortOrder } from "./user-preferences";
 
+/** Parse intake timestamps from sheet Column A and similar date cells. */
 export function parseSheetTimestamp(value: string): Date | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const d = new Date(trimmed);
-  return Number.isNaN(d.getTime()) ? null : d;
+
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const serial = Number.parseFloat(trimmed);
+    if (serial > 1) {
+      const ms = Math.round((serial - 25569) * 86_400_000);
+      const serialDate = new Date(ms);
+      if (!Number.isNaN(serialDate.getTime())) return serialDate;
+    }
+  }
+
+  const normalized = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+  const isoAttempt = new Date(normalized);
+  if (!Number.isNaN(isoAttempt.getTime())) return isoAttempt;
+
+  const direct = new Date(trimmed);
+  return Number.isNaN(direct.getTime()) ? null : direct;
+}
+
+/** Sort key from Column A submission time; falls back to sheet row order. */
+export function getTicketSortTime(ticket: Ticket): number {
+  const parsed = parseSheetTimestamp(ticket.timestamp);
+  if (parsed) return parsed.getTime();
+  return ticket.rowNumber;
 }
 
 export function resolveLastResponseAt(
@@ -38,11 +60,15 @@ export function formatLastResponseHours(lastResponseAt: string | null): string |
   return `${Math.round(hours)}h`;
 }
 
-export function sortTicketsByLastResponse(tickets: Ticket[], order: SortOrder): Ticket[] {
-  const sorted = [...tickets].sort((a, b) => {
-    const aTime = a.lastResponseAt ? new Date(a.lastResponseAt).getTime() : 0;
-    const bTime = b.lastResponseAt ? new Date(b.lastResponseAt).getTime() : 0;
+export function sortTicketsBySubmittedTime(tickets: Ticket[], order: SortOrder): Ticket[] {
+  return [...tickets].sort((a, b) => {
+    const aTime = getTicketSortTime(a);
+    const bTime = getTicketSortTime(b);
     return order === "asc" ? aTime - bTime : bTime - aTime;
   });
-  return sorted;
+}
+
+/** @deprecated Use sortTicketsBySubmittedTime */
+export function sortTicketsByLastResponse(tickets: Ticket[], order: SortOrder): Ticket[] {
+  return sortTicketsBySubmittedTime(tickets, order);
 }

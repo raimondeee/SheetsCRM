@@ -4,14 +4,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
 import type { SheetConfig, Ticket } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, type AppView } from "./Sidebar";
 import { TicketList } from "./TicketList";
 import { TicketDetail } from "./TicketDetail";
+import { DashboardView } from "./DashboardView";
 import { SetupModal } from "./SetupModal";
 import { PreferencesModal } from "./PreferencesModal";
 import { appendAdminNoteToText } from "@/lib/admin-notes";
 import { useRefreshCountdown } from "@/hooks/useRefreshCountdown";
-import { sortTicketsByLastResponse } from "@/lib/ticket-activity";
+import {
+  dashboardFilterLabel,
+  type DashboardFilter,
+} from "@/lib/dashboard-filter";
+import {
+  buildFilteredTicketList,
+  pickNextTicketAfterSend,
+} from "@/lib/next-ticket-after-send";
+import { InboxVictoryView } from "./InboxVictoryView";
+import { buildContactReasonOptions } from "@/lib/contact-reasons";
 import {
   loadUserPreferences,
   saveUserPreferences,
@@ -27,6 +37,8 @@ export function CrmShell() {
   const [config, setConfig] = useState<SheetConfig | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [activeView, setActiveView] = useState<AppView>("tickets");
+  const [dashboardFilter, setDashboardFilter] = useState<DashboardFilter | null>(null);
   const [sortOrder, setSortOrder] = useState<UserPreferences["sortOrder"]>("desc");
   const [search, setSearch] = useState("");
   const [setupOpen, setSetupOpen] = useState(false);
@@ -39,10 +51,12 @@ export function CrmShell() {
     email: null,
   });
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [inboxVictory, setInboxVictory] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [countdownResetKey, setCountdownResetKey] = useState(0);
   const sourceRef = useRef(source);
+  const initialSelectionDone = useRef(false);
   sourceRef.current = source;
 
   const secondsUntilRefresh = useRefreshCountdown(
@@ -81,7 +95,6 @@ export function CrmShell() {
       setTickets(data.tickets ?? []);
       setConfig(data.config ?? null);
       setSource(data.source ?? "mock");
-      setSelectedId((current) => current ?? data.tickets?.[0]?.rowId ?? null);
       setLastSyncedAt(new Date());
       setCountdownResetKey((k) => k + 1);
     } catch (err) {
@@ -142,19 +155,29 @@ export function CrmShell() {
     await loadTickets();
   }
 
-  const filtered = useMemo(() => {
-    const matched = tickets.filter((t) => {
-      const matchStatus = statusFilter === "all" || t.status === statusFilter;
-      const q = search.toLowerCase();
-      const matchSearch =
-        !q ||
-        t.subject.toLowerCase().includes(q) ||
-        t.requesterEmail.toLowerCase().includes(q) ||
-        t.requesterName.toLowerCase().includes(q);
-      return matchStatus && matchSearch;
-    });
-    return sortTicketsByLastResponse(matched, sortOrder);
-  }, [tickets, statusFilter, search, sortOrder]);
+  const contactReasonOptions = useMemo(
+    () => buildContactReasonOptions(tickets),
+    [tickets]
+  );
+
+  const filtered = useMemo(
+    () =>
+      buildFilteredTicketList({
+        tickets,
+        statusFilter,
+        search,
+        sortOrder,
+        dashboardFilter,
+      }),
+    [tickets, statusFilter, search, sortOrder, dashboardFilter]
+  );
+
+  useEffect(() => {
+    if (!prefsLoaded || loading || initialSelectionDone.current) return;
+
+    initialSelectionDone.current = true;
+    setSelectedId(filtered.length > 0 ? filtered[0].rowId : null);
+  }, [prefsLoaded, loading, filtered]);
 
   function handleSortOrderChange(order: UserPreferences["sortOrder"]) {
     setSortOrder(order);
@@ -185,6 +208,53 @@ export function CrmShell() {
       body: JSON.stringify({ rowId, status }),
     });
     setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, status } : t)));
+  }
+
+  function advanceAfterSend(rowId: string): boolean {
+    const sentIndexInFiltered = filtered.findIndex((t) => t.rowId === rowId);
+    const result = pickNextTicketAfterSend({
+      tickets,
+      sentRowId: rowId,
+      sentIndexInFiltered,
+      statusFilter,
+      search,
+      sortOrder,
+      dashboardFilter,
+    });
+
+    if (result.kind === "victory") {
+      return false;
+    }
+
+    setInboxVictory(false);
+    if (result.statusFilter) setStatusFilter(result.statusFilter);
+    setSelectedId(result.rowId);
+    return true;
+  }
+
+  function showInboxVictory() {
+    setInboxVictory(true);
+    setSelectedId(null);
+  }
+
+  function restoreSentTicket(rowId: string) {
+    setInboxVictory(false);
+    setSelectedId(rowId);
+  }
+
+  async function handleTicketSent(rowId: string, status: "pending" | "resolved") {
+    await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rowId, status }),
+    });
+
+    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, status } : t)));
+  }
+
+  function handleSelectTicket(rowId: string) {
+    setInboxVictory(false);
+    setSelectedId(rowId);
   }
 
   async function handleAppendAdminNote(rowId: string, note: string) {
@@ -227,6 +297,26 @@ export function CrmShell() {
     setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, airbnbUserId } : t)));
   }
 
+  async function handleReservationCodeChange(rowId: string, reservationCode: string) {
+    await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rowId, reservationCode }),
+    });
+    setTickets((prev) =>
+      prev.map((t) => (t.rowId === rowId ? { ...t, reservationCode } : t))
+    );
+  }
+
+  async function handleListingIdChange(rowId: string, listingId: string) {
+    await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rowId, listingId }),
+    });
+    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, listingId } : t)));
+  }
+
   async function handleSubjectChange(rowId: string, subject: string) {
     await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
@@ -235,6 +325,31 @@ export function CrmShell() {
     });
     setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, subject } : t)));
   }
+
+  async function handleContactReasonChange(rowId: string, contactReason: string) {
+    const res = await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rowId, contactReason }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      setSyncError(data.error ?? "Failed to update contact reason on sheet");
+      return;
+    }
+    setSyncError(null);
+    setTickets((prev) =>
+      prev.map((t) => (t.rowId === rowId ? { ...t, contactReason } : t))
+    );
+  }
+
+  function handleDashboardFilter(filter: DashboardFilter) {
+    setDashboardFilter(Object.keys(filter).length > 0 ? filter : null);
+    setActiveView("tickets");
+    setStatusFilter("all");
+  }
+
+  const activeFilterLabel = dashboardFilterLabel(dashboardFilter);
 
   async function handleSlaChange(rowId: string, slaHours: number) {
     const slaDueAt = new Date(Date.now() + slaHours * 60 * 60 * 1000).toISOString();
@@ -333,14 +448,37 @@ export function CrmShell() {
 
       <div className="flex min-h-0 flex-1">
         <Sidebar
+          activeView={activeView}
+          onViewChange={setActiveView}
           statusFilter={statusFilter}
           onStatusFilter={setStatusFilter}
           counts={counts}
         />
+        {activeView === "dashboard" ? (
+          <DashboardView
+            tickets={tickets}
+            loading={loading || !prefsLoaded}
+            onFilter={handleDashboardFilter}
+          />
+        ) : (
+          <div className="flex min-w-0 flex-1 flex-col">
+        {activeFilterLabel && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-zendesk-border bg-amber-50 px-4 py-2 text-xs text-amber-900">
+            <span>Dashboard filter: {activeFilterLabel}</span>
+            <button
+              type="button"
+              onClick={() => setDashboardFilter(null)}
+              className="rounded border border-amber-200 px-2 py-0.5 hover:bg-amber-100"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+        <div className="flex min-h-0 flex-1">
         <TicketList
           tickets={filtered}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={handleSelectTicket}
           search={search}
           onSearch={setSearch}
           loading={loading || !prefsLoaded}
@@ -352,15 +490,30 @@ export function CrmShell() {
               : undefined
           }
         />
-        <TicketDetail
-          ticket={selected}
-          onStatusChange={handleStatusChange}
-          onSubjectChange={handleSubjectChange}
-          onAppendAdminNote={handleAppendAdminNote}
-          onAirbnbUserIdChange={handleAirbnbUserIdChange}
-          onSlaChange={handleSlaChange}
-          onThreadUpdate={() => loadTickets({ silent: true })}
-        />
+        {inboxVictory ? (
+          <InboxVictoryView />
+        ) : (
+          <TicketDetail
+            ticket={selected}
+            contactReasonOptions={contactReasonOptions}
+            onStatusChange={handleStatusChange}
+            onAdvanceAfterSend={advanceAfterSend}
+            onShowInboxVictory={showInboxVictory}
+            onRestoreSentTicket={restoreSentTicket}
+            onTicketSent={handleTicketSent}
+            onSubjectChange={handleSubjectChange}
+            onContactReasonChange={handleContactReasonChange}
+            onAppendAdminNote={handleAppendAdminNote}
+            onAirbnbUserIdChange={handleAirbnbUserIdChange}
+            onReservationCodeChange={handleReservationCodeChange}
+            onListingIdChange={handleListingIdChange}
+            onSlaChange={handleSlaChange}
+            onThreadUpdate={() => loadTickets({ silent: true })}
+          />
+        )}
+        </div>
+          </div>
+        )}
       </div>
 
       {preferencesOpen && (
