@@ -1,8 +1,10 @@
+import { isResponseSlaEligibleStatus } from "./sla-display";
+import { DEFAULT_TIMER_SETTINGS } from "./timer-settings";
 import type { Ticket } from "./types";
 import { getTicketSortTime, hoursSinceLastResponse, parseSheetTimestamp } from "./ticket-activity";
 import type { SortOrder } from "./user-preferences";
 
-export const INITIAL_RESPONSE_HOURS = 48;
+export const INITIAL_RESPONSE_HOURS = DEFAULT_TIMER_SETTINGS.initialResponseHours;
 
 export function ticketHasOutboundResponse(
   ticket: Ticket,
@@ -16,6 +18,7 @@ export function needsInitialResponse(
   outboundTicketIds: Set<string>,
   thresholdHours = INITIAL_RESPONSE_HOURS
 ): boolean {
+  if (!isResponseSlaEligibleStatus(ticket.status)) return false;
   if (ticketHasOutboundResponse(ticket, outboundTicketIds)) return false;
   const intake = parseSheetTimestamp(ticket.timestamp);
   if (!intake) return false;

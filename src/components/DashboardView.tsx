@@ -18,9 +18,12 @@ import {
 } from "recharts";
 import type { Ticket } from "@/lib/types";
 import {
+  DASHBOARD_PERIOD_OPTIONS,
+  type DashboardPeriod,
+} from "@/lib/dashboard-period";
+import {
   buildDashboardStats,
   chartColor,
-  DASHBOARD_WEEK_COUNT,
   percentLabel,
   type CountItem,
   type StackedGroup,
@@ -31,11 +34,20 @@ import type { DashboardFilter } from "@/lib/dashboard-filter";
 interface DashboardViewProps {
   tickets: Ticket[];
   loading?: boolean;
+  period: DashboardPeriod;
+  onPeriodChange: (period: DashboardPeriod) => void;
   onFilter?: (filter: DashboardFilter) => void;
 }
 
-export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps) {
-  const stats = useMemo(() => buildDashboardStats(tickets), [tickets]);
+export function DashboardView({
+  tickets,
+  loading,
+  period,
+  onPeriodChange,
+  onFilter,
+}: DashboardViewProps) {
+  const stats = useMemo(() => buildDashboardStats(tickets, period), [tickets, period]);
+  const periodNote = stats.periodLabel;
 
   if (loading) {
     return (
@@ -47,39 +59,51 @@ export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto bg-gray-50 p-4">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-zendesk-navy">Dashboard</h1>
           <p className="text-sm text-zendesk-muted">
-            Weekly charts use a rolling {DASHBOARD_WEEK_COUNT}-week window. Click any chart segment
-            to filter the ticket list.
+            Charts use the selected time period. Click any segment to filter the ticket list.
           </p>
         </div>
-        <p className="text-xs text-zendesk-muted">
-          {stats.totalTickets.toLocaleString()} tickets · synced from intake sheet
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-zendesk-muted">
+            <span className="font-medium">Period</span>
+            <select
+              value={period}
+              onChange={(e) => onPeriodChange(e.target.value as DashboardPeriod)}
+              className="rounded border border-zendesk-border bg-white px-2 py-1.5 text-sm text-gray-900"
+            >
+              {DASHBOARD_PERIOD_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-zendesk-muted">
+            {stats.periodTicketCount.toLocaleString()} in period ·{" "}
+            {stats.totalTickets.toLocaleString()} all time
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <ChartCard title="Contact Reason" subtitle="All time · click to filter">
+        <ChartCard title="Contact Reason" subtitle={`${periodNote} · click to filter`}>
           <PieChartBlock
-            data={stats.contactReasonAllTime.slice(0, 10)}
+            data={stats.contactReasonBreakdown.slice(0, 10)}
             onSliceClick={(name) => onFilter?.({ contactReason: name })}
           />
         </ChartCard>
 
-        <ChartCard title="Contacts by MM" subtitle="All time · click to filter">
+        <ChartCard title="Contacts by MM" subtitle={`${periodNote} · click to filter`}>
           <PieChartBlock
-            data={stats.marketManagerAllTime.slice(0, 10)}
+            data={stats.marketManagerBreakdown.slice(0, 10)}
             onSliceClick={(name) => onFilter?.({ marketManager: name })}
           />
         </ChartCard>
 
-        <ChartCard
-          title="Contact Reason by Week"
-          subtitle={`${stats.windowWeeks} weeks · click a week`}
-          className="xl:col-span-1"
-        >
+        <ChartCard title="Contact Reason by Week" subtitle={`${periodNote} · click a week`}>
           <StackedWeekChart
             data={stats.contactReasonByWeek}
             keys={stats.contactReasonWeekKeys}
@@ -94,14 +118,14 @@ export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps
           />
         </ChartCard>
 
-        <ChartCard title="Contact Reason by MM" subtitle="Top MMs · click an MM">
+        <ChartCard title="Contact Reason by MM" subtitle={`${periodNote} · click an MM`}>
           <PercentStackedMM
             data={stats.contactReasonByMM}
             onMMClick={(mm) => onFilter?.({ marketManager: mm })}
           />
         </ChartCard>
 
-        <ChartCard title="Cases by Week" subtitle={`${stats.windowWeeks} weeks · click a point`}>
+        <ChartCard title="Cases by Week" subtitle={`${periodNote} · click a point`}>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart
               data={stats.casesByWeek}
@@ -119,7 +143,19 @@ export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Status by Week" subtitle={`${stats.windowWeeks} weeks · click a bar`}>
+        <ChartCard title="Cases by Month" subtitle={`${periodNote} · monthly volume`}>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={stats.casesByMonth}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="monthLabel" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
+              <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+              <Tooltip />
+              <Bar dataKey="cases" fill="#30aabc" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Status by Week" subtitle={`${periodNote} · click a bar`}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
               data={stats.statusByWeek}
@@ -145,25 +181,49 @@ export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Top Five Regional Hosts by Support Volume" subtitle="Click a host">
+        <ChartCard title="Top Host Contacts" subtitle={`${periodNote} · click a host`}>
           <HorizontalBarChart
             data={stats.topRegionalHosts}
-            onBarClick={(name) => onFilter?.({ requesterName: name })}
+            onBarClick={(name) => {
+              const emailMatch = name.match(/\(([^)]+)\)$/);
+              if (emailMatch) onFilter?.({ requesterEmail: emailMatch[1] });
+              else onFilter?.({ requesterName: name });
+            }}
           />
         </ChartCard>
 
         <ChartCard
-          title="Total Tickets"
-          subtitle="All time"
+          title="Tickets in period"
+          subtitle={periodNote}
           className="flex cursor-pointer flex-col justify-center"
           onClick={() => onFilter?.({})}
         >
           <p className="text-center text-5xl font-bold tracking-tight text-zendesk-navy">
-            {stats.totalTickets.toLocaleString()}
+            {stats.periodTicketCount.toLocaleString()}
+          </p>
+          <p className="mt-2 text-center text-xs text-zendesk-muted">
+            of {stats.totalTickets.toLocaleString()} all-time tickets
           </p>
         </ChartCard>
 
-        <ChartCard title="Overturn Rate" subtitle="by agent · all time">
+        <ChartCard
+          title="Top hosts by Market Manager"
+          subtitle={`${periodNote} · activity report`}
+          className="xl:col-span-2"
+        >
+          <HostsByMMReport
+            data={stats.topHostsByMarketManager}
+            onHostClick={(mm, host) => {
+              const emailMatch = host.match(/\(([^)]+)\)$/);
+              onFilter?.({
+                marketManager: mm,
+                ...(emailMatch ? { requesterEmail: emailMatch[1] } : { requesterName: host }),
+              });
+            }}
+          />
+        </ChartCard>
+
+        <ChartCard title="Overturn Rate" subtitle={`by agent · ${periodNote}`}>
           {stats.overturnByAgent.length > 0 ? (
             <GroupedYesNoChart data={stats.overturnByAgent} />
           ) : (
@@ -171,7 +231,7 @@ export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps
           )}
         </ChartCard>
 
-        <ChartCard title="Appeal Approval Rate CS vs Policy" subtitle="All time" className="xl:col-span-2">
+        <ChartCard title="Appeal Approval Rate CS vs Policy" subtitle={periodNote} className="xl:col-span-2">
           {stats.appealCsVsPolicy.length > 0 ? (
             <GroupedYesNoChart data={stats.appealCsVsPolicy} layout="pair" />
           ) : (
@@ -180,6 +240,46 @@ export function DashboardView({ tickets, loading, onFilter }: DashboardViewProps
         </ChartCard>
       </div>
     </main>
+  );
+}
+
+function HostsByMMReport({
+  data,
+  onHostClick,
+}: {
+  data: { marketManager: string; hosts: CountItem[]; total: number }[];
+  onHostClick?: (mm: string, host: string) => void;
+}) {
+  const withData = data.filter((g) => g.total > 0);
+  if (withData.length === 0) {
+    return <p className="py-8 text-center text-sm text-zendesk-muted">No host contacts in this period</p>;
+  }
+
+  return (
+    <div className="max-h-72 space-y-4 overflow-y-auto pr-1">
+      {withData.map((group) => (
+        <div key={group.marketManager}>
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-zendesk-navy">{group.marketManager}</h3>
+            <span className="text-xs text-zendesk-muted">{group.total} contacts</span>
+          </div>
+          <ul className="mt-1.5 space-y-1">
+            {group.hosts.map((host) => (
+              <li key={host.name}>
+                <button
+                  type="button"
+                  onClick={() => onHostClick?.(group.marketManager, host.name)}
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-gray-100"
+                >
+                  <span className="line-clamp-1 pr-2">{host.name}</span>
+                  <span className="shrink-0 font-semibold text-zendesk-navy">{host.value}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -218,7 +318,7 @@ function PieChartBlock({
   onSliceClick?: (name: string) => void;
 }) {
   if (data.length === 0) {
-    return <p className="py-8 text-center text-sm text-zendesk-muted">No data</p>;
+    return <p className="py-8 text-center text-sm text-zendesk-muted">No data in this period</p>;
   }
 
   const total = data.reduce((sum, d) => sum + d.value, 0);
@@ -267,7 +367,7 @@ function StackedWeekChart({
 }) {
   const allKeys = [...keys, otherKey];
   if (data.length === 0) {
-    return <p className="py-8 text-center text-sm text-zendesk-muted">No tickets in window</p>;
+    return <p className="py-8 text-center text-sm text-zendesk-muted">No tickets in period</p>;
   }
 
   return (
@@ -303,7 +403,7 @@ function PercentStackedMM({
   onMMClick?: (mm: string) => void;
 }) {
   if (data.every((g) => g.total === 0)) {
-    return <p className="py-8 text-center text-sm text-zendesk-muted">No data</p>;
+    return <p className="py-8 text-center text-sm text-zendesk-muted">No data in period</p>;
   }
 
   const reasonKeys = [...new Set(data.flatMap((g) => g.segments.map((s) => s.name)))].slice(0, 12);
@@ -347,7 +447,7 @@ function HorizontalBarChart({
   onBarClick?: (name: string) => void;
 }) {
   if (data.length === 0) {
-    return <p className="py-8 text-center text-sm text-zendesk-muted">No data</p>;
+    return <p className="py-8 text-center text-sm text-zendesk-muted">No data in period</p>;
   }
 
   return (
@@ -424,7 +524,7 @@ function EmptyAppealHint({
   return (
     <p className="py-10 text-center text-sm text-zendesk-muted">
       {detected
-        ? `No ${label} breakdown yet — check column headers match SA / overturn / CS fields.`
+        ? `No ${label} breakdown in this period — check column headers match SA / overturn / CS fields.`
         : `No ${label} columns detected. Map appeal-related columns in Setup or add headers like SA, Overturn, Appeal Decision.`}
     </p>
   );

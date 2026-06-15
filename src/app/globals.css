@@ -26,6 +26,32 @@ body {
   border-radius: 4px;
 }
 
+@layer components {
+  .crm-notes-panel {
+    border-radius: 0.25rem;
+    border: 1px solid #dab64a;
+    background-color: #f0d989;
+    padding: 0.75rem;
+  }
+
+  .crm-notes-content {
+    max-height: 25vh;
+    min-height: 4.5rem;
+    overflow-y: auto;
+    border-radius: 0.25rem;
+    border: 1px solid #e3bd4b;
+    background-color: #f8e8aa;
+    padding: 0.625rem;
+  }
+
+  .crm-notes-content-compose {
+    max-height: none;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 .reply-draft-editor[data-empty="true"]::before {
   content: attr(data-placeholder);
   color: #87929d;
@@ -59,4 +85,32 @@ body {
 .reply-draft-editor li > ul,
 .reply-draft-editor li > ol {
   margin: 0.25rem 0 0.35rem;
+}
+
+.reply-draft-editor a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.ticket-panel-transition {
+  transition-property: opacity, transform;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.ticket-panel-hidden {
+  opacity: 0;
+  transform: translateX(10px);
+}
+
+.ticket-panel-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-panel-transition {
+    transition: none !important;
+    transform: none !important;
+  }
 }

@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import type { SheetConfig, Ticket } from "./types";
 import {
   analyzeHeaders,
+  getAirbnbUserIdColumn,
   getCellValue,
   getCellValueByRole,
   getColumnByRole,
@@ -23,6 +24,33 @@ import {
   markAirbnbUserIdFromColumnD,
   mergeOverlayOntoTicket,
 } from "./overlay-db";
+import { buildUiFieldValues } from "./ui-field-slots";
+import { DEFAULT_TIMER_SETTINGS, type TimerSettings } from "./timer-settings";
+import type { ColumnMapping } from "./types";
+
+function rowQualifiesAsTicket(
+  row: string[],
+  config: SheetConfig,
+  rowKeyCol: ColumnMapping
+): boolean {
+  if (getCellValue(row, rowKeyCol).trim()) return true;
+
+  const timestampCol =
+    getColumnByRole(config, "timestamp") ??
+    config.columns.find((c) => c.index === 0);
+  if (timestampCol && getCellValue(row, timestampCol).trim()) return true;
+
+  const emailCol = getColumnByRole(config, "email");
+  if (emailCol && getCellValue(row, emailCol).trim()) return true;
+
+  const descriptionCol = getColumnByRole(config, "description");
+  if (descriptionCol && getCellValue(row, descriptionCol).trim()) return true;
+
+  const subjectCol = getColumnByRole(config, "subject");
+  if (subjectCol && getCellValue(row, subjectCol).trim()) return true;
+
+  return false;
+}
 
 function getCellWithColumnFallback(
   row: string[],
@@ -78,7 +106,10 @@ export async function fetchSheetHeaders(
   return { headers: (res.data.values?.[0] ?? []) as string[], sheetName: title };
 }
 
-export async function fetchTicketsFromSheet(config: SheetConfig): Promise<Ticket[]> {
+export async function fetchTicketsFromSheet(
+  config: SheetConfig,
+  timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS
+): Promise<Ticket[]> {
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google or configure a service account");
 
@@ -94,11 +125,16 @@ export async function fetchTicketsFromSheet(config: SheetConfig): Promise<Ticket
   const dataRows = rows.slice(config.headerRow);
   const tickets: Ticket[] = [];
 
-  const rowKeyCol = getColumnByRole(config, "rowKey") ?? { index: 0, letter: "A", header: "A", role: "rowKey" as const };
+  const rowKeyCol = getColumnByRole(config, "rowKey") ?? {
+    index: 0,
+    letter: "A",
+    header: "A",
+    role: "rowKey" as const,
+  };
 
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i] as string[];
-    if (!getCellValue(row, rowKeyCol).trim()) continue;
+    if (!rowQualifiesAsTicket(row, config, rowKeyCol)) continue;
 
     const rowNumber = config.headerRow + i + 1;
     const rowId = `${config.spreadsheetId}:${config.sheetName}:${rowNumber}`;
@@ -107,6 +143,10 @@ export async function fetchTicketsFromSheet(config: SheetConfig): Promise<Ticket
     config.columns.forEach((col) => {
       raw[col.header || col.letter] = getCellValue(row, col);
     });
+
+    const uiFields = buildUiFieldValues(config, row);
+    const legacyHeader = getCellValue(row, getColumnByRole(config, "ticketHeaderField"));
+    const headerField = uiFields["ui-1"] ?? legacyHeader ?? uiFields["legacy-header"] ?? "";
 
     const ticket: Ticket = {
       rowId,
@@ -122,14 +162,17 @@ export async function fetchTicketsFromSheet(config: SheetConfig): Promise<Ticket
       requesterEmail: getCellValue(row, getColumnByRole(config, "email")),
       columnD: getFixedColumnValue(row, EXAMPLE_COLUMN_POSITIONS.email),
       requesterName: getCellValue(row, getColumnByRole(config, "name")),
+      headerField,
+      uiFields,
       subject: getCellValue(row, getColumnByRole(config, "subject")),
+      crmSubjectLabel: "",
       description: getCellValue(row, getColumnByRole(config, "description")),
       contactReason: getCellValue(row, getColumnByRole(config, "contactReason")),
       marketManager: getCellValueByRole(row, config, "marketManager"),
       sheetStatus: getCellValue(row, getColumnByRole(config, "status")),
       sheetCaseSummary: getCellValue(row, getColumnByRole(config, "caseSummary")),
       adminNotes: "",
-      airbnbUserId: getCellValue(row, getColumnByRole(config, "airbnbUserId")),
+      airbnbUserId: getCellValue(row, getAirbnbUserIdColumn(config)),
       reservationCode: getCellWithColumnFallback(
         row,
         config,
@@ -143,12 +186,16 @@ export async function fetchTicketsFromSheet(config: SheetConfig): Promise<Ticket
         EXAMPLE_COLUMN_POSITIONS.listingId
       ),
       status: "new",
+      statusChangedAt: null,
+      pendingReopenHours: null,
+      gmailOpenUrl: null,
+      linkedCases: ["", "", ""],
       internalTools: {
         k: getCellValue(row, getColumnByRole(config, "internalToolK")),
         m: getCellValue(row, getColumnByRole(config, "internalToolM")),
         r: getCellValue(row, getColumnByRole(config, "internalToolR")),
       },
-      slaHours: 48,
+      slaHours: timerSettings.defaultSlaHours,
       slaDueAt: null,
       slaBreached: false,
       lastResponseAt: null,
@@ -157,11 +204,13 @@ export async function fetchTicketsFromSheet(config: SheetConfig): Promise<Ticket
     };
 
     const sheetAirbnbUserId = ticket.airbnbUserId;
-    tickets.push(mergeOverlayOntoTicket(ticket, sheetAirbnbUserId));
+    tickets.push(mergeOverlayOntoTicket(ticket, sheetAirbnbUserId, timerSettings));
   }
 
   const merged = tickets.reverse();
-  await backfillAirbnbUserIdsFromColumnD(config, merged);
+  void backfillAirbnbUserIdsFromColumnD(config, merged).catch(() => {
+    /* background backfill — must not block ticket list load */
+  });
   return merged;
 }
 
@@ -195,8 +244,8 @@ async function backfillAirbnbUserIdsFromColumnD(
 }
 
 function getAirbnbUserIdRawKey(ticket: Ticket, config: SheetConfig): string {
-  const col = getColumnByRole(config, "airbnbUserId");
-  return col?.header || col?.letter || "Column AD";
+  const col = getAirbnbUserIdColumn(config);
+  return col.header || col.letter || "Column AD";
 }
 
 export async function analyzeAndBuildConfig(
@@ -234,6 +283,28 @@ export async function hasGoogleCredentials(): Promise<boolean> {
   return hasActiveGoogleAuth();
 }
 
+/** Writes full case summary text to Column U (no read). */
+export async function writeCaseSummaryOnSheet(
+  config: SheetConfig,
+  rowNumber: number,
+  fullText: string
+): Promise<void> {
+  const auth = await getGoogleAuthClient();
+  if (!auth) throw new Error("Sign in with Google to update the sheet");
+
+  const col = getColumnByRole(config, "caseSummary");
+  const letter = col?.letter ?? EXAMPLE_COLUMN_POSITIONS.caseSummary.letter;
+  const range = `'${config.sheetName}'!${letter}${rowNumber}`;
+
+  const sheets = google.sheets({ version: "v4", auth });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.spreadsheetId,
+    range,
+    valueInputOption: "RAW",
+    requestBody: { values: [[fullText]] },
+  });
+}
+
 /** Appends a bullet note to Column U (Case Summary). Returns the updated cell text. */
 export async function appendAdminNoteOnSheet(
   config: SheetConfig,
@@ -255,13 +326,7 @@ export async function appendAdminNoteOnSheet(
   const existing = (current.data.values?.[0]?.[0] ?? "").toString();
   const updated = appendAdminNoteToText(existing, noteText);
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values: [[updated]] },
-  });
-
+  await writeCaseSummaryOnSheet(config, rowNumber, updated);
   return updated;
 }
 
@@ -312,7 +377,7 @@ export async function updateContactReasonOnSheet(
 async function updateSheetCellByRole(
   config: SheetConfig,
   rowNumber: number,
-  role: "reservationCode" | "listingId" | "airbnbUserId" | "userEmailed",
+  role: "reservationCode" | "listingId" | "airbnbUserId" | "userEmailed" | "ticketHeaderField",
   value: string
 ): Promise<void> {
   const auth = await getGoogleAuthClient();
@@ -325,9 +390,15 @@ async function updateSheetCellByRole(
         ? EXAMPLE_COLUMN_POSITIONS.listingId
         : role === "userEmailed"
           ? EXAMPLE_COLUMN_POSITIONS.userEmailed
-          : EXAMPLE_COLUMN_POSITIONS.airbnbUserId;
-  const col = getColumnByRole(config, role);
-  const letter = col?.letter ?? fallback.letter;
+          : role === "ticketHeaderField"
+            ? null
+            : EXAMPLE_COLUMN_POSITIONS.airbnbUserId;
+  const col =
+    role === "airbnbUserId" ? getAirbnbUserIdColumn(config) : getColumnByRole(config, role);
+  const letter = col?.letter ?? fallback?.letter;
+  if (!letter) {
+    throw new Error(`No sheet column mapped for ${role}`);
+  }
   const range = `'${config.sheetName}'!${letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
@@ -364,6 +435,50 @@ export async function updateAirbnbUserIdOnSheet(
   value: string
 ): Promise<void> {
   await updateSheetCellByRole(config, rowNumber, "airbnbUserId", value);
+}
+
+/** Writes any sheet column by 0-based index. */
+export async function updateSheetCellByIndex(
+  config: SheetConfig,
+  rowNumber: number,
+  columnIndex: number,
+  value: string
+): Promise<void> {
+  const auth = await getGoogleAuthClient();
+  if (!auth) throw new Error("Sign in with Google to update the sheet");
+
+  const col = config.columns.find((c) => c.index === columnIndex);
+  if (!col?.letter) {
+    throw new Error(`No sheet column at index ${columnIndex}`);
+  }
+  const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
+
+  const sheets = google.sheets({ version: "v4", auth });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: config.spreadsheetId,
+    range,
+    valueInputOption: "RAW",
+    requestBody: { values: [[value]] },
+  });
+}
+
+/** Writes ticket header field (mapped column under subject in CRM). */
+export async function updateTicketHeaderFieldOnSheet(
+  config: SheetConfig,
+  rowNumber: number,
+  value: string
+): Promise<void> {
+  await updateSheetCellByRole(config, rowNumber, "ticketHeaderField", value);
+}
+
+/** Writes a UI field slot value to its mapped sheet column. */
+export async function updateUiFieldOnSheet(
+  config: SheetConfig,
+  rowNumber: number,
+  columnIndex: number,
+  value: string
+): Promise<void> {
+  await updateSheetCellByIndex(config, rowNumber, columnIndex, value);
 }
 
 /** Marks the user-emailed column (default Column L) as Yes after a CRM outbound send. */

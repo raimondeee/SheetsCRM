@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-06-09T00:03:35.304Z",
+  "updatedAt": "2026-06-12T16:07:43.834Z",
   "managers": [
     {
       "name": "Alejandro Antonucci",
@@ -8,6 +8,10 @@
     {
       "name": "Alesia Georgiou",
       "email": "alesia.georgiou@ext.airbnb.com"
+    },
+    {
+      "name": "Alex Payette",
+      "email": "alex.payette@airbnb.com"
     },
     {
       "name": "Amar Koul",
@@ -86,7 +90,7 @@
       "email": "dario.cirella@airbnb.com"
     },
     {
-      "name": "Delmarshae Walker",
+      "name": "Delmarshae (aka, Shae)",
       "email": "delmarshae.walker@airbnb.com"
     },
     {
@@ -248,6 +252,10 @@
     {
       "name": "Mike Davidson",
       "email": "mike.davidson@airbnb.com"
+    },
+    {
+      "name": "Nick Martin",
+      "email": "nick.martin@airbnb.com"
     },
     {
       "name": "Olga Zilinska",

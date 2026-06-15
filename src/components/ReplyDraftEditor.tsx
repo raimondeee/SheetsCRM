@@ -7,15 +7,17 @@ import {
   useRef,
   useState,
   type FocusEvent,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { isRichTextEmpty } from "@/lib/html-utils";
+import { escapeHtml, isRichTextEmpty } from "@/lib/html-utils";
 import {
   Bold,
   ChevronDown,
   IndentDecrease,
   IndentIncrease,
   Italic,
+  Link2,
   List,
   ListOrdered,
   Underline,
@@ -30,6 +32,8 @@ const FONT_SIZES = [
 
 export interface ReplyDraftEditorHandle {
   focus: () => void;
+  /** Sync contentEditable DOM into parent state (e.g. before tab switch or page hide). */
+  flush: () => void;
 }
 
 interface ReplyDraftEditorProps {
@@ -38,6 +42,8 @@ interface ReplyDraftEditorProps {
   focused: boolean;
   onFocusChange: (focused: boolean) => void;
   placeholder?: string;
+  /** Fill space between header and send actions instead of a fixed expanded height. */
+  fillAvailable?: boolean;
 }
 
 function ToolbarButton({
@@ -68,21 +74,52 @@ function ToolbarButton({
   );
 }
 
+function normalizeLinkHref(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (/^(https?:\/\/|mailto:)/i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function findAnchorFromSelection(editor: HTMLElement): HTMLAnchorElement | null {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return null;
+  let node: Node | null = selection.anchorNode;
+  while (node && node !== editor) {
+    if (node.nodeName === "A") return node as HTMLAnchorElement;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function linkShortcutLabel(): string {
+  if (typeof navigator === "undefined") return "Ctrl+K";
+  return /mac/i.test(navigator.platform) ? "⌘K" : "Ctrl+K";
+}
+
 export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEditorProps>(
   function ReplyDraftEditor(
-    { value, onChange, focused, onFocusChange, placeholder },
+    { value, onChange, focused, onFocusChange, placeholder, fillAvailable = false },
     ref
   ) {
     const composerRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<HTMLDivElement>(null);
     const sizeMenuRef = useRef<HTMLDivElement>(null);
+    const linkDialogRef = useRef<HTMLDivElement>(null);
+    const linkUrlInputRef = useRef<HTMLInputElement>(null);
     const savedSelectionRef = useRef<Range | null>(null);
     const lastValueRef = useRef(value);
     const [sizeMenuOpen, setSizeMenuOpen] = useState(false);
+    const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+    const [linkUrl, setLinkUrl] = useState("");
+    const [linkHasSelection, setLinkHasSelection] = useState(false);
 
     useImperativeHandle(ref, () => ({
       focus: () => {
         editorRef.current?.focus();
+      },
+      flush: () => {
+        syncContent();
       },
     }));
 
@@ -105,16 +142,25 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
     }, [value]);
 
     useEffect(() => {
-      if (!sizeMenuOpen) return;
+      if (!sizeMenuOpen && !linkDialogOpen) return;
 
       function handlePointerDown(event: MouseEvent) {
-        if (sizeMenuRef.current?.contains(event.target as Node)) return;
+        const target = event.target as Node;
+        if (sizeMenuOpen && sizeMenuRef.current?.contains(target)) return;
+        if (linkDialogOpen && linkDialogRef.current?.contains(target)) return;
         setSizeMenuOpen(false);
+        setLinkDialogOpen(false);
       }
 
       document.addEventListener("mousedown", handlePointerDown);
       return () => document.removeEventListener("mousedown", handlePointerDown);
-    }, [sizeMenuOpen]);
+    }, [sizeMenuOpen, linkDialogOpen]);
+
+    useEffect(() => {
+      if (!linkDialogOpen) return;
+      linkUrlInputRef.current?.focus();
+      linkUrlInputRef.current?.select();
+    }, [linkDialogOpen]);
 
     function updateEmptyState(html: string) {
       editorRef.current?.setAttribute("data-empty", isRichTextEmpty(html) ? "true" : "false");
@@ -191,6 +237,65 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       syncContent();
     }
 
+    function openLinkDialog() {
+      saveSelection();
+      const editor = editorRef.current;
+      const selection = window.getSelection();
+      const selectedText = selection?.toString() ?? "";
+      const existingAnchor = editor ? findAnchorFromSelection(editor) : null;
+
+      setLinkHasSelection(selectedText.trim().length > 0);
+      setLinkUrl(existingAnchor?.getAttribute("href") ?? "");
+      setSizeMenuOpen(false);
+      setLinkDialogOpen(true);
+    }
+
+    function applyLink() {
+      const href = normalizeLinkHref(linkUrl);
+      if (!href) {
+        setLinkDialogOpen(false);
+        return;
+      }
+
+      ensureEditorFocus();
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const selection = window.getSelection();
+      const existingAnchor = findAnchorFromSelection(editor);
+
+      if (existingAnchor) {
+        existingAnchor.href = href;
+        existingAnchor.target = "_blank";
+        existingAnchor.rel = "noopener noreferrer";
+      } else if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+        document.execCommand("createLink", false, href);
+        const anchor = findAnchorFromSelection(editor);
+        if (anchor) {
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+        }
+      } else {
+        const label = href.replace(/^https?:\/\//i, "");
+        document.execCommand(
+          "insertHTML",
+          false,
+          `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
+        );
+      }
+
+      setLinkDialogOpen(false);
+      setLinkUrl("");
+      syncContent();
+    }
+
+    function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        openLinkDialog();
+      }
+    }
+
     function applyFontSize(size: string) {
       ensureEditorFocus();
       const selection = window.getSelection();
@@ -224,38 +329,56 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
     function handleComposerBlur(event: FocusEvent<HTMLDivElement>) {
       const next = event.relatedTarget as Node | null;
       if (next && composerRef.current?.contains(next)) return;
+      syncContent();
       onFocusChange(false);
       setSizeMenuOpen(false);
+      setLinkDialogOpen(false);
     }
+
+    const collapsedHeight = "4.5rem";
+    const expandedHeight = "16rem";
+    const useFlexFill = fillAvailable && focused;
 
     return (
       <div
         ref={composerRef}
         onFocusCapture={() => onFocusChange(true)}
         onBlurCapture={handleComposerBlur}
+        className={`flex w-full flex-col ${
+          fillAvailable ? (focused ? "min-h-0 flex-1" : "mt-auto shrink-0") : "shrink-0"
+        }`}
       >
         <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          role="textbox"
-          aria-multiline="true"
-          data-placeholder={placeholder}
-          data-empty="true"
-          onInput={syncContent}
-          onKeyUp={saveSelection}
-          onMouseUp={saveSelection}
-          onFocus={saveSelection}
-          style={
-            focused
-              ? { height: "25vh", minHeight: "4.5rem" }
-              : { height: "4.5rem", minHeight: "4.5rem" }
-          }
-          className={`reply-draft-editor w-full resize-none overflow-y-auto rounded border border-zendesk-border p-3 text-sm outline-none transition-[height,background-color,border-color] duration-200 ease-out focus:border-zendesk-green ${
-            focused ? "bg-sky-50/90" : "bg-sky-50/45"
+          className={`overflow-hidden transition-[height,flex] duration-200 ease-out ${
+            useFlexFill ? "min-h-[4.5rem] flex-1" : ""
           }`}
-        />
-        <div className="mt-1.5 flex flex-wrap items-center gap-0.5 rounded border border-zendesk-border bg-gray-50 px-1 py-0.5">
+          style={
+            useFlexFill
+              ? undefined
+              : { height: focused ? expandedHeight : collapsedHeight }
+          }
+        >
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            data-placeholder={placeholder}
+            data-empty="true"
+            onInput={syncContent}
+            onKeyDown={handleEditorKeyDown}
+            onKeyUp={saveSelection}
+            onMouseUp={saveSelection}
+            onFocus={saveSelection}
+            className={`reply-draft-editor h-full w-full resize-none overflow-y-auto rounded border p-3 text-sm outline-none transition-[background-color,border-color] duration-200 ease-out focus:border-zendesk-green ${
+              focused
+                ? "border-sky-300 bg-sky-100"
+                : "border-sky-200/70 bg-sky-100/65"
+            }`}
+          />
+        </div>
+        <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-0.5 rounded border border-zendesk-border bg-gray-50 px-1 py-0.5">
           <ToolbarButton title="Bold" onMouseDown={saveSelection} onClick={() => runCommand("bold")}>
             <Bold className="h-3.5 w-3.5" />
           </ToolbarButton>
@@ -273,6 +396,61 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
           >
             <Underline className="h-3.5 w-3.5" />
           </ToolbarButton>
+          <div ref={linkDialogRef} className="relative">
+            <ToolbarButton
+              title={`Insert link (${linkShortcutLabel()})`}
+              onMouseDown={saveSelection}
+              onClick={openLinkDialog}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+            </ToolbarButton>
+            {linkDialogOpen && (
+              <div className="absolute bottom-full left-0 z-30 mb-1 w-64 rounded border border-zendesk-border bg-white p-2 shadow-lg">
+                <label className="block text-[10px] font-medium text-zendesk-muted">
+                  Link URL
+                </label>
+                <input
+                  ref={linkUrlInputRef}
+                  type="url"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyLink();
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setLinkDialogOpen(false);
+                    }
+                  }}
+                  placeholder="https://…"
+                  className="mt-1 w-full rounded border border-zendesk-border px-2 py-1.5 text-xs outline-none focus:border-zendesk-green"
+                />
+                <p className="mt-1 text-[10px] text-zendesk-muted">
+                  {linkHasSelection
+                    ? "Applies to selected text."
+                    : "Inserts the URL as link text."}
+                </p>
+                <div className="mt-2 flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setLinkDialogOpen(false)}
+                    className="rounded px-2 py-1 text-[11px] text-zendesk-muted hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyLink}
+                    className="rounded bg-zendesk-green px-2 py-1 text-[11px] font-medium text-white hover:opacity-90"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <span className="mx-1 h-4 w-px bg-zendesk-border" aria-hidden />
           <div ref={sizeMenuRef} className="relative">
             <button

@@ -1,22 +1,58 @@
 import { NextResponse } from "next/server";
 import {
+  appendAdminNoteToOverlay,
+  clearInitialResponseSla,
   updateTicketStatus,
   updateTicketSla,
   updateTicketSubject,
   updateTicketAirbnbUserId,
   updateTicketContactReason,
+  updateTicketLinkedCase,
   loadSheetConfig,
 } from "@/lib/overlay-db";
-import { mapCrmStatusToSheetValue, normalizeStatusId } from "@/lib/status-mapper";
 import {
-  appendAdminNoteOnSheet,
+  crmStatusLabel,
+  mapCrmStatusToSheetValue,
+  normalizeStatusId,
+} from "@/lib/status-mapper";
+import {
   updateAirbnbUserIdOnSheet,
   updateContactReasonOnSheet,
   updateListingIdOnSheet,
   updateReservationCodeOnSheet,
   updateSheetStatusOnSheet,
+  updateTicketHeaderFieldOnSheet,
+  updateUiFieldOnSheet,
+  writeCaseSummaryOnSheet,
 } from "@/lib/sheets";
+import { resolveUiFieldColumn } from "@/lib/ui-field-slots";
+import { loadTimerSettings } from "@/lib/crm-preferences-store";
+import { markTicketGmailThreadAsRead } from "@/lib/gmail";
+import { getSignedInUser } from "@/lib/google-auth";
 import { parseTicketRowId } from "@/lib/types";
+import type { SheetConfig } from "@/lib/types";
+
+function queueSheetSync(label: string, task: () => Promise<void>): void {
+  void task().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[SheetsCRM sheet sync] ${label}:`, message);
+  });
+}
+
+function sheetContext(rowId: string): {
+  config: SheetConfig | null;
+  rowNumber: number | null;
+} {
+  if (process.env.USE_MOCK_DATA === "true") {
+    return { config: null, rowNumber: null };
+  }
+  const config = loadSheetConfig("default");
+  const parsed = parseTicketRowId(rowId);
+  return {
+    config: config ?? null,
+    rowNumber: parsed?.rowNumber ?? null,
+  };
+}
 
 export async function PATCH(request: Request) {
   try {
@@ -29,8 +65,17 @@ export async function PATCH(request: Request) {
       airbnbUserId,
       reservationCode,
       listingId,
+      headerField,
+      uiFieldSlotId,
+      uiFieldValue,
       slaHours,
       contactReason,
+      clearInitialResponseSla: clearInitialResponseSlaFlag,
+      linkedCaseIndex,
+      linkedCaseUrl,
+      intakeTimestamp,
+      requesterEmail,
+      pendingReopenHours,
     } = body as {
       rowId: string;
       status?: string;
@@ -39,95 +84,170 @@ export async function PATCH(request: Request) {
       airbnbUserId?: string;
       reservationCode?: string;
       listingId?: string;
+      headerField?: string;
+      uiFieldSlotId?: string;
+      uiFieldValue?: string;
       slaHours?: number;
       contactReason?: string;
+      clearInitialResponseSla?: boolean;
+      linkedCaseIndex?: number;
+      linkedCaseUrl?: string;
+      intakeTimestamp?: string;
+      requesterEmail?: string;
+      pendingReopenHours?: number | null;
     };
 
     let updatedAdminNotes: string | undefined;
+    let updatedStatus: string | undefined;
+    let updatedSheetStatus: string | undefined;
+    let updatedStatusChangedAt: string | null | undefined;
+    let updatedSlaDueAt: string | null | undefined;
 
     if (!rowId) {
       return NextResponse.json({ error: "rowId is required" }, { status: 400 });
     }
 
+    const { config, rowNumber } = sheetContext(rowId);
+    const canSyncSheet = Boolean(config && rowNumber);
+
     if (status) {
       const normalizedStatus = normalizeStatusId(status);
-      updateTicketStatus(rowId, normalizedStatus);
+      const { email } = await getSignedInUser();
+      const timerSettings = loadTimerSettings(email);
+      const timerFields = updateTicketStatus(
+        rowId,
+        normalizedStatus,
+        timerSettings,
+        intakeTimestamp,
+        typeof pendingReopenHours === "number"
+          ? { pendingReopenHours }
+          : undefined
+      );
+      updatedStatus = normalizedStatus;
+      updatedStatusChangedAt = timerFields.statusChangedAt;
+      updatedSlaDueAt = timerFields.slaDueAt;
+      updatedSheetStatus = crmStatusLabel(normalizedStatus);
+
       const sheetStatusValue = mapCrmStatusToSheetValue(normalizedStatus);
-      if (sheetStatusValue && process.env.USE_MOCK_DATA !== "true") {
-        const config = loadSheetConfig("default");
-        const parsed = parseTicketRowId(rowId);
-        if (!config || !parsed) {
-          return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
+      if (sheetStatusValue && canSyncSheet) {
+        queueSheetSync("status", () =>
+          updateSheetStatusOnSheet(config!, rowNumber!, sheetStatusValue)
+        );
+      }
+
+      if (process.env.USE_MOCK_DATA !== "true") {
+        try {
+          const marked = await markTicketGmailThreadAsRead({
+            ticketRowId: rowId,
+            requesterEmail,
+          });
+          if (!marked) {
+            console.warn(
+              `[SheetsCRM Gmail] mark read (${rowId}): no linked thread or Gmail modify failed`
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`[SheetsCRM Gmail] mark read (${rowId}):`, message);
         }
-        await updateSheetStatusOnSheet(config, parsed.rowNumber, sheetStatusValue);
       }
     }
+
     if (typeof contactReason === "string") {
       const trimmed = contactReason.trim();
-      if (process.env.USE_MOCK_DATA !== "true") {
-        const config = loadSheetConfig("default");
-        const parsed = parseTicketRowId(rowId);
-        if (!config || !parsed) {
-          return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
-        }
-        await updateContactReasonOnSheet(config, parsed.rowNumber, trimmed);
-      }
       updateTicketContactReason(rowId, trimmed);
+      if (canSyncSheet) {
+        queueSheetSync("contactReason", () =>
+          updateContactReasonOnSheet(config!, rowNumber!, trimmed)
+        );
+      }
     }
+
     if (typeof subject === "string") updateTicketSubject(rowId, subject);
+
     if (typeof appendAdminNote === "string" && appendAdminNote.trim()) {
       if (process.env.USE_MOCK_DATA === "true") {
         return NextResponse.json({ error: "Admin notes sync requires live sheet data" }, { status: 400 });
       }
-      const config = loadSheetConfig("default");
-      const parsed = parseTicketRowId(rowId);
-      if (!config || !parsed) {
+      if (!canSyncSheet) {
         return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
       }
-      updatedAdminNotes = await appendAdminNoteOnSheet(
-        config,
-        parsed.rowNumber,
-        appendAdminNote.trim()
+      const note = appendAdminNote.trim();
+      updatedAdminNotes = appendAdminNoteToOverlay(rowId, note);
+      queueSheetSync("adminNote", () =>
+        writeCaseSummaryOnSheet(config!, rowNumber!, updatedAdminNotes!)
       );
     }
+
     if (typeof airbnbUserId === "string") {
-      const useMock = process.env.USE_MOCK_DATA === "true";
-      if (!useMock) {
-        const config = loadSheetConfig("default");
-        const parsed = parseTicketRowId(rowId);
-        if (!config || !parsed) {
-          return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
-        }
-        await updateAirbnbUserIdOnSheet(config, parsed.rowNumber, airbnbUserId.trim());
+      const trimmed = airbnbUserId.trim();
+      updateTicketAirbnbUserId(rowId, trimmed);
+      if (canSyncSheet) {
+        queueSheetSync("airbnbUserId", () =>
+          updateAirbnbUserIdOnSheet(config!, rowNumber!, trimmed)
+        );
       }
-      updateTicketAirbnbUserId(rowId, airbnbUserId.trim());
-    }
-    if (typeof reservationCode === "string") {
-      if (process.env.USE_MOCK_DATA !== "true") {
-        const config = loadSheetConfig("default");
-        const parsed = parseTicketRowId(rowId);
-        if (!config || !parsed) {
-          return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
-        }
-        await updateReservationCodeOnSheet(config, parsed.rowNumber, reservationCode.trim());
-      }
-    }
-    if (typeof listingId === "string") {
-      if (process.env.USE_MOCK_DATA !== "true") {
-        const config = loadSheetConfig("default");
-        const parsed = parseTicketRowId(rowId);
-        if (!config || !parsed) {
-          return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
-        }
-        await updateListingIdOnSheet(config, parsed.rowNumber, listingId.trim());
-      }
-    }
-    if (typeof slaHours === "number") {
-      const slaDueAt = new Date(Date.now() + slaHours * 60 * 60 * 1000).toISOString();
-      updateTicketSla(rowId, slaHours, slaDueAt);
     }
 
-    return NextResponse.json({ ok: true, adminNotes: updatedAdminNotes });
+    if (typeof reservationCode === "string" && canSyncSheet) {
+      queueSheetSync("reservationCode", () =>
+        updateReservationCodeOnSheet(config!, rowNumber!, reservationCode.trim())
+      );
+    }
+
+    if (typeof listingId === "string" && canSyncSheet) {
+      queueSheetSync("listingId", () =>
+        updateListingIdOnSheet(config!, rowNumber!, listingId.trim())
+      );
+    }
+
+    if (typeof headerField === "string" && canSyncSheet) {
+      queueSheetSync("headerField", () =>
+        updateTicketHeaderFieldOnSheet(config!, rowNumber!, headerField.trim())
+      );
+    }
+
+    if (
+      typeof uiFieldSlotId === "string" &&
+      typeof uiFieldValue === "string" &&
+      canSyncSheet
+    ) {
+      const col = resolveUiFieldColumn(config!, uiFieldSlotId);
+      if (col) {
+        queueSheetSync(`uiField:${uiFieldSlotId}`, () =>
+          updateUiFieldOnSheet(config!, rowNumber!, col.index, uiFieldValue.trim())
+        );
+      }
+    }
+
+    if (typeof slaHours === "number" && intakeTimestamp) {
+      const { email } = await getSignedInUser();
+      const timerSettings = loadTimerSettings(email);
+      updatedSlaDueAt = updateTicketSla(rowId, slaHours, intakeTimestamp, timerSettings);
+    }
+
+    if (clearInitialResponseSlaFlag === true) {
+      clearInitialResponseSla(rowId);
+    }
+
+    if (
+      typeof linkedCaseIndex === "number" &&
+      linkedCaseIndex >= 0 &&
+      linkedCaseIndex <= 2 &&
+      typeof linkedCaseUrl === "string"
+    ) {
+      updateTicketLinkedCase(rowId, linkedCaseIndex as 0 | 1 | 2, linkedCaseUrl);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      adminNotes: updatedAdminNotes,
+      status: updatedStatus,
+      sheetStatus: updatedSheetStatus,
+      statusChangedAt: updatedStatusChangedAt,
+      slaDueAt: updatedSlaDueAt,
+      sheetSyncQueued: canSyncSheet,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Update failed";
     return NextResponse.json({ error: message }, { status: 500 });

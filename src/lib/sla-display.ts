@@ -1,9 +1,17 @@
 import { parseSheetTimestamp } from "./ticket-activity";
+import { normalizeStatusId } from "./status-mapper";
+import { DEFAULT_TIMER_SETTINGS } from "./timer-settings";
 import type { Ticket } from "./types";
 
-export const DEFAULT_SLA_HOURS = 48;
+export const DEFAULT_SLA_HOURS = DEFAULT_TIMER_SETTINGS.defaultSlaHours;
 
-/** Intake submitted before today (local) — pre-CRM imports should not show SLA. */
+/** Response / initial-response SLAs do not apply once a ticket is closed out. */
+export function isResponseSlaEligibleStatus(status: string): boolean {
+  const normalized = normalizeStatusId(status);
+  return normalized !== "resolved" && normalized !== "do_not_action";
+}
+
+/** Intake submitted before today (local) — pre-CRM imports should not show initial-response badge. */
 export function isLegacyIntakeTicket(timestamp: string, now = new Date()): boolean {
   const intake = parseSheetTimestamp(timestamp);
   if (!intake) return false;
@@ -13,11 +21,21 @@ export function isLegacyIntakeTicket(timestamp: string, now = new Date()): boole
   return intake.getTime() < startOfToday.getTime();
 }
 
-export function shouldShowSlaTimer(ticket: Pick<Ticket, "status" | "timestamp">): boolean {
-  if (ticket.status === "resolved" || ticket.status === "solved") return false;
-  if (ticket.status === "do_not_action") return false;
-  if (isLegacyIntakeTicket(ticket.timestamp)) return false;
+/** Response SLA applies while Open and the customer is waiting for our reply. */
+export function shouldShowResponseSla(
+  ticket: Pick<Ticket, "status">,
+  latestDirection?: "inbound" | "outbound" | null
+): boolean {
+  if (!isResponseSlaEligibleStatus(ticket.status)) return false;
+  const status = normalizeStatusId(ticket.status);
+  if (status === "pending" || status === "longterm_hold") return false;
+  if (latestDirection === "outbound") return false;
   return true;
+}
+
+/** @deprecated Use shouldShowResponseSla */
+export function shouldShowSlaTimer(ticket: Pick<Ticket, "status" | "timestamp">): boolean {
+  return shouldShowResponseSla(ticket);
 }
 
 export type SlaCountdownTone = "green" | "amber" | "red" | "muted";
@@ -27,13 +45,29 @@ export interface SlaCountdownPreview {
   tone: SlaCountdownTone;
 }
 
+export function computeResponseSlaDueAt(anchorIso: string, slaHours: number): string {
+  const anchor = new Date(anchorIso);
+  const base = Number.isNaN(anchor.getTime()) ? Date.now() : anchor.getTime();
+  return new Date(base + slaHours * 60 * 60 * 1000).toISOString();
+}
+
+/** Anchor = latest inbound thread message, else form intake time. */
+export function resolveResponseSlaAnchor(
+  latestInboundAt: string | null,
+  intakeTimestamp: string
+): string | null {
+  if (latestInboundAt) return latestInboundAt;
+  const intake = parseSheetTimestamp(intakeTimestamp);
+  return intake?.toISOString() ?? null;
+}
+
 export function computeDefaultSlaDueAt(timestamp: string, slaHours = DEFAULT_SLA_HOURS): string {
   const intakeAt = parseSheetTimestamp(timestamp) ?? new Date();
-  return new Date(intakeAt.getTime() + slaHours * 60 * 60 * 1000).toISOString();
+  return computeResponseSlaDueAt(intakeAt.toISOString(), slaHours);
 }
 
 export function getSlaCountdownPreviewForTicket(ticket: Ticket): SlaCountdownPreview | null {
-  if (!shouldShowSlaTimer(ticket)) return null;
+  if (!shouldShowResponseSla(ticket) || !ticket.slaDueAt) return null;
   return getSlaCountdownPreview(ticket.slaDueAt);
 }
 

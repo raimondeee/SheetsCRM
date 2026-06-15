@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Search, Star, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Search, Star, X } from "lucide-react";
 import { prepareMixmaxTemplateHtml } from "@/lib/html-utils";
 import {
   loadMixmaxStarredTemplateIds,
@@ -24,17 +24,17 @@ interface MixmaxTemplatePickerProps {
   onExpandedChange?: (expanded: boolean) => void;
 }
 
+const MIXMAX_DASHBOARD_URL = "https://app.mixmax.com/dashboard/live/all";
+
 function SectionToggle({
   expanded,
   onToggle,
   children,
-  subtitle,
   collapseIcon = false,
 }: {
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
-  subtitle?: string;
   collapseIcon?: boolean;
 }) {
   return (
@@ -53,14 +53,7 @@ function SectionToggle({
           }`}
         />
       )}
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs font-semibold uppercase text-zendesk-muted">{children}</span>
-        {subtitle && (
-          <span className="mt-0.5 block text-[10px] font-normal normal-case text-zendesk-muted">
-            {subtitle}
-          </span>
-        )}
-      </span>
+      <span className="block text-xs font-semibold uppercase text-zendesk-muted">{children}</span>
     </button>
   );
 }
@@ -149,7 +142,7 @@ export function MixmaxTemplatePicker({
       <>
         {expanded && (
           <div
-            className="absolute inset-x-0 bottom-0 top-0 z-20 flex min-h-0 flex-col border-t border-zendesk-border bg-white shadow-[0_-10px_40px_rgba(15,23,42,0.18)]"
+            className="absolute inset-x-0 bottom-0 top-0 z-20 flex min-h-0 flex-col border-t border-zendesk-border bg-white shadow-xl"
             role="dialog"
             aria-label="Mixmax templates"
           >
@@ -161,19 +154,14 @@ export function MixmaxTemplatePicker({
                 aria-label="Collapse Mixmax templates"
               >
                 <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold uppercase text-zendesk-muted">
-                    Mixmax templates
-                  </span>
-                  <span className="mt-0.5 block text-[10px] font-normal normal-case text-zendesk-muted">
-                    Expands over tools — collapse to use sidebar links
-                  </span>
+                <span className="block text-xs font-semibold uppercase text-zendesk-muted">
+                  Mixmax templates
                 </span>
               </button>
               <button
                 type="button"
                 onClick={() => setExpandedState(false)}
-                className="shrink-0 rounded border border-zendesk-border p-1.5 text-zendesk-muted hover:bg-gray-50 hover:text-zendesk-navy"
+                className="shrink-0 rounded border border-zendesk-border p-1.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
                 aria-label="Close Mixmax templates"
                 title="Collapse (Esc)"
               >
@@ -181,11 +169,20 @@ export function MixmaxTemplatePicker({
               </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 pt-2">{content}</div>
-            <div className="shrink-0 border-t border-zendesk-border bg-gray-50 px-3 py-2">
+            <div className="shrink-0 space-y-2 border-t border-zendesk-border bg-gray-50 px-3 py-2">
+              <a
+                href={MIXMAX_DASHBOARD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+              >
+                Open Mixmax
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
               <button
                 type="button"
                 onClick={() => setExpandedState(false)}
-                className="w-full rounded border border-zendesk-border bg-white px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50"
+                className="w-full rounded border border-zendesk-border bg-white px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100"
               >
                 Collapse templates
               </button>
@@ -194,11 +191,7 @@ export function MixmaxTemplatePicker({
         )}
         {!expanded && (
           <div className={collapsedBarClass}>
-            <SectionToggle
-              expanded={expanded}
-              onToggle={toggleExpanded}
-              subtitle="Click to browse your templates"
-            >
+            <SectionToggle expanded={expanded} onToggle={toggleExpanded}>
               Mixmax templates
             </SectionToggle>
           </div>
@@ -211,7 +204,7 @@ export function MixmaxTemplatePicker({
     return (
       <>
         {expanded && (
-          <div className="absolute inset-x-0 bottom-0 top-0 z-20 flex flex-col border-t border-zendesk-border bg-white p-4 shadow-[0_-10px_40px_rgba(15,23,42,0.18)]">
+          <div className="absolute inset-x-0 bottom-0 top-0 z-20 flex flex-col border-t border-zendesk-border bg-white p-4 shadow-xl">
             <SectionToggle expanded collapseIcon onToggle={() => setExpandedState(false)}>
               Mixmax templates
             </SectionToggle>
@@ -285,7 +278,7 @@ export function MixmaxTemplatePicker({
                   );
                   onApply({ subject, body });
                 }}
-                className="min-w-0 flex-1 rounded border border-zendesk-border bg-white px-2 py-1.5 text-left text-xs hover:border-zendesk-green hover:bg-green-50/50"
+                className="min-w-0 flex-1 rounded border border-zendesk-border bg-white px-2 py-1.5 text-left text-xs hover:border-zendesk-green hover:bg-green-50"
               >
                 <span className="block font-medium leading-tight">{template.name}</span>
                 {template.title && template.title !== template.name && (
@@ -303,10 +296,6 @@ export function MixmaxTemplatePicker({
           );
         })}
       </ul>
-      <p className="mt-2 shrink-0 text-[10px] text-zendesk-muted">
-        Fills {"{{first name}}"} and similar placeholders from the ticket name on the intake sheet.
-        Use &quot;Open in Gmail&quot; for remaining Mixmax compose features.
-      </p>
     </>
   );
 }

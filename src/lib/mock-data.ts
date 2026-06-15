@@ -1,12 +1,24 @@
 import type { Ticket } from "./types";
 import { EXAMPLE_SPREADSHEET_ID } from "./default-sheet-config";
 import { mergeOverlayOntoTicket } from "./overlay-db";
+import { DEFAULT_TIMER_SETTINGS, type TimerSettings } from "./timer-settings";
 
 /** Mock tickets mirroring example sheet column layout (K/M/R/N positions) */
-export function getMockTickets(): Ticket[] {
+export function getMockTickets(
+  timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS
+): Ticket[] {
   const base: Omit<
     Ticket,
-    "status" | "slaHours" | "slaDueAt" | "slaBreached" | "lastResponseAt" | "needsInitialResponse"
+    | "status"
+    | "statusChangedAt"
+    | "pendingReopenHours"
+    | "gmailOpenUrl"
+    | "linkedCases"
+    | "slaHours"
+    | "slaDueAt"
+    | "slaBreached"
+    | "lastResponseAt"
+    | "needsInitialResponse"
   >[] = [
     {
       rowId: `${EXAMPLE_SPREADSHEET_ID}:Form Responses:2`,
@@ -17,7 +29,10 @@ export function getMockTickets(): Ticket[] {
       requesterEmail: "alex.morgan@acmecorp.com",
       columnD: "alex.morgan@acmecorp.com",
       requesterName: "Alex Morgan",
+      headerField: "",
+      uiFields: {},
       subject: "Billing discrepancy on invoice #8842",
+      crmSubjectLabel: "",
       description:
         "We were charged twice for the March subscription. Please review and issue a credit.",
       contactReason: "Billing",
@@ -44,7 +59,10 @@ export function getMockTickets(): Ticket[] {
       requesterEmail: "sarah.kim@northwind.io",
       columnD: "sarah.kim@northwind.io",
       requesterName: "Sarah Kim",
+      headerField: "",
+      uiFields: {},
       subject: "API rate limit increase request",
+      crmSubjectLabel: "",
       description: "Our production traffic spiked. Need temporary rate limit bump for 48h.",
       contactReason: "API access",
       marketManager: "sam.patel@ext.airbnb.com",
@@ -70,7 +88,10 @@ export function getMockTickets(): Ticket[] {
       requesterEmail: "devops@brightline.co",
       columnD: "devops@brightline.co",
       requesterName: "Brightline DevOps",
+      headerField: "",
+      uiFields: {},
       subject: "SSO configuration failing for Okta",
+      crmSubjectLabel: "",
       description: "SAML assertion rejected after cert rotation yesterday.",
       contactReason: "SSO / Login",
       marketManager: "Alex Kim",
@@ -93,11 +114,15 @@ export function getMockTickets(): Ticket[] {
     mergeOverlayOntoTicket({
       ...t,
       status: "new",
-      slaHours: 48,
+      statusChangedAt: null,
+      pendingReopenHours: null,
+      gmailOpenUrl: null,
+      linkedCases: ["", "", ""],
+      slaHours: timerSettings.defaultSlaHours,
       slaDueAt: null,
       slaBreached: false,
       lastResponseAt: null,
       needsInitialResponse: false,
-    })
+    }, undefined, timerSettings)
   );
 }

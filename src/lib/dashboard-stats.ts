@@ -1,3 +1,5 @@
+import type { DashboardPeriod } from "./dashboard-period";
+import { dashboardPeriodDays, dashboardPeriodLabel } from "./dashboard-period";
 import type { Ticket } from "./types";
 import { parseSheetTimestamp } from "./ticket-activity";
 
@@ -39,65 +41,108 @@ export interface StackedGroup {
   total: number;
 }
 
+export interface MonthSeriesPoint {
+  monthLabel: string;
+  monthStart: string;
+  total: number;
+  cases: number;
+}
+
+export interface HostsByMarketManagerGroup {
+  marketManager: string;
+  hosts: CountItem[];
+  total: number;
+}
+
 export interface DashboardStats {
+  period: DashboardPeriod;
+  periodLabel: string;
   totalTickets: number;
-  windowWeeks: number;
-  contactReasonAllTime: CountItem[];
-  marketManagerAllTime: CountItem[];
+  periodTicketCount: number;
+  contactReasonBreakdown: CountItem[];
+  marketManagerBreakdown: CountItem[];
   contactReasonByWeek: WeekSeriesPoint[];
   contactReasonWeekKeys: string[];
   contactReasonByMM: StackedGroup[];
   casesByWeek: WeekSeriesPoint[];
+  casesByMonth: MonthSeriesPoint[];
   statusByWeek: WeekSeriesPoint[];
   topRegionalHosts: CountItem[];
+  topHostsByMarketManager: HostsByMarketManagerGroup[];
   appealsBySA: StackedGroup[];
   overturnByAgent: StackedGroup[];
   appealCsVsPolicy: StackedGroup[];
   appealFieldsDetected: boolean;
 }
 
-export function buildDashboardStats(tickets: Ticket[]): DashboardStats {
-  const windowed = filterTicketsInWeekWindow(tickets, DASHBOARD_WEEK_COUNT);
-  const contactReasonAllTime = countBy(tickets, (t) => normalizeLabel(t.contactReason, "Other"));
-  const marketManagerAllTime = countBy(tickets, (t) => shortMarketManagerLabel(t.marketManager));
-  const contactReasonWeekKeys = topKeys(
-    countBy(windowed, (t) => normalizeLabel(t.contactReason, "Other")),
-    9
+export function filterTicketsByPeriod(
+  tickets: Ticket[],
+  period: DashboardPeriod
+): Ticket[] {
+  const days = dashboardPeriodDays(period);
+  if (days === null) return tickets;
+
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - days);
+
+  return tickets.filter((t) => {
+    const d = parseSheetTimestamp(t.timestamp);
+    return d && d >= cutoff;
+  });
+}
+
+export function buildDashboardStats(
+  tickets: Ticket[],
+  period: DashboardPeriod = "3m"
+): DashboardStats {
+  const inPeriod = filterTicketsByPeriod(tickets, period);
+  const contactReasonBreakdown = countBy(inPeriod, (t) =>
+    normalizeLabel(t.contactReason, "Other")
   );
+  const marketManagerBreakdown = countBy(inPeriod, (t) =>
+    shortMarketManagerLabel(t.marketManager)
+  );
+  const contactReasonWeekKeys = topKeys(contactReasonBreakdown, 9);
   const contactReasonByWeek = buildWeeklyStack(
-    windowed,
+    inPeriod,
     (t) => normalizeLabel(t.contactReason, "Other"),
     contactReasonWeekKeys,
     "Other"
   );
-  const topMMs = topKeys(marketManagerAllTime, 6);
+  const topMMs = topKeys(marketManagerBreakdown, 6);
   const contactReasonByMM = buildGroupedStack(
-    tickets.filter((t) => topMMs.includes(shortMarketManagerLabel(t.marketManager))),
+    inPeriod.filter((t) => topMMs.includes(shortMarketManagerLabel(t.marketManager))),
     (t) => shortMarketManagerLabel(t.marketManager),
     (t) => normalizeLabel(t.contactReason, "Other"),
     topMMs
   );
-  const casesByWeek = buildWeeklyTotals(windowed);
-  const statusByWeek = buildStatusByWeek(windowed);
-  const topRegionalHosts = countBy(tickets, (t) => normalizeLabel(t.requesterName, "Unknown")).slice(
-    0,
-    5
-  );
-  const appealsBySA = buildAppealStacks(tickets, "sa");
-  const overturnByAgent = buildAppealStacks(tickets, "overturn");
-  const appealCsVsPolicy = buildAppealStacks(tickets, "csPolicy");
+  const casesByWeek = buildWeeklyTotals(inPeriod);
+  const casesByMonth = buildMonthlyTotals(inPeriod);
+  const statusByWeek = buildStatusByWeek(inPeriod);
+  const topRegionalHosts = countBy(inPeriod, (t) =>
+    hostContactLabel(t)
+  ).slice(0, 10);
+  const topHostsByMarketManager = buildTopHostsByMarketManager(inPeriod, topMMs);
+  const appealsBySA = buildAppealStacks(inPeriod, "sa");
+  const overturnByAgent = buildAppealStacks(inPeriod, "overturn");
+  const appealCsVsPolicy = buildAppealStacks(inPeriod, "csPolicy");
 
   return {
+    period,
+    periodLabel: dashboardPeriodLabel(period),
     totalTickets: tickets.length,
-    windowWeeks: DASHBOARD_WEEK_COUNT,
-    contactReasonAllTime,
-    marketManagerAllTime,
+    periodTicketCount: inPeriod.length,
+    contactReasonBreakdown,
+    marketManagerBreakdown,
     contactReasonByWeek,
     contactReasonWeekKeys,
     contactReasonByMM,
     casesByWeek,
+    casesByMonth,
     statusByWeek,
     topRegionalHosts,
+    topHostsByMarketManager,
     appealsBySA: appealsBySA.groups,
     overturnByAgent: overturnByAgent.groups,
     appealCsVsPolicy: appealCsVsPolicy.groups,
@@ -106,14 +151,62 @@ export function buildDashboardStats(tickets: Ticket[]): DashboardStats {
   };
 }
 
-function filterTicketsInWeekWindow(tickets: Ticket[], weeks: number): Ticket[] {
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - weeks * 7);
-  return tickets.filter((t) => {
-    const d = parseSheetTimestamp(t.timestamp);
-    return d && d >= cutoff;
+function hostContactLabel(ticket: Ticket): string {
+  const name = ticket.requesterName.trim();
+  const email = ticket.requesterEmail.trim();
+  if (name && email) return `${name} (${email})`;
+  return name || email || "Unknown";
+}
+
+function buildTopHostsByMarketManager(
+  tickets: Ticket[],
+  marketManagers: string[],
+  hostsPerMm = 5
+): HostsByMarketManagerGroup[] {
+  const map = new Map<string, Map<string, number>>();
+
+  for (const ticket of tickets) {
+    const mm = shortMarketManagerLabel(ticket.marketManager);
+    if (!marketManagers.includes(mm)) continue;
+    const host = hostContactLabel(ticket);
+    if (!map.has(mm)) map.set(mm, new Map());
+    const hosts = map.get(mm)!;
+    hosts.set(host, (hosts.get(host) ?? 0) + 1);
+  }
+
+  return marketManagers.map((marketManager) => {
+    const hostsMap = map.get(marketManager) ?? new Map();
+    const hosts = [...hostsMap.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, hostsPerMm);
+    const total = hosts.reduce((sum, h) => sum + h.value, 0);
+    return { marketManager, hosts, total };
   });
+}
+
+function buildMonthlyTotals(tickets: Ticket[]): MonthSeriesPoint[] {
+  const map = new Map<string, number>();
+
+  for (const ticket of tickets) {
+    const d = parseSheetTimestamp(ticket.timestamp);
+    if (!d) continue;
+    const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+    const monthKey = monthStart.toISOString();
+    map.set(monthKey, (map.get(monthKey) ?? 0) + 1);
+  }
+
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([monthKey, total]) => {
+      const monthStart = new Date(monthKey);
+      return {
+        monthLabel: monthStart.toLocaleString(undefined, { month: "short", year: "numeric" }),
+        monthStart: monthKey,
+        total,
+        cases: total,
+      };
+    });
 }
 
 function getWeekStartSunday(date: Date): Date {

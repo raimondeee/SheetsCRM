@@ -6,6 +6,11 @@ export const COLUMN_ROLE_OPTIONS: { value: ColumnRole; label: string; hint?: str
   { value: "timestamp", label: "Timestamp" },
   { value: "email", label: "Requester email" },
   { value: "name", label: "Requester name", hint: "Used for Mixmax {{first name}} placeholders" },
+  {
+    value: "ticketHeaderField",
+    label: "Ticket header field",
+    hint: "Editable under the subject line in ticket view",
+  },
   { value: "subject", label: "Subject" },
   { value: "description", label: "Description / message" },
   { value: "marketManager", label: "Market Manager", hint: "Read-only in CRM" },

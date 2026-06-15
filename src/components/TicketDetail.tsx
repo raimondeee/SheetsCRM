@@ -1,52 +1,108 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import type { Ticket, ThreadMessage } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";
-import {
-  buildGmailMessageUrl,
-  buildGmailSearchUrl,
-  buildGmailThreadUrl,
-} from "@/lib/gmail-urls";
+import { buildGmailMessageUrl } from "@/lib/gmail-urls";
 import { buildSalesforceUnifiedSearchUrl } from "@/lib/salesforce";
 import {
   buildNovaListingUrl,
   buildNovaProfileUrl,
   buildNovaReservationUrl,
 } from "@/lib/nova-urls";
+import { getSheetColumnAirbnbUserId } from "@/lib/airbnb-user-id";
 import { ADMIN_LOGOUT_URL, buildBecomeUserUrl, isNumericUserId } from "@/lib/become-user-url";
 import type { MarketManager } from "@/lib/market-managers";
 import { resolveMarketManagerEmail } from "@/lib/market-managers";
+import type { SetupModalTab } from "./SetupModal";
 import { MixmaxTemplatePicker } from "./MixmaxTemplatePicker";
+import { SendArchivePanel } from "./SendArchivePanel";
+import { TrustEscalationsModal } from "./TrustEscalationsModal";
 import { ReplyDraftEditor, type ReplyDraftEditorHandle } from "./ReplyDraftEditor";
 import {
   buildEmailSubject,
   EMAIL_SUBJECT_PREFIX,
+  emailSubjectSuffixFromStored,
+  isEmailSubjectSuffixFilled,
   stripEmailSubjectPrefix,
 } from "@/lib/email-subject";
 import { isRichTextEmpty, normalizeDraftHtml } from "@/lib/html-utils";
-import { shouldShowSlaTimer } from "@/lib/sla-display";
-import { clearReplyDraft, loadReplyDraft, saveReplyDraft } from "@/lib/reply-drafts";
-import { loadComposePrefs, saveComposePrefs } from "@/lib/ticket-compose-prefs";
+import { shouldShowResponseSla } from "@/lib/sla-display";
 import {
-  ChevronRight,
+  PENDING_WITHOUT_EMAIL_HOURS_OPTIONS,
+  pendingWithoutEmailAdminNote,
+  RESOLVED_WITHOUT_EMAIL_NOTE,
+  type PendingWithoutEmailHours,
+} from "@/lib/admin-notes";
+import {
+  formatFileSize,
+  MAX_OUTBOUND_ATTACHMENTS,
+} from "@/lib/gmail-attachments";
+import {
+  validateReplyAttachmentFiles,
+} from "@/lib/outbound-attachments";
+import { activeExternalTools, type ExternalToolLink } from "@/lib/external-tools";
+import {
+  formatLinkedCaseForEdit,
+  parseLinkedCase,
+  serializeLinkedCaseFromDraft,
+} from "@/lib/linked-cases";
+import { normalizeStatusId } from "@/lib/status-mapper";
+import {
+  formatCrmRowRef,
+  logCrmError,
+  logCrmTiming,
+} from "@/lib/crm-debug-log";
+import { CrmTicketLogPanel } from "./CrmTicketLogPanel";
+import { usePersistedBoolean } from "@/hooks/usePersistedBoolean";
+import { loadReplyDraft, saveReplyDraft } from "@/lib/reply-drafts";
+import {
+  clearAdminNoteDraft,
+  loadAdminNoteDraft,
+  saveAdminNoteDraft,
+} from "@/lib/admin-note-drafts";
+import type { QueuedSendPayload } from "@/lib/queued-send";
+import { fetchComposePrefs, saveComposePrefs } from "@/lib/ticket-compose-prefs";
+import {
+  appendRecipient,
+  buildOutboundBcc,
+  buildOutboundCc,
+  deriveThreadCcRecipients,
+  mergeRecipientLists,
+  removeRecipient,
+} from "@/lib/email-recipients";
+import {
+  ChevronDown,
+  ChevronLeft,
   Copy,
   ExternalLink,
-  Link2,
   LogOut,
   Mail,
+  PanelRightClose,
   Pencil,
+  CircleCheck,
+  Paperclip,
   Send,
+  ShieldAlert,
   Undo2,
   UserRound,
+  Wrench,
+  X,
 } from "lucide-react";
-
-const UNDO_SEND_SECONDS = 10;
 
 interface TicketDetailProps {
   ticket: Ticket | null;
+  initialResponseHours: number;
   contactReasonOptions: string[];
-  onStatusChange: (rowId: string, status: string) => void;
+  onStatusChange: (rowId: string, status: string) => Promise<void>;
   onSubjectChange: (rowId: string, subject: string) => void;
   onContactReasonChange: (rowId: string, contactReason: string) => void;
   onAppendAdminNote: (rowId: string, note: string) => Promise<void>;
@@ -54,15 +110,45 @@ interface TicketDetailProps {
   onReservationCodeChange: (rowId: string, reservationCode: string) => Promise<void>;
   onListingIdChange: (rowId: string, listingId: string) => Promise<void>;
   onSlaChange: (rowId: string, hours: number) => void;
+  onClearInitialResponseSla: (rowId: string) => Promise<void>;
   onThreadUpdate: () => void;
-  onAdvanceAfterSend: (rowId: string) => boolean;
-  onShowInboxVictory: () => void;
-  onRestoreSentTicket: (rowId: string) => void;
-  onTicketSent: (rowId: string, status: "pending" | "resolved") => Promise<void>;
+  onGmailLinkChange: (rowId: string, gmailOpenUrl: string | null) => void;
+  sendQueueBusy?: boolean;
+  isSending?: boolean;
+  sendError?: string | null;
+  onQueueSend: (payload: QueuedSendPayload) => void;
+  pendingSendUndo?: {
+    active: boolean;
+    secondsLeft: number;
+    label: string | null;
+    status: "pending" | "resolved";
+    attachmentCount: number;
+    onUndo: () => void;
+  };
+  composeClearedRowId?: string | null;
+  onClearSendError?: () => void;
+  onSetStatusWithoutEmail: (
+    rowId: string,
+    status: string,
+    options?: { adminNote?: string; pendingHours?: number }
+  ) => Promise<void>;
+  onLinkedCaseChange: (rowId: string, index: 0 | 1 | 2, url: string) => Promise<void>;
+  externalTools?: ExternalToolLink[];
+  ticketUiFields?: { slotId: string; label: string; value: string }[];
+  onUiFieldChange?: (rowId: string, slotId: string, value: string) => Promise<void>;
+  columnLabels?: {
+    airbnbUserId?: string | null;
+    columnD?: string | null;
+    reservationCode?: string | null;
+    listingId?: string | null;
+  };
+  onOpenSetup?: (tab?: SetupModalTab) => void;
+  marketManagersVersion?: number;
 }
 
 export function TicketDetail({
   ticket,
+  initialResponseHours,
   contactReasonOptions,
   onStatusChange,
   onSubjectChange,
@@ -72,61 +158,98 @@ export function TicketDetail({
   onReservationCodeChange,
   onListingIdChange,
   onSlaChange,
+  onClearInitialResponseSla,
   onThreadUpdate,
-  onAdvanceAfterSend,
-  onShowInboxVictory,
-  onRestoreSentTicket,
-  onTicketSent,
+  onGmailLinkChange,
+  sendQueueBusy = false,
+  isSending = false,
+  sendError = null,
+  onQueueSend,
+  pendingSendUndo,
+  composeClearedRowId = null,
+  onClearSendError,
+  onSetStatusWithoutEmail,
+  onLinkedCaseChange,
+  externalTools = [],
+  ticketUiFields = [],
+  onUiFieldChange,
+  columnLabels,
+  onOpenSetup,
+  marketManagersVersion = 0,
 }: TicketDetailProps) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [subjectSuffix, setSubjectSuffix] = useState("");
+  const [subjectError, setSubjectError] = useState(false);
   const [newAdminNote, setNewAdminNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [adminNoteError, setAdminNoteError] = useState<string | null>(null);
   const [airbnbUserIdDraft, setAirbnbUserIdDraft] = useState("");
+  const [uiFieldDrafts, setUiFieldDrafts] = useState<Record<string, string>>({});
+  const [emailCopied, setEmailCopied] = useState(false);
   const [savingUserId, setSavingUserId] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [undoSecondsLeft, setUndoSecondsLeft] = useState(0);
-  const [pendingSend, setPendingSend] = useState(false);
-  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const replyEditorRef = useRef<ReplyDraftEditorHandle>(null);
-  const pendingPayloadRef = useRef<{
-    ticketRowId: string;
-    to: string;
-    subject: string;
-    message: string;
-    cc: string | null;
-    statusAfterSend: "pending" | "resolved";
-  } | null>(null);
-  const [pendingSendStatus, setPendingSendStatus] = useState<"pending" | "resolved">("pending");
-  const [queuedSendLabel, setQueuedSendLabel] = useState<string | null>(null);
-  const pendingVictoryRef = useRef(false);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const [replyAttachments, setReplyAttachments] = useState<Array<{ id: string; file: File }>>(
+    []
+  );
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [ccMarketManager, setCcMarketManager] = useState(false);
+  const [ccDraft, setCcDraft] = useState("");
+  const [bccDraft, setBccDraft] = useState("");
   const [replyFocused, setReplyFocused] = useState(false);
-  const [composeTab, setComposeTab] = useState<"reply" | "admin-notes">("reply");
-  const [linkThreadInput, setLinkThreadInput] = useState("");
-  const [linkingThread, setLinkingThread] = useState(false);
-  const [linkThreadError, setLinkThreadError] = useState<string | null>(null);
-  const [gmailLinkExpanded, setGmailLinkExpanded] = useState(true);
+  const [composeTab, setComposeTab] = useState<"reply" | "admin-notes" | "crm-log">("reply");
+  const [markingStatusOnly, setMarkingStatusOnly] = useState<string | null>(null);
+  const [markingPendingHours, setMarkingPendingHours] = useState<number | null>(null);
+  const [pendingMenuOpen, setPendingMenuOpen] = useState(false);
+  const pendingMenuRef = useRef<HTMLDivElement>(null);
+  const [statusOnlyError, setStatusOnlyError] = useState<string | null>(null);
+  const [statusChangeError, setStatusChangeError] = useState<string | null>(null);
+  const [statusChanging, setStatusChanging] = useState(false);
   const [mixmaxExpanded, setMixmaxExpanded] = useState(false);
+  const [sendArchiveExpanded, setSendArchiveExpanded] = useState(false);
+  const [trustEscalationsOpen, setTrustEscalationsOpen] = useState(false);
+  const internalToolsOverlayOpen = mixmaxExpanded || sendArchiveExpanded;
+  const [headerDetailsOpen, setHeaderDetailsOpen] = usePersistedBoolean(
+    "crm.ticketHeaderDetailsOpen",
+    false
+  );
+  const [internalToolsCollapsed, setInternalToolsCollapsed] = usePersistedBoolean(
+    "crm.internalToolsCollapsed",
+    false
+  );
   const [marketManagers, setMarketManagers] = useState<MarketManager[]>([]);
+  const [clearingInitialSla, setClearingInitialSla] = useState(false);
+  const [userIdSaveError, setUserIdSaveError] = useState<string | null>(null);
+  const [gmailOpenUrl, setGmailOpenUrl] = useState<string | null>(null);
+  const threadLoadGenerationRef = useRef(0);
+  const isMountedRef = useRef(true);
+  const onThreadUpdateRef = useRef(onThreadUpdate);
+  const onGmailLinkChangeRef = useRef(onGmailLinkChange);
+  const replyBodyRef = useRef(replyBody);
+  const subjectSuffixRef = useRef(subjectSuffix);
+  const ccDraftRef = useRef(ccDraft);
+  const bccDraftRef = useRef(bccDraft);
+  const newAdminNoteRef = useRef(newAdminNote);
+  const ticketRowIdRef = useRef(ticket?.rowId ?? null);
 
   useEffect(() => {
-    return () => {
-      if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, []);
+    replyBodyRef.current = replyBody;
+    subjectSuffixRef.current = subjectSuffix;
+    ccDraftRef.current = ccDraft;
+    bccDraftRef.current = bccDraft;
+    newAdminNoteRef.current = newAdminNote;
+    ticketRowIdRef.current = ticket?.rowId ?? null;
+  }, [replyBody, subjectSuffix, ccDraft, bccDraft, newAdminNote, ticket?.rowId]);
 
   useEffect(() => {
-    if (pendingSend) return;
-    if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    setPendingSend(false);
-    setUndoSecondsLeft(0);
-    pendingPayloadRef.current = null;
-  }, [ticket?.rowId, pendingSend]);
+    onThreadUpdateRef.current = onThreadUpdate;
+  }, [onThreadUpdate]);
+
+  useEffect(() => {
+    onGmailLinkChangeRef.current = onGmailLinkChange;
+  }, [onGmailLinkChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,59 +263,201 @@ export function TicketDetail({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [marketManagersVersion]);
 
-  const loadThread = useCallback(async () => {
-    if (!ticket) return;
-    const params = new URLSearchParams({
-      email: ticket.requesterEmail,
-      subject: ticket.subject,
-    });
-    const res = await fetch(
-      `/api/tickets/${encodeURIComponent(ticket.rowId)}/thread?${params.toString()}&_=${Date.now()}`,
-      { cache: "no-store", credentials: "same-origin" }
-    );
-    const data = await res.json();
-    setMessages(data.messages ?? []);
-    if (data.statusReopened) onThreadUpdate();
-  }, [ticket?.rowId, ticket?.requesterEmail, ticket?.subject, onThreadUpdate]);
+  useEffect(() => {
+    if (!pendingMenuOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (pendingMenuRef.current?.contains(event.target as Node)) return;
+      setPendingMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [pendingMenuOpen]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [ticket?.rowId]);
+
+  const loadThread = useCallback(
+    async (reason: "ticket-open" | "timer") => {
+      if (!ticket) return;
+      const generation = threadLoadGenerationRef.current;
+      const ticketRowId = ticket.rowId;
+      const rowNumber = ticket.rowNumber;
+      const storedGmailUrl = ticket.gmailOpenUrl;
+      setThreadLoading(true);
+      const params = new URLSearchParams({
+        email: ticket.requesterEmail,
+        subject: ticket.subject,
+        timestamp: ticket.timestamp,
+      });
+      const started = performance.now();
+      try {
+        const res = await fetch(
+          `/api/tickets/${encodeURIComponent(ticketRowId)}/thread?${params.toString()}&_=${Date.now()}`,
+          { cache: "no-store", credentials: "same-origin" }
+        );
+        const data = await res.json();
+        const duration = performance.now() - started;
+        if (generation !== threadLoadGenerationRef.current) return;
+
+        const messageCount = Array.isArray(data.messages) ? data.messages.length : 0;
+        const nextUrl =
+          (typeof data.gmailOpenUrl === "string" ? data.gmailOpenUrl : null) ?? storedGmailUrl;
+        const detailParts = [
+          formatCrmRowRef(rowNumber, ticketRowId),
+          reason,
+          `HTTP ${res.status}`,
+          `${messageCount} msgs`,
+          nextUrl ? "Gmail linked" : "no Gmail link",
+        ];
+        if (typeof data.warning === "string" && data.warning.trim()) {
+          detailParts.push(data.warning.trim());
+        }
+        if (data.statusReopened) detailParts.push("status reopened");
+
+        const detail = detailParts.join(" · ");
+        const shouldLog =
+          reason === "ticket-open" ||
+          duration > 1000 ||
+          Boolean(data.warning) ||
+          Boolean(data.statusReopened) ||
+          !res.ok;
+
+        if (!res.ok) {
+          logCrmError("Thread sync failed", detail);
+        } else if (shouldLog) {
+          logCrmTiming("Thread sync", duration, detail);
+        }
+
+        const loadedMessages = data.messages ?? [];
+        setMessages(loadedMessages);
+        if (loadedMessages.length > 0) {
+          const threadCc = deriveThreadCcRecipients(loadedMessages, {
+            requesterEmail: ticket.requesterEmail,
+          });
+          if (threadCc) {
+            setCcDraft((prev) => mergeRecipientLists(prev, threadCc));
+          }
+        }
+        setGmailOpenUrl(nextUrl);
+        if (nextUrl && nextUrl !== storedGmailUrl) {
+          onGmailLinkChangeRef.current(ticketRowId, nextUrl);
+        }
+        if (data.statusReopened) onThreadUpdateRef.current();
+      } catch (error) {
+        if (generation !== threadLoadGenerationRef.current) return;
+        setGmailOpenUrl(storedGmailUrl);
+        logCrmError(
+          "Thread sync failed",
+          `${formatCrmRowRef(rowNumber, ticketRowId)} · ${reason} — ${
+            error instanceof Error ? error.message : "network error"
+          }`
+        );
+      } finally {
+        if (generation === threadLoadGenerationRef.current) {
+          setThreadLoading(false);
+        }
+      }
+    },
+    [ticket?.rowId, ticket?.rowNumber, ticket?.requesterEmail, ticket?.subject, ticket?.gmailOpenUrl]
+  );
+
+  useLayoutEffect(() => {
+    threadLoadGenerationRef.current += 1;
+    setMessages([]);
+    setThreadLoading(Boolean(ticket?.rowId));
+  }, [ticket?.rowId]);
+
+  useEffect(() => {
+    setGmailOpenUrl(ticket?.gmailOpenUrl ?? null);
+  }, [ticket?.rowId, ticket?.gmailOpenUrl]);
 
   useEffect(() => {
     if (!ticket) {
       setMessages([]);
+      setThreadLoading(false);
+      setGmailOpenUrl(null);
       setReplyBody("");
       setSubjectSuffix("");
       setNewAdminNote("");
+      setAddingNote(false);
+      setAdminNoteError(null);
       setAirbnbUserIdDraft("");
-      setCcMarketManager(false);
+      setUiFieldDrafts({});
+      setEmailCopied(false);
       setReplyFocused(false);
       setComposeTab("reply");
+      setReplyAttachments([]);
+      setAttachmentError(null);
+      setCcDraft("");
+      setBccDraft("");
+      setCcMarketManager(false);
       return;
     }
 
     setComposeTab("reply");
     setMixmaxExpanded(false);
-    setLinkThreadInput("");
-    setLinkThreadError(null);
+    setReplyAttachments([]);
+    setAttachmentError(null);
+    setAddingNote(false);
+    setAdminNoteError(null);
+    setSavingUserId(false);
+    setMarkingStatusOnly(null);
+    setStatusChanging(false);
+    setClearingInitialSla(false);
+    setStatusOnlyError(null);
+    onClearSendError?.();
+    setStatusChangeError(null);
     const saved = loadReplyDraft(ticket.rowId);
-    const prefs = loadComposePrefs(ticket.rowId);
     setReplyBody(saved?.body ?? "");
+    setNewAdminNote(loadAdminNoteDraft(ticket.rowId) ?? "");
     setSubjectSuffix(
-      saved?.subject ? stripEmailSubjectPrefix(saved.subject) : ""
+      saved?.subject
+        ? emailSubjectSuffixFromStored(saved.subject)
+        : emailSubjectSuffixFromStored(ticket.subject)
     );
-    setCcMarketManager(prefs.ccMarketManager);
+    setSubjectError(false);
+    setCcDraft(saved?.cc ?? "");
+    setBccDraft(saved?.bcc ?? "");
+    void fetchComposePrefs(ticket.rowId).then((prefs) => {
+      setCcMarketManager(prefs.ccMarketManager);
+    });
     setAirbnbUserIdDraft(ticket.airbnbUserId);
+    setUiFieldDrafts(ticket.uiFields ?? {});
+    setEmailCopied(false);
     setReplyFocused(Boolean(saved?.body && !isRichTextEmpty(saved.body)));
   }, [ticket?.rowId]);
 
   useEffect(() => {
+    if (!ticket || composeClearedRowId !== ticket.rowId) return;
+    setReplyBody("");
+    setReplyAttachments([]);
+    setAttachmentError(null);
+    setCcDraft("");
+    setBccDraft("");
+    setSubjectSuffix(emailSubjectSuffixFromStored(ticket.subject));
+    setReplyFocused(false);
+  }, [composeClearedRowId, ticket?.rowId, ticket?.subject]);
+
+  useEffect(() => {
     if (!ticket) return;
     setAirbnbUserIdDraft(ticket.airbnbUserId);
+    setUserIdSaveError(null);
   }, [ticket?.rowId, ticket?.airbnbUserId]);
 
   useEffect(() => {
     if (!ticket) return;
-    loadThread();
+    setUiFieldDrafts(ticket.uiFields ?? {});
+  }, [ticket?.rowId, ticket?.uiFields]);
+
+  useEffect(() => {
+    if (!ticket) return;
+    void loadThread("ticket-open");
   }, [ticket?.rowId, ticket?.requesterEmail, ticket?.subject, loadThread]);
 
   useEffect(() => {
@@ -202,6 +467,8 @@ export function TicketDetail({
       saveReplyDraft(ticket.rowId, {
         body: replyBody,
         subject: buildEmailSubject(subjectSuffix),
+        cc: ccDraft,
+        bcc: bccDraft,
       });
     }, 300);
 
@@ -210,36 +477,76 @@ export function TicketDetail({
       saveReplyDraft(ticket.rowId, {
         body: replyBody,
         subject: buildEmailSubject(subjectSuffix),
+        cc: ccDraft,
+        bcc: bccDraft,
       });
     };
-  }, [ticket?.rowId, replyBody, subjectSuffix]);
+  }, [ticket?.rowId, replyBody, subjectSuffix, ccDraft, bccDraft]);
+
+  useEffect(() => {
+    if (!ticket) return;
+
+    const timeout = setTimeout(() => {
+      saveAdminNoteDraft(ticket.rowId, newAdminNote);
+    }, 300);
+
+    return () => {
+      clearTimeout(timeout);
+      saveAdminNoteDraft(ticket.rowId, newAdminNote);
+    };
+  }, [ticket?.rowId, newAdminNote]);
+
+  useEffect(() => {
+    if (!ticket) return;
+
+    function flushDraftsToStorage() {
+      replyEditorRef.current?.flush();
+      const rowId = ticketRowIdRef.current;
+      if (!rowId) return;
+      saveReplyDraft(rowId, {
+        body: replyBodyRef.current,
+        subject: buildEmailSubject(subjectSuffixRef.current),
+        cc: ccDraftRef.current,
+        bcc: bccDraftRef.current,
+      });
+      saveAdminNoteDraft(rowId, newAdminNoteRef.current);
+    }
+
+    function onPageHide() {
+      flushDraftsToStorage();
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") flushDraftsToStorage();
+    }
+
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [ticket?.rowId]);
 
   useEffect(() => {
     if (!ticket) return;
     const intervalMs =
       (Number(process.env.NEXT_PUBLIC_AUTO_REFRESH_SECONDS) || 60) * 1000;
     const id = setInterval(() => {
-      if (document.visibilityState === "visible") loadThread();
+      if (document.visibilityState === "visible") void loadThread("timer");
     }, intervalMs);
     return () => clearInterval(id);
   }, [ticket?.rowId, loadThread]);
 
-  const gmailThreadId = useMemo(
-    () => [...messages].reverse().find((m) => m.gmailThreadId)?.gmailThreadId ?? null,
-    [messages]
-  );
-  const gmailThreadUrl = gmailThreadId ? buildGmailThreadUrl(gmailThreadId) : null;
-
-  useEffect(() => {
-    setGmailLinkExpanded(!gmailThreadUrl);
-  }, [ticket?.rowId, gmailThreadUrl]);
+  const gmailThreadUrl = gmailOpenUrl;
 
   const marketManagerEmail = useMemo(
     () => (ticket ? resolveMarketManagerEmail(ticket.marketManager, marketManagers) : null),
     [ticket, marketManagers]
   );
-  const marketManagerFromDirectory = Boolean(
-    ticket?.marketManager && marketManagerEmail && !ticket.marketManager.includes("@")
+
+  const marketManagerMissingFromDirectory = Boolean(
+    ticket?.marketManager.trim() && !marketManagerEmail
   );
 
   const contactReasonSelectOptions = useMemo(() => {
@@ -264,116 +571,127 @@ export function TicketDetail({
   }
 
   async function addAdminNote() {
-    if (!ticket || !newAdminNote.trim()) return;
+    if (!ticket || !newAdminNote.trim() || addingNote) return;
+    const ticketRowId = ticket.rowId;
     setAddingNote(true);
+    setAdminNoteError(null);
     try {
-      await onAppendAdminNote(ticket.rowId, newAdminNote.trim());
+      await onAppendAdminNote(ticketRowId, newAdminNote.trim());
+      if (ticket?.rowId !== ticketRowId) return;
+      clearAdminNoteDraft(ticketRowId);
       setNewAdminNote("");
+    } catch (error) {
+      if (ticket?.rowId !== ticketRowId) return;
+      setAdminNoteError(
+        error instanceof Error ? error.message : "Failed to add admin note"
+      );
     } finally {
-      setAddingNote(false);
+      if (ticket?.rowId === ticketRowId) {
+        setAddingNote(false);
+      }
     }
   }
 
   async function saveAirbnbUserId() {
     if (!ticket) return;
     const trimmed = airbnbUserIdDraft.trim();
-    if (trimmed === ticket.airbnbUserId) return;
+    if (trimmed === getSheetColumnAirbnbUserId(ticket)) return;
     setSavingUserId(true);
+    setUserIdSaveError(null);
     try {
       await onAirbnbUserIdChange(ticket.rowId, trimmed);
+    } catch (error) {
+      setUserIdSaveError(error instanceof Error ? error.message : "Failed to save user ID");
     } finally {
       setSavingUserId(false);
     }
   }
 
-  async function executeSend() {
-    const payload = pendingPayloadRef.current;
-    if (!payload) return;
-    setSending(true);
-    setPendingSend(false);
-    setQueuedSendLabel(null);
-    setUndoSecondsLeft(0);
-    try {
-      pendingPayloadRef.current = null;
-      const showVictoryAfterSend = pendingVictoryRef.current;
-      const { statusAfterSend, ticketRowId, ...sendBody } = payload;
-      const res = await fetch(`/api/tickets/${encodeURIComponent(ticketRowId)}/thread`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...sendBody, status: statusAfterSend }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) return;
+  function handleAttachmentPick(event: ChangeEvent<HTMLInputElement>) {
+    const picked = [...(event.target.files ?? [])];
+    event.target.value = "";
+    if (picked.length === 0) return;
 
-      clearReplyDraft(ticketRowId);
-      if (ticket?.rowId === ticketRowId) {
-        if (data.messages) setMessages(data.messages);
-        else if (data.message) setMessages((prev) => [...prev, data.message]);
-        setReplyBody("");
-      }
-      await onTicketSent(ticketRowId, statusAfterSend);
-      onThreadUpdate();
-      if (showVictoryAfterSend) {
-        pendingVictoryRef.current = false;
-        onShowInboxVictory();
-      }
+    const existingFiles = replyAttachments.map((entry) => entry.file);
+    const { accepted, error } = validateReplyAttachmentFiles(existingFiles, picked);
+    if (error) {
+      setAttachmentError(error);
+      return;
+    }
+
+    setAttachmentError(null);
+    setReplyAttachments((prev) => [
+      ...prev,
+      ...accepted.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+      })),
+    ]);
+  }
+
+  function removeReplyAttachment(id: string) {
+    setReplyAttachments((prev) => prev.filter((entry) => entry.id !== id));
+    setAttachmentError(null);
+  }
+
+  const subjectReady = isEmailSubjectSuffixFilled(subjectSuffix);
+  const hasComposeContent = !isRichTextEmpty(replyBody) || replyAttachments.length > 0;
+  const canSend = hasComposeContent && subjectReady;
+
+  async function setStatusWithoutEmail(
+    status: "pending" | "resolved",
+    options?: { adminNote?: string; pendingHours?: PendingWithoutEmailHours }
+  ) {
+    if (!ticket || markingStatusOnly || markingPendingHours !== null || sendQueueBusy) {
+      return;
+    }
+    if (status === "pending" && options?.pendingHours) {
+      setMarkingPendingHours(options.pendingHours);
+    } else {
+      setMarkingStatusOnly(status);
+    }
+    setPendingMenuOpen(false);
+    setStatusOnlyError(null);
+    try {
+      await onSetStatusWithoutEmail(ticket.rowId, status, options);
+    } catch (error) {
+      setStatusOnlyError(
+        error instanceof Error ? error.message : "Failed to update ticket status"
+      );
     } finally {
-      setSending(false);
+      setMarkingStatusOnly(null);
+      setMarkingPendingHours(null);
     }
   }
 
   function queueSend(statusAfterSend: "pending" | "resolved") {
-    if (isRichTextEmpty(replyBody) || !ticket || pendingSend) return;
+    if (!ticket || sendQueueBusy) return;
+    if (!hasComposeContent) return;
+    if (!isEmailSubjectSuffixFilled(subjectSuffix)) {
+      setSubjectError(true);
+      return;
+    }
+    setSubjectError(false);
+    onClearSendError?.();
 
-    const ticketRowId = ticket.rowId;
-    pendingPayloadRef.current = {
-      ticketRowId,
+    onQueueSend({
+      ticketRowId: ticket.rowId,
       to: ticket.requesterEmail,
       subject: buildEmailSubject(subjectSuffix),
       message: replyBody,
-      cc: ccMarketManager ? marketManagerEmail : null,
+      cc: buildOutboundCc(ccDraft, {
+        extra: ccMarketManager ? marketManagerEmail : null,
+      }),
+      bcc: buildOutboundBcc(bccDraft),
       statusAfterSend,
-    };
-
-    setPendingSendStatus(statusAfterSend);
-    setQueuedSendLabel(ticket.requesterName || ticket.requesterEmail);
-    setPendingSend(true);
-    setUndoSecondsLeft(UNDO_SEND_SECONDS);
-    const advanced = onAdvanceAfterSend(ticketRowId);
-    pendingVictoryRef.current = !advanced;
-
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    countdownRef.current = setInterval(() => {
-      setUndoSecondsLeft((seconds) => {
-        if (seconds <= 1) {
-          if (countdownRef.current) clearInterval(countdownRef.current);
-          return 0;
-        }
-        return seconds - 1;
-      });
-    }, 1000);
-
-    if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
-    sendTimerRef.current = setTimeout(() => {
-      if (countdownRef.current) clearInterval(countdownRef.current);
-      void executeSend();
-    }, UNDO_SEND_SECONDS * 1000);
+      attachmentFiles: replyAttachments.map((entry) => entry.file),
+      intakeTimestamp: ticket.timestamp,
+      label: ticket.requesterName || ticket.requesterEmail,
+    });
   }
 
-  function undoSend() {
-    const queuedRowId = pendingPayloadRef.current?.ticketRowId;
-    if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    pendingPayloadRef.current = null;
-    setPendingSend(false);
-    setQueuedSendLabel(null);
-    setUndoSecondsLeft(0);
-    pendingVictoryRef.current = false;
-    if (queuedRowId) onRestoreSentTicket(queuedRowId);
-  }
-
-  const gmailSearchUrl = buildGmailSearchUrl(ticket.requesterEmail);
   const salesforceSearchUrl = buildSalesforceUnifiedSearchUrl(ticket.columnD);
+  const configuredExternalTools = activeExternalTools(externalTools);
   const novaReservationUrl = buildNovaReservationUrl(ticket.reservationCode);
   const novaListingUrl = buildNovaListingUrl(ticket.listingId);
   const becomeUserId = ticket.airbnbUserId || airbnbUserIdDraft;
@@ -396,201 +714,310 @@ export function TicketDetail({
     });
   }
 
-  function openInGmail() {
-    if (!ticket) return;
-    const url = gmailThreadUrl ?? gmailSearchUrl;
-    if (!url) return;
-    window.open(url, "_blank", "noopener,noreferrer");
+  function switchComposeTab(tab: "reply" | "admin-notes" | "crm-log") {
+    if (tab !== "reply") {
+      replyEditorRef.current?.flush();
+    }
+    setComposeTab(tab);
   }
 
-  async function linkGmailThread() {
-    if (!ticket || !linkThreadInput.trim() || linkingThread) return;
-    setLinkingThread(true);
-    setLinkThreadError(null);
-    try {
-      const res = await fetch(
-        `/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/link`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ threadId: linkThreadInput.trim() }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setLinkThreadError(data.error ?? "Failed to link Gmail thread");
-        return;
-      }
-      if (data.messages) setMessages(data.messages);
-      setLinkThreadInput("");
-      onThreadUpdate();
-    } catch {
-      setLinkThreadError("Failed to link Gmail thread");
-    } finally {
-      setLinkingThread(false);
-    }
+  function composeTabButton(
+    tab: "reply" | "admin-notes" | "crm-log",
+    label: string
+  ) {
+    const active = composeTab === tab;
+    return (
+      <button
+        type="button"
+        onClick={() => switchComposeTab(tab)}
+        className={`-mb-px border-b-2 px-2.5 py-1.5 text-xs font-medium ${
+          active
+            ? "border-zendesk-green text-zendesk-navy"
+            : "border-transparent text-zendesk-muted hover:text-zendesk-navy"
+        }`}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  function openInGmail() {
+    if (!ticket || !gmailThreadUrl) return;
+    window.open(gmailThreadUrl, "_blank", "noopener,noreferrer");
   }
 
   function handleCcMarketManagerChange(checked: boolean) {
     if (!ticket) return;
     setCcMarketManager(checked);
-    saveComposePrefs(ticket.rowId, { ccMarketManager: checked });
+    if (marketManagerEmail) {
+      setCcDraft((prev) =>
+        checked
+          ? appendRecipient(prev, marketManagerEmail)
+          : removeRecipient(prev, marketManagerEmail)
+      );
+    }
+    void saveComposePrefs(ticket.rowId, { ccMarketManager: checked });
   }
 
   return (
     <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-      {pendingSend && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
-          <div className="pointer-events-auto flex max-w-xl flex-wrap items-center gap-3 rounded-lg border border-zendesk-border bg-white px-4 py-3 shadow-lg">
-            <button
-              type="button"
-              onClick={undoSend}
-              className="flex items-center gap-2 rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm font-medium text-zendesk-navy hover:bg-gray-50"
+      <div className="shrink-0 border-b border-zendesk-border px-3 py-1.5">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div
+              className={`flex overflow-hidden rounded border focus-within:border-zendesk-green ${
+                subjectError ? "border-red-400" : "border-zendesk-border"
+              }`}
             >
-              <Undo2 className="h-4 w-4" />
-              Undo send ({undoSecondsLeft}s)
-            </button>
-            <p className="text-sm text-zendesk-muted">
-              Sending to {queuedSendLabel ?? "previous ticket"} in {undoSecondsLeft}s — will mark{" "}
-              {pendingSendStatus === "resolved" ? "Resolved" : "Pending"}
-            </p>
-          </div>
-        </div>
-      )}
-      <div className="shrink-0 border-b border-zendesk-border px-4 py-2.5">
-        <label className="block text-[11px] font-medium text-zendesk-muted">Subject (email line)</label>
-        <div className="mt-0.5 flex overflow-hidden rounded border border-zendesk-border focus-within:border-zendesk-green">
-          <span className="shrink-0 border-r border-zendesk-border bg-gray-50 px-2.5 py-1.5 text-sm font-medium text-zendesk-muted">
-            {EMAIL_SUBJECT_PREFIX}
-          </span>
-          <input
-            type="text"
-            value={subjectSuffix}
-            onChange={(e) => setSubjectSuffix(e.target.value)}
-            onBlur={saveSubject}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.currentTarget.blur();
-              }
-            }}
-            className="min-w-0 flex-1 px-2.5 py-1.5 text-base font-semibold outline-none"
-            placeholder="Add subject details…"
-          />
-        </div>
-        <p className="mt-0.5 text-xs text-zendesk-muted">
-          {ticket.requesterName} · {ticket.requesterEmail} · Row {ticket.rowNumber}
-        </p>
-        <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
-          <p>
-            <span className="text-zendesk-muted">Market Manager: </span>
-            <span className="rounded bg-gray-100 px-1.5 py-0.5">
-              {ticket.marketManager || "—"}
-            </span>
-            {marketManagerFromDirectory && (
-              <span className="ml-1 text-[10px] text-zendesk-muted">({marketManagerEmail})</span>
+              <span className="shrink-0 border-r border-zendesk-border bg-gray-50 px-2 py-1 text-[10px] font-medium text-zendesk-muted">
+                {EMAIL_SUBJECT_PREFIX}
+              </span>
+              <input
+                type="text"
+                value={subjectSuffix}
+                onChange={(e) => {
+                  setSubjectSuffix(e.target.value);
+                  if (subjectError && isEmailSubjectSuffixFilled(e.target.value)) {
+                    setSubjectError(false);
+                  }
+                }}
+                required
+                aria-label="Email subject"
+                aria-invalid={subjectError}
+                onBlur={saveSubject}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="min-w-0 flex-1 px-2 py-1 text-sm font-medium outline-none"
+                placeholder="Subject (required)…"
+              />
+            </div>
+            {subjectError && (
+              <p className="mt-0.5 text-[10px] text-red-600">Add subject details before sending.</p>
             )}
-            <span className="ml-1 text-[10px] text-zendesk-muted">(from sheet, read-only)</span>
-          </p>
-          {ticket.needsInitialResponse && (
-            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-              Needs initial response (&gt;48h)
-            </span>
-          )}
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs">
-            <span className="text-zendesk-muted">CRM Status</span>
-            <select
-              value={ticket.status}
-              onChange={(e) => onStatusChange(ticket.rowId, e.target.value)}
-              className="rounded border border-zendesk-border px-2 py-0.5 text-xs"
-            >
-              {DEFAULT_STATUSES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-1.5 text-xs">
-            <span className="text-zendesk-muted">Contact reason</span>
-            <select
-              value={ticket.contactReason}
-              onChange={(e) => onContactReasonChange(ticket.rowId, e.target.value)}
-              title="Updates sheet Column I on change"
-              className="rounded border border-zendesk-border px-2 py-0.5 text-xs"
-            >
-              <option value="">—</option>
-              {contactReasonSelectOptions.map((reason) => (
-                <option key={reason} value={reason}>
-                  {reason}
-                </option>
-              ))}
-            </select>
-          </label>
-          {shouldShowSlaTimer(ticket) && (
-            <label className="flex items-center gap-1.5 text-xs">
-              <span className="text-zendesk-muted">SLA</span>
-              <select
-                value={ticket.slaHours}
-                onChange={(e) => onSlaChange(ticket.rowId, Number(e.target.value))}
-                className="rounded border border-zendesk-border px-2 py-0.5 text-xs"
-              >
-                {[4, 8, 24, 48, 72].map((h) => (
-                  <option key={h} value={h}>
-                    {h}h
-                  </option>
-                ))}
-              </select>
-              {ticket.slaDueAt && (
-                <span className={`text-xs ${ticket.slaBreached ? "text-red-600" : "text-zendesk-muted"}`}>
-                  Due {new Date(ticket.slaDueAt).toLocaleString()}
-                </span>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="text-sm font-semibold text-zendesk-navy">
+                {ticket.requesterName || "—"}
+              </span>
+              <span className="text-zendesk-muted" aria-hidden>
+                ·
+              </span>
+              <span className="flex items-center gap-1 text-sm text-zendesk-navy">
+                {ticket.requesterEmail ? (
+                  <a href={`mailto:${ticket.requesterEmail}`} className="hover:underline">
+                    {ticket.requesterEmail}
+                  </a>
+                ) : (
+                  <span className="text-zendesk-muted">—</span>
+                )}
+                {ticket.requesterEmail && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(ticket.requesterEmail);
+                      setEmailCopied(true);
+                      window.setTimeout(() => setEmailCopied(false), 1500);
+                    }}
+                    className="rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+                    aria-label="Copy email address"
+                    title={emailCopied ? "Copied" : "Copy email"}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </span>
+              {ticketUiFields.map((field) =>
+                onUiFieldChange ? (
+                  <span key={field.slotId} className="contents">
+                    <span className="text-zendesk-muted" aria-hidden>
+                      ·
+                    </span>
+                    <label className="flex min-w-0 items-center gap-1.5">
+                      <span className="shrink-0 text-xs text-zendesk-muted">{field.label}</span>
+                      <input
+                        type="text"
+                        value={uiFieldDrafts[field.slotId] ?? field.value}
+                        onChange={(e) =>
+                          setUiFieldDrafts((prev) => ({
+                            ...prev,
+                            [field.slotId]: e.target.value,
+                          }))
+                        }
+                        onBlur={async () => {
+                          if (!ticket) return;
+                          const next = (uiFieldDrafts[field.slotId] ?? field.value).trim();
+                          if (next === field.value.trim()) return;
+                          await onUiFieldChange(ticket.rowId, field.slotId, next);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.currentTarget.blur();
+                        }}
+                        className="min-w-[6rem] max-w-[14rem] rounded border border-zendesk-border px-1.5 py-0.5 text-sm outline-none focus:border-zendesk-green"
+                        placeholder="—"
+                        aria-label={field.label}
+                      />
+                    </label>
+                  </span>
+                ) : null
               )}
-            </label>
-          )}
-          <NovaSheetLinkField
-            label="Reso"
-            value={ticket.reservationCode}
-            href={novaReservationUrl}
-            maxDisplayLength={10}
-            onSave={(value) => onReservationCodeChange(ticket.rowId, value)}
-          />
-          <NovaSheetLinkField
-            label="Listing"
-            value={ticket.listingId}
-            href={novaListingUrl}
-            onSave={(value) => onListingIdChange(ticket.rowId, value)}
-          />
+              <span className="text-zendesk-muted" aria-hidden>
+                ·
+              </span>
+              <span className="text-xs text-zendesk-muted">
+                Row {ticket.rowNumber}
+                {ticket.needsInitialResponse && (
+                  <span className="ml-1.5 rounded bg-red-100 px-1 py-px font-semibold text-red-700">
+                    {initialResponseHours}h+
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setHeaderDetailsOpen((open) => !open)}
+            className="mt-0.5 flex shrink-0 items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100"
+            aria-expanded={headerDetailsOpen}
+          >
+            Details
+            <ChevronDown
+              className={`h-3 w-3 transition-transform ${headerDetailsOpen ? "rotate-180" : ""}`}
+            />
+          </button>
         </div>
+        {headerDetailsOpen && (
+          <div className="mt-1.5 space-y-1.5 border-t border-zendesk-border/60 pt-1.5">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
+              {ticket.needsInitialResponse && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setClearingInitialSla(true);
+                    try {
+                      await onClearInitialResponseSla(ticket.rowId);
+                    } finally {
+                      setClearingInitialSla(false);
+                    }
+                  }}
+                  disabled={clearingInitialSla}
+                  className="rounded border border-red-200 px-1.5 py-px font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {clearingInitialSla ? "Clearing…" : `Clear ${initialResponseHours}h SLA`}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1 text-[10px]">
+                <span className="text-zendesk-muted">Status</span>
+                <select
+                  value={normalizeStatusId(ticket.status)}
+                  disabled={statusChanging}
+                  onChange={async (e) => {
+                    const nextStatus = e.target.value;
+                    setStatusChangeError(null);
+                    setStatusChanging(true);
+                    try {
+                      await onStatusChange(ticket.rowId, nextStatus);
+                    } catch (error) {
+                      setStatusChangeError(
+                        error instanceof Error ? error.message : "Failed to update status"
+                      );
+                    } finally {
+                      setStatusChanging(false);
+                    }
+                  }}
+                  className="rounded border border-zendesk-border px-1.5 py-px text-[10px] disabled:opacity-50"
+                >
+                  {DEFAULT_STATUSES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                {statusChangeError && (
+                  <span className="text-red-600">{statusChangeError}</span>
+                )}
+              </label>
+              <label className="flex items-center gap-1 text-[10px]">
+                <span className="text-zendesk-muted">Reason</span>
+                <select
+                  value={ticket.contactReason}
+                  onChange={(e) => onContactReasonChange(ticket.rowId, e.target.value)}
+                  className="max-w-[10rem] rounded border border-zendesk-border px-1.5 py-px text-[10px]"
+                >
+                  <option value="">—</option>
+                  {contactReasonSelectOptions.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {shouldShowResponseSla(ticket) && (
+                <label className="flex items-center gap-1 text-[10px]">
+                  <span className="text-zendesk-muted">Response SLA</span>
+                  <select
+                    value={ticket.slaHours}
+                    onChange={(e) => onSlaChange(ticket.rowId, Number(e.target.value))}
+                    className="rounded border border-zendesk-border px-1.5 py-px text-[10px]"
+                  >
+                    {[4, 8, 24, 48, 72].map((h) => (
+                      <option key={h} value={h}>
+                        {h}h
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <NovaSheetLinkField
+                label={columnLabels?.reservationCode || "Reso"}
+                value={ticket.reservationCode}
+                href={novaReservationUrl}
+                maxDisplayLength={10}
+                onSave={(value) => onReservationCodeChange(ticket.rowId, value)}
+              />
+              <NovaSheetLinkField
+                label={columnLabels?.listingId || "Listing"}
+                value={ticket.listingId}
+                href={novaListingUrl}
+                onSave={(value) => onListingIdChange(ticket.rowId, value)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col border-r border-zendesk-border">
-          <div className="border-b border-zendesk-border bg-gray-50 px-6 py-2 text-xs font-semibold uppercase text-zendesk-muted">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-zendesk-border">
+          <div className="shrink-0 border-b border-zendesk-border bg-gray-50 px-3 py-1 text-[10px] font-semibold uppercase text-zendesk-muted">
             Conversation
           </div>
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            <div className="mb-4 rounded border border-zendesk-border bg-white p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+            <div className="mb-2 rounded border border-zendesk-border bg-white p-2.5">
               <p className="text-xs font-semibold text-zendesk-muted">Original request</p>
               <p className="mt-2 whitespace-pre-wrap text-sm">{ticket.description}</p>
               <p className="mt-2 text-xs text-zendesk-muted">{ticket.timestamp}</p>
             </div>
+            {threadLoading && messages.length === 0 && (
+              <p className="py-2 text-xs text-zendesk-muted">Loading conversation…</p>
+            )}
             {messages.map((msg) => {
               if (msg.direction === "system") {
                 return (
                   <div
                     key={msg.id}
-                    className="mb-3 rounded border border-violet-200 bg-violet-50 p-4"
+                    className="mb-2 rounded border border-violet-200 bg-violet-50 p-2.5"
                   >
                     <div className="flex justify-between gap-2 text-xs text-zendesk-muted">
                       <span>SheetsCRM</span>
                       <span>{new Date(msg.sentAt).toLocaleString()}</span>
                     </div>
                     <p className="mt-2 text-sm">{msg.body}</p>
-                    {msg.gmailThreadId && (
+                    {gmailThreadUrl && (
                       <a
-                        href={buildGmailThreadUrl(msg.gmailThreadId)}
+                        href={gmailThreadUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
@@ -606,10 +1033,10 @@ export function TicketDetail({
               return (
                 <div
                   key={msg.id}
-                  className={`mb-3 rounded border p-4 ${
+                  className={`mb-2 rounded border p-2.5 ${
                     msg.direction === "outbound"
-                      ? "ml-8 border-blue-200 bg-blue-50"
-                      : "mr-8 border-zendesk-border bg-white"
+                      ? "ml-4 border-zendesk-border bg-blue-50"
+                      : "mr-4 border-zendesk-border bg-white"
                   }`}
                 >
                   <div className="flex justify-between gap-2 text-xs text-zendesk-muted">
@@ -623,7 +1050,28 @@ export function TicketDetail({
                   {msg.cc && (
                     <p className="mt-1 text-xs text-zendesk-muted">CC: {msg.cc}</p>
                   )}
-                  <p className="mt-2 whitespace-pre-wrap text-sm">{msg.body}</p>
+                  {(msg.body !== "(attachment only)" || !msg.attachments?.length) && (
+                    <p className="mt-2 whitespace-pre-wrap text-sm">{msg.body}</p>
+                  )}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {msg.attachments.map((att) => (
+                        <li key={att.id}>
+                          <a
+                            href={`/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/attachments/${encodeURIComponent(att.id)}`}
+                            download={att.filename}
+                            className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-1 text-xs font-medium text-blue-600 hover:bg-green-50"
+                          >
+                            <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{att.filename}</span>
+                            <span className="text-zendesk-muted">
+                              ({formatFileSize(att.sizeBytes)})
+                            </span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {msg.gmailMessageId && (
                     <a
                       href={buildGmailMessageUrl(msg.gmailMessageId)}
@@ -639,320 +1087,531 @@ export function TicketDetail({
               );
             })}
           </div>
-          <div className="shrink-0 border-t border-zendesk-border">
-            <div className="flex border-b border-zendesk-border bg-gray-50 px-4">
-              <button
-                type="button"
-                onClick={() => setComposeTab("reply")}
-                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-                  composeTab === "reply"
-                    ? "border-zendesk-green text-zendesk-navy"
-                    : "border-transparent text-zendesk-muted hover:text-zendesk-navy"
-                }`}
-              >
-                Email draft
-              </button>
-              <button
-                type="button"
-                onClick={() => setComposeTab("admin-notes")}
-                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-                  composeTab === "admin-notes"
-                    ? "border-zendesk-green text-zendesk-navy"
-                    : "border-transparent text-zendesk-muted hover:text-zendesk-navy"
-                }`}
-              >
-                Admin notes
-              </button>
+          <div
+            className={`-mt-[10px] flex min-h-0 flex-col overflow-hidden border-t border-zendesk-border pb-3 transition-[flex-basis] duration-200 ease-out ${
+              composeTab === "reply" && replyFocused
+                ? "flex-[0_0_calc(58%+25px)]"
+                : "flex-[0_0_calc(42%+25px)]"
+            }`}
+          >
+            <div className="relative z-10 flex shrink-0 border-b border-zendesk-border bg-gray-50 px-2.5">
+              {composeTabButton("reply", "Email draft")}
+              {composeTabButton("admin-notes", "Admin notes")}
+              {composeTabButton("crm-log", "CRM log")}
             </div>
-            <div className="p-4">
-              {composeTab === "reply" ? (
-                <>
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <div
+                className={`absolute inset-0 flex flex-col overflow-hidden ${
+                  composeTab === "reply" ? "" : "pointer-events-none invisible"
+                }`}
+                aria-hidden={composeTab !== "reply"}
+              >
+                <div className="shrink-0 border-b border-zendesk-border bg-white px-2.5 text-xs">
+                  <label className="flex items-center gap-2 border-b border-zendesk-border/60 px-2 py-1">
+                    <span className="w-9 shrink-0 text-zendesk-muted">To</span>
+                    <span className="min-w-0 truncate text-zendesk-navy">
+                      {ticket.requesterEmail || "—"}
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 px-2 py-1">
+                    <span className="w-9 shrink-0 text-zendesk-muted">Cc</span>
+                    <input
+                      type="text"
+                      value={ccDraft}
+                      onChange={(e) => setCcDraft(e.target.value)}
+                      placeholder="Add Cc recipients…"
+                      className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-zendesk-muted/70"
+                      aria-label="Cc recipients"
+                    />
+                  </label>
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2.5 pt-1">
                   <ReplyDraftEditor
                     ref={replyEditorRef}
                     value={replyBody}
                     onChange={setReplyBody}
                     focused={replyFocused}
                     onFocusChange={setReplyFocused}
+                    fillAvailable
                     placeholder="Draft a reply here, or pick a Mixmax template from the sidebar…"
                   />
-                  <label className="mt-2 flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={ccMarketManager}
-                      onChange={(e) => handleCcMarketManagerChange(e.target.checked)}
-                      disabled={!marketManagerEmail}
-                      className="rounded border-zendesk-border"
-                    />
-                    <span>
-                      CC Market Manager
-                      <span className="text-zendesk-muted">
-                        {!ticket.marketManager
-                          ? " (Column H empty — updates on next sheet refresh)"
-                          : !marketManagerEmail
-                            ? ` (${ticket.marketManager} — add email in Setup → Market managers)`
-                            : marketManagerFromDirectory
-                              ? ` (${ticket.marketManager} → ${marketManagerEmail})`
-                              : ` (${ticket.marketManager})`}
-                      </span>
+                </div>
+                <div className="shrink-0 space-y-2 border-t border-zendesk-border/60 px-2.5 pt-1.5">
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.txt,.csv"
+                    className="hidden"
+                    onChange={handleAttachmentPick}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={
+                        sendQueueBusy ||
+                        replyAttachments.length >= MAX_OUTBOUND_ATTACHMENTS
+                      }
+                      className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                      Attach files
+                    </button>
+                    <span className="text-[10px] text-zendesk-muted">
+                      Up to {MAX_OUTBOUND_ATTACHMENTS} files, 20MB each
                     </span>
-                  </label>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  </div>
+                  {replyAttachments.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {replyAttachments.map((entry) => (
+                        <li
+                          key={entry.id}
+                          className="flex items-center gap-2 rounded border border-zendesk-border bg-gray-50 px-2 py-1.5 text-xs"
+                        >
+                          <Paperclip className="h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
+                          <span className="min-w-0 flex-1 truncate" title={entry.file.name}>
+                            {entry.file.name}
+                          </span>
+                          <span className="shrink-0 text-zendesk-muted">
+                            {formatFileSize(entry.file.size)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeReplyAttachment(entry.id)}
+                            disabled={sendQueueBusy}
+                            className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                            aria-label={`Remove ${entry.file.name}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {attachmentError && (
+                    <p className="mt-1 text-xs text-red-600">{attachmentError}</p>
+                  )}
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={ccMarketManager}
+                        onChange={(e) => handleCcMarketManagerChange(e.target.checked)}
+                        disabled={!marketManagerEmail}
+                        className="rounded border-zendesk-border"
+                      />
+                      <span>
+                        CC Market Manager
+                        {ticket.marketManager && (
+                          <span className="text-zendesk-muted"> ({ticket.marketManager})</span>
+                        )}
+                      </span>
+                    </label>
+                    {marketManagerMissingFromDirectory && (
+                      <p className="text-xs leading-snug text-amber-800">
+                        Market manager{" "}
+                        <span className="font-medium">{ticket.marketManager.trim()}</span> is not
+                        in the directory.{" "}
+                        {onOpenSetup ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSetup("managers")}
+                            className="font-medium text-amber-950 underline underline-offset-2 hover:text-amber-900"
+                          >
+                            Open Settings
+                          </button>
+                        ) : (
+                          "Open Settings"
+                        )}{" "}
+                        to add them under Market managers.
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex w-full flex-wrap items-end gap-2">
                     <button
                       type="button"
                       onClick={() => queueSend("pending")}
-                      disabled={sending || pendingSend || isRichTextEmpty(replyBody)}
-                      className="flex items-center gap-2 rounded bg-zendesk-green px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                    >
-                      <Send className="h-4 w-4" />
-                      {sending ? "Sending..." : "Send and mark pending"}
-                    </button>
-                    <button
-                      type="button"
-                          onClick={() => queueSend("resolved")}
-                      disabled={sending || pendingSend || isRichTextEmpty(replyBody)}
-                      className="flex items-center gap-2 rounded border border-zendesk-green bg-white px-4 py-2 text-sm font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
-                    >
-                      <Send className="h-4 w-4" />
-                      {sending ? "Sending..." : "Send and mark resolved"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openInGmail}
-                      disabled={!gmailThreadUrl && !gmailSearchUrl}
+                      disabled={sendQueueBusy || !canSend}
                       title={
-                        gmailThreadUrl
-                          ? "Open this email thread in Gmail"
-                          : gmailSearchUrl
-                            ? "No CRM thread yet — search Gmail for this contact"
+                        !subjectReady
+                          ? "Add a subject before sending"
+                          : !hasComposeContent
+                            ? "Add a message or attachment before sending"
                             : undefined
                       }
-                      className="flex items-center gap-2 rounded border border-zendesk-border bg-white px-4 py-2 text-sm font-medium text-zendesk-muted hover:bg-gray-50 disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded bg-zendesk-green px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                     >
-                      <Mail className="h-4 w-4" />
-                      Open in Gmail
+                      <Send className="h-4 w-4" />
+                      {isSending ? "Sending..." : "Send/Pending"}
                     </button>
-                  </div>
-                </>
-              ) : (
-                <div className="rounded border border-amber-200/80 bg-amber-100/75 p-3">
-                  <div
-                    className="max-h-[25vh] min-h-[4.5rem] overflow-y-auto whitespace-pre-wrap rounded border border-amber-200/60 bg-amber-50/90 p-2.5 text-sm"
-                  >
-                    {ticket.adminNotes || (
-                      <span className="text-zendesk-muted">No notes yet.</span>
-                    )}
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <input
-                      type="text"
-                      value={newAdminNote}
-                      onChange={(e) => setNewAdminNote(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addAdminNote();
-                      }}
-                      placeholder="Add a note…"
-                      className="min-w-0 flex-1 rounded border border-zendesk-border px-3 py-2 text-sm outline-none focus:border-zendesk-green"
-                    />
+                    <div ref={pendingMenuRef} className="relative inline-flex">
+                      <button
+                        type="button"
+                        onClick={() => setPendingMenuOpen((open) => !open)}
+                        disabled={
+                          markingStatusOnly !== null ||
+                          markingPendingHours !== null ||
+                          sendQueueBusy
+                        }
+                        title="Set status to Pending without sending an email"
+                        className="flex items-center gap-1.5 rounded-l border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        <CircleCheck className="h-4 w-4" />
+                        {markingPendingHours !== null ? "Setting…" : "Set to Pending"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingMenuOpen((open) => !open)}
+                        disabled={
+                          markingStatusOnly !== null ||
+                          markingPendingHours !== null ||
+                          sendQueueBusy
+                        }
+                        aria-expanded={pendingMenuOpen}
+                        aria-label="Choose pending duration"
+                        className="rounded-r border border-l-0 border-zendesk-border bg-white px-1.5 py-1.5 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${pendingMenuOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {pendingMenuOpen && (
+                        <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[10rem] rounded border border-zendesk-border bg-white py-1 shadow-md">
+                          {PENDING_WITHOUT_EMAIL_HOURS_OPTIONS.map((hours) => (
+                            <button
+                              key={hours}
+                              type="button"
+                              onClick={() =>
+                                void setStatusWithoutEmail("pending", {
+                                  pendingHours: hours,
+                                  adminNote: pendingWithoutEmailAdminNote(hours),
+                                })
+                              }
+                              className="block w-full px-3 py-1.5 text-left text-xs text-zendesk-navy hover:bg-gray-100"
+                            >
+                              Pending {hours}h
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <button
                       type="button"
-                      onClick={addAdminNote}
-                      disabled={addingNote || !newAdminNote.trim()}
-                      className="shrink-0 rounded bg-zendesk-green px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      onClick={() => queueSend("resolved")}
+                      disabled={sendQueueBusy || !canSend}
+                      title={
+                        !subjectReady
+                          ? "Add a subject before sending"
+                          : !hasComposeContent
+                            ? "Add a message or attachment before sending"
+                            : undefined
+                      }
+                      className="flex items-center gap-1.5 rounded border border-zendesk-green bg-white px-3 py-1.5 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
                     >
-                      {addingNote ? "Adding…" : "Add"}
+                      <Send className="h-4 w-4" />
+                      {isSending ? "Sending..." : "Send/Resolved"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStatusWithoutEmail("resolved", {
+                          adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
+                        })
+                      }
+                      disabled={
+                        markingStatusOnly !== null ||
+                        markingPendingHours !== null ||
+                        sendQueueBusy ||
+                        ticket.status === "resolved"
+                      }
+                      title="Set status to Resolved without sending an email"
+                      className="flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      <CircleCheck className="h-4 w-4" />
+                      {markingStatusOnly === "resolved" ? "Setting…" : "Set to Resolved"}
+                    </button>
+                    <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
+                      {pendingSendUndo?.active && (
+                        <div className="flex max-w-xs flex-col items-end gap-1 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 shadow-md shadow-amber-100/60">
+                          <button
+                            type="button"
+                            onClick={pendingSendUndo.onUndo}
+                            className="flex items-center gap-2 rounded border border-amber-300/70 bg-white/90 px-3 py-1.5 text-xs font-medium text-amber-950 hover:bg-green-50"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" />
+                            Undo ({pendingSendUndo.secondsLeft}s)
+                          </button>
+                          <p className="text-right text-[10px] leading-snug text-amber-900/75">
+                            {pendingSendUndo.label ?? "Ticket"} →{" "}
+                            {pendingSendUndo.status === "resolved" ? "Resolved" : "Pending"}
+                            {pendingSendUndo.attachmentCount > 0 && (
+                              <span>
+                                {" "}
+                                · {pendingSendUndo.attachmentCount} attachment
+                                {pendingSendUndo.attachmentCount === 1 ? "" : "s"}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={openInGmail}
+                        disabled={!gmailThreadUrl}
+                        title={
+                          gmailThreadUrl
+                            ? "Open this email thread in Gmail"
+                            : "No linked Gmail thread for this ticket"
+                        }
+                        className="flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        <Mail className="h-4 w-4" />
+                        Open in Gmail
+                      </button>
+                    </div>
+                    </div>
+                    {statusOnlyError && (
+                      <p className="text-xs text-red-600">{statusOnlyError}</p>
+                    )}
+                    {sendError && <p className="text-xs text-red-600">{sendError}</p>}
                   </div>
-                  <p className="mt-1 text-[10px] text-zendesk-muted">
-                    Appends as • MM/DD/YYYY - your note to the sheet
-                  </p>
                 </div>
-              )}
+              </div>
+
+              <div
+                className={`absolute inset-0 overflow-hidden ${
+                  composeTab === "admin-notes" ? "" : "pointer-events-none invisible"
+                }`}
+                aria-hidden={composeTab !== "admin-notes"}
+              >
+                <div className="flex h-full flex-col overflow-hidden p-2.5 pb-1.25">
+                  <div className="crm-notes-panel flex min-h-0 flex-1 flex-col">
+                    <div className="crm-notes-content crm-notes-content-compose whitespace-pre-wrap text-sm">
+                      {ticket.adminNotes || (
+                        <span className="text-zendesk-muted">No notes yet.</span>
+                      )}
+                    </div>
+                    <div className="mt-3 shrink-0 flex gap-2">
+                      <input
+                        type="text"
+                        value={newAdminNote}
+                        onChange={(e) => setNewAdminNote(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addAdminNote();
+                        }}
+                        placeholder="Add a note…"
+                        className="min-w-0 flex-1 rounded border border-zendesk-border bg-white px-3 py-2 text-sm outline-none focus:border-zendesk-green"
+                      />
+                      <button
+                        type="button"
+                        onClick={addAdminNote}
+                        disabled={addingNote || !newAdminNote.trim()}
+                        className="shrink-0 rounded bg-zendesk-green px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {addingNote ? "Adding…" : "Add"}
+                      </button>
+                    </div>
+                    {adminNoteError && (
+                      <p className="mt-1 shrink-0 text-xs text-red-600">{adminNoteError}</p>
+                    )}
+                    <p className="mt-1 shrink-0 text-[10px] text-zendesk-muted">
+                      Appends as • MM/DD/YYYY - your note to the sheet
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={`absolute inset-0 overflow-hidden ${
+                  composeTab === "crm-log" ? "" : "pointer-events-none invisible"
+                }`}
+                aria-hidden={composeTab !== "crm-log"}
+              >
+                <CrmTicketLogPanel rowId={ticket.rowId} fillHeight />
+              </div>
             </div>
           </div>
         </div>
 
-        <aside className="relative flex w-72 shrink-0 flex-col overflow-hidden bg-zendesk-sidebar">
+        {internalToolsCollapsed ? (
+          <aside className="flex w-11 shrink-0 flex-col border-l border-zendesk-border bg-zendesk-sidebar">
+            <button
+              type="button"
+              onClick={() => setInternalToolsCollapsed(false)}
+              title="Expand internal tools"
+              aria-label="Expand internal tools"
+              className="flex h-10 items-center justify-center border-b border-zendesk-border text-zendesk-muted hover:bg-white/60 hover:text-zendesk-navy"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <div
+              className="flex flex-1 flex-col items-center gap-2 py-2"
+              title="Internal tools — expand to use"
+            >
+              <Wrench className="h-4 w-4 text-zendesk-muted" />
+            </div>
+          </aside>
+        ) : (
+        <aside className="relative flex w-44 shrink-0 flex-col overflow-hidden bg-zendesk-sidebar xl:w-52">
+          <div className="flex shrink-0 items-center justify-between border-b border-zendesk-border px-2.5 py-1.5">
+            <h3 className="text-[10px] font-semibold uppercase text-zendesk-muted">Internal tools</h3>
+            <button
+              type="button"
+              onClick={() => setInternalToolsCollapsed(true)}
+              title="Collapse internal tools"
+              aria-label="Collapse internal tools"
+              className="rounded p-1 text-zendesk-muted hover:bg-white/60 hover:text-zendesk-navy"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <div
-            className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-4 pb-2 transition-opacity duration-200 ${
-              mixmaxExpanded ? "pointer-events-none overflow-hidden opacity-25" : ""
+            className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-2.5 pb-1 transition-opacity duration-200 ${
+              internalToolsOverlayOpen ? "pointer-events-none overflow-hidden opacity-25" : ""
             }`}
           >
-            <h3 className="text-xs font-semibold uppercase text-zendesk-muted">Internal tools</h3>
-            <ul className="mt-3 space-y-3">
-            <li className="rounded border border-zendesk-border bg-white p-3">
-              {gmailSearchUrl ? (
-                <>
+            <ul className="space-y-2">
+              <li className="rounded border border-zendesk-border bg-white p-2">
+                {salesforceSearchUrl ? (
                   <a
-                    href={gmailSearchUrl}
+                    href={salesforceSearchUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
                   >
-                    Gmail Search
+                    Salesforce Search
                     <ExternalLink className="h-3 w-3 shrink-0" />
                   </a>
-                  <p className="mt-1 break-all text-xs text-zendesk-muted">{ticket.requesterEmail}</p>
-                </>
-              ) : (
-                <p className="text-sm text-zendesk-muted">No email to search</p>
-              )}
-            </li>
-            <li className="rounded border border-zendesk-border bg-white p-3">
-              <button
-                type="button"
-                onClick={() => setGmailLinkExpanded((open) => !open)}
-                className="flex w-full items-start gap-1.5 text-left"
-                aria-expanded={gmailLinkExpanded}
-              >
-                <ChevronRight
-                  className={`mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-muted transition-transform duration-200 ${
-                    gmailLinkExpanded ? "rotate-90" : ""
-                  }`}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-zendesk-navy">
-                    {gmailThreadUrl ? "Gmail thread linked" : "Link Gmail thread"}
+                ) : (
+                  <p className="text-sm text-zendesk-muted">
+                    No {columnLabels?.columnD || "Column D"} value to search
+                  </p>
+                )}
+                {ticket.columnD && (
+                  <p className="mt-1 break-all text-[10px] text-zendesk-muted">{ticket.columnD}</p>
+                )}
+              </li>
+              <li className="rounded border border-zendesk-border bg-white p-2">
+                <label className="block text-[10px]">
+                  <span className="font-medium text-zendesk-muted">
+                    {columnLabels?.airbnbUserId || "User ID (AD)"}
                   </span>
-                  {!gmailLinkExpanded && gmailThreadUrl && (
-                    <span className="mt-0.5 block text-xs text-zendesk-muted">
-                      Click to open linked thread
-                    </span>
-                  )}
-                  {!gmailLinkExpanded && !gmailThreadUrl && (
-                    <span className="mt-0.5 block text-xs text-zendesk-muted">
-                      Click to link a pre-CRM conversation
-                    </span>
-                  )}
-                </span>
-              </button>
-              {gmailLinkExpanded && (
-                <div className="mt-2 pl-5">
-                  {gmailThreadUrl ? (
-                    <>
-                      <p className="text-xs text-zendesk-muted">
-                        This ticket is linked to a Gmail thread.
-                      </p>
-                      <a
-                        href={gmailThreadUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-                      >
-                        Open linked thread
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-zendesk-muted">
-                        For conversations started before the CRM, paste a Gmail thread URL or ID.
-                      </p>
-                      <input
-                        type="text"
-                        value={linkThreadInput}
-                        onChange={(e) => setLinkThreadInput(e.target.value)}
-                        placeholder="https://mail.google.com/.../#inbox/…"
-                        className="mt-2 w-full rounded border border-zendesk-border px-2 py-1.5 text-xs outline-none focus:border-zendesk-green"
+                  <input
+                    type="text"
+                    value={airbnbUserIdDraft}
+                    onChange={(e) => setAirbnbUserIdDraft(e.target.value)}
+                    onBlur={saveAirbnbUserId}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
+                    placeholder="Enter user ID…"
+                    className="mt-1 w-full rounded border border-zendesk-border px-2 py-1 font-mono text-xs outline-none focus:border-zendesk-green"
+                  />
+                  <span
+                    className={`mt-1 block text-[10px] ${
+                      userIdSaveError ? "text-red-600" : "text-zendesk-muted"
+                    }`}
+                  >
+                    {savingUserId
+                      ? `Saving to ${columnLabels?.airbnbUserId || "Column AD"}…`
+                      : userIdSaveError ||
+                        `Synced with ${columnLabels?.airbnbUserId || "Column AD"} on save`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (novaProfileUrl) {
+                        window.open(novaProfileUrl, "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                    disabled={!novaProfileUrl}
+                    title={
+                      novaProfileUrl
+                        ? "Open user profile in Nova"
+                        : "Enter a numeric user ID for Nova profile"
+                    }
+                    className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <UserRound className="h-3.5 w-3.5" />
+                    Nova profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (becomeUserUrl) {
+                        window.open(becomeUserUrl, "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                    disabled={!becomeUserUrl}
+                    title={
+                      becomeUserUrl
+                        ? "Open Become User in admin.airbnb.com"
+                        : becomeUserIdInvalid
+                          ? "User ID must be numeric only (emails and text are not supported)"
+                          : "Enter a numeric user ID first"
+                    }
+                    className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded border border-violet-700 bg-violet-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <UserRound className="h-3.5 w-3.5" />
+                    Become user
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open(ADMIN_LOGOUT_URL, "_blank", "noopener,noreferrer")}
+                    title="Log out of all users in admin.airbnb.com"
+                    className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Log out
+                  </button>
+                </label>
+              </li>
+              <li className="rounded border border-zendesk-border bg-white p-2">
+                <p className="text-xs font-medium text-zendesk-navy">Linked cases</p>
+                <p className="mt-0.5 text-[10px] text-zendesk-muted">
+                  Label · URL
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {ticket.linkedCases.map((value, index) => (
+                    <li key={index}>
+                      <LinkedCaseField
+                        slot={index + 1}
+                        value={value}
+                        onSave={(next) => onLinkedCaseChange(ticket.rowId, index as 0 | 1 | 2, next)}
                       />
-                      {linkThreadError && (
-                        <p className="mt-1 text-xs text-red-600">{linkThreadError}</p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={linkGmailThread}
-                        disabled={linkingThread || !linkThreadInput.trim()}
-                        className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-zendesk-border bg-gray-50 px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
-                      >
-                        <Link2 className="h-3.5 w-3.5" />
-                        {linkingThread ? "Linking…" : "Link thread"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </li>
-            <li className="rounded border border-zendesk-border bg-white p-3">
-              {salesforceSearchUrl ? (
-                <a
-                  href={salesforceSearchUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-                >
-                  Salesforce Search
-                  <ExternalLink className="h-3 w-3 shrink-0" />
-                </a>
-              ) : (
-                <p className="text-sm text-zendesk-muted">No Column D value to search</p>
-              )}
-              {ticket.columnD && (
-                <p className="mt-1 break-all text-xs text-zendesk-muted">{ticket.columnD}</p>
-              )}
-              <label className="mt-3 block text-xs">
-                <span className="font-medium text-zendesk-muted">Airbnb User ID (Column AD)</span>
-                <input
-                  type="text"
-                  value={airbnbUserIdDraft}
-                  onChange={(e) => setAirbnbUserIdDraft(e.target.value)}
-                  onBlur={saveAirbnbUserId}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                  }}
-                  placeholder="Enter user ID…"
-                  className="mt-1 w-full rounded border border-zendesk-border px-2 py-1.5 font-mono text-sm outline-none focus:border-zendesk-green"
-                />
-                <span className="mt-1 block text-[10px] text-zendesk-muted">
-                  {savingUserId ? "Saving to sheet…" : "Synced with Column AD on save"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (novaProfileUrl) {
-                      window.open(novaProfileUrl, "_blank", "noopener,noreferrer");
-                    }
-                  }}
-                  disabled={!novaProfileUrl}
-                  title={
-                    novaProfileUrl
-                      ? "Open user profile in Nova"
-                      : "Enter a numeric user ID for Nova profile"
-                  }
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded border border-zendesk-border bg-white px-3 py-2 text-sm font-medium text-zendesk-navy hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <UserRound className="h-4 w-4" />
-                  Nova profile
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (becomeUserUrl) {
-                      window.open(becomeUserUrl, "_blank", "noopener,noreferrer");
-                    }
-                  }}
-                  disabled={!becomeUserUrl}
-                  title={
-                    becomeUserUrl
-                      ? "Open Become User in admin.airbnb.com"
-                      : becomeUserIdInvalid
-                        ? "User ID must be numeric only (emails and text are not supported)"
-                        : "Enter a numeric user ID first"
-                  }
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded border border-violet-700 bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <UserRound className="h-4 w-4" />
-                  Become user
-                </button>
-                <button
-                  type="button"
-                  onClick={() => window.open(ADMIN_LOGOUT_URL, "_blank", "noopener,noreferrer")}
-                  title="Log out of all users in admin.airbnb.com"
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded border border-zendesk-border bg-white px-3 py-2 text-sm font-medium text-zendesk-navy hover:bg-gray-50"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Log out of all users
-                </button>
-              </label>
-            </li>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+              <li className="rounded border border-zendesk-border bg-white p-2">
+                <p className="text-xs font-medium text-zendesk-navy">External tools</p>
+                <p className="mt-0.5 text-[10px] text-zendesk-muted">
+                  Configure in Preferences
+                </p>
+                {configuredExternalTools.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {configuredExternalTools.map((tool, index) => (
+                      <li key={index}>
+                        <a
+                          href={tool.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                        >
+                          {tool.label}
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-[10px] text-zendesk-muted">
+                    No shortcuts yet — add label and URL in Preferences → External tools.
+                  </p>
+                )}
+              </li>
             </ul>
           </div>
 
@@ -963,11 +1622,137 @@ export function TicketDetail({
               email: ticket.requesterEmail,
             }}
             onApply={applyTemplate}
-            onExpandedChange={setMixmaxExpanded}
+            onExpandedChange={(open) => {
+              setMixmaxExpanded(open);
+              if (open) setSendArchiveExpanded(false);
+            }}
           />
+          <div className="shrink-0 border-t border-zendesk-border bg-zendesk-sidebar p-3">
+            <button
+              type="button"
+              onClick={() => setTrustEscalationsOpen(true)}
+              title="Trust Escalations — choose the right escalation path"
+              aria-label="Trust Escalations"
+              className="flex w-full items-start gap-1.5 text-left"
+            >
+              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-teal" />
+              <span className="block text-xs font-semibold uppercase text-zendesk-muted">
+                Trust escalations
+              </span>
+            </button>
+          </div>
+          <SendArchivePanel
+            onExpandedChange={(open) => {
+              setSendArchiveExpanded(open);
+              if (open) setMixmaxExpanded(false);
+            }}
+          />
+          {trustEscalationsOpen && (
+            <TrustEscalationsModal onClose={() => setTrustEscalationsOpen(false)} />
+          )}
         </aside>
+        )}
       </div>
+
     </main>
+  );
+}
+
+function LinkedCaseField({
+  slot,
+  value,
+  onSave,
+}: {
+  slot: number;
+  value: string;
+  onSave: (value: string) => void | Promise<void>;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(() => formatLinkedCaseForEdit(value));
+  const parsed = parseLinkedCase(value);
+  const hasLink = Boolean(parsed.url);
+
+  useEffect(() => {
+    if (!isEditing) setDraft(formatLinkedCaseForEdit(value));
+  }, [value, isEditing]);
+
+  async function copyUrl() {
+    if (!parsed.url) return;
+    await navigator.clipboard.writeText(parsed.url);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function saveDraft() {
+    const next = serializeLinkedCaseFromDraft(draft);
+    if (next === value.trim()) {
+      setIsEditing(false);
+      return;
+    }
+    await onSave(next);
+    setIsEditing(false);
+  }
+
+  return (
+    <div className="flex min-w-0 items-start gap-1 text-xs">
+      <span className="mt-0.5 w-3.5 shrink-0 text-[10px] text-zendesk-muted">{slot}.</span>
+      {isEditing ? (
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => void saveDraft()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setDraft(formatLinkedCaseForEdit(value));
+              setIsEditing(false);
+            }
+          }}
+          placeholder={"Safety\nhttps://…"}
+          rows={2}
+          autoFocus
+          className="min-w-0 flex-1 resize-none rounded border border-zendesk-green px-2 py-1 text-xs leading-snug outline-none"
+        />
+      ) : hasLink ? (
+        <a
+          href={parsed.url!}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={parsed.url!}
+          className="min-w-0 flex-1 truncate text-sm font-medium text-blue-600 hover:underline"
+        >
+          {parsed.label || "Link"}
+        </a>
+      ) : parsed.label ? (
+        <span className="min-w-0 flex-1 truncate text-sm text-zendesk-muted" title={parsed.label}>
+          {parsed.label}
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 text-sm text-zendesk-muted">—</span>
+      )}
+      {hasLink && !isEditing && (
+        <button
+          type="button"
+          onClick={copyUrl}
+          title={copied ? "Copied!" : "Copy URL"}
+          aria-label={copied ? "Copied" : "Copy URL"}
+          className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {!isEditing && (
+        <button
+          type="button"
+          onClick={() => setIsEditing(true)}
+          title={`Edit linked case ${slot}`}
+          aria-label={`Edit linked case ${slot}`}
+          className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1041,7 +1826,7 @@ function NovaSheetLinkField({
             target="_blank"
             rel="noopener noreferrer"
             title={trimmed ? `Open in Nova (${label}): ${trimmed}` : `Open in Nova (${label})`}
-            className="rounded border border-zendesk-border bg-white px-1.5 py-0.5 font-mono text-xs text-blue-600 hover:bg-gray-50 hover:underline"
+            className="rounded border border-zendesk-border bg-white px-1.5 py-0.5 font-mono text-xs text-blue-600 hover:bg-gray-100 hover:underline"
           >
             {displayValue}
           </a>
@@ -1059,7 +1844,7 @@ function NovaSheetLinkField({
             onClick={copyValue}
             title={copied ? "Copied!" : `Copy ${label}`}
             aria-label={copied ? "Copied" : `Copy ${label} to clipboard`}
-            className="rounded border border-zendesk-border p-1 text-zendesk-muted hover:bg-gray-50 hover:text-zendesk-navy"
+            className="rounded border border-zendesk-border p-1 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
           >
             <Copy className="h-3.5 w-3.5" />
           </button>
@@ -1070,7 +1855,7 @@ function NovaSheetLinkField({
             onClick={() => setIsEditing(true)}
             title={`Edit ${label}`}
             aria-label={`Edit ${label}`}
-            className="rounded border border-zendesk-border p-1 text-zendesk-muted hover:bg-gray-50 hover:text-zendesk-navy"
+            className="rounded border border-zendesk-border p-1 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>

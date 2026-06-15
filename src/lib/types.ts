@@ -16,6 +16,7 @@ export type ColumnRole =
   | "reservationCode"
   | "listingId"
   | "userEmailed"
+  | "ticketHeaderField"
   | "unknown";
 
 export interface ColumnMapping {
@@ -23,9 +24,21 @@ export interface ColumnMapping {
   index: number;
   /** Column letter e.g. "K" */
   letter: string;
-  /** Header text from row 1 */
+  /** Display label in CRM (editable in Setup). */
   header: string;
+  /** Original header text from row 1 of the sheet. */
+  sheetHeader?: string;
   role: ColumnRole;
+  /** Hidden from column mapping UI (unmapped columns only). */
+  hidden?: boolean;
+}
+
+/** Editable ticket-header field mapped to a sheet column (Setup → UI fields). */
+export interface UiFieldSlot {
+  id: string;
+  label: string;
+  /** 0-based sheet column index; null = unused placeholder slot. */
+  columnIndex: number | null;
 }
 
 export interface SheetConfig {
@@ -35,6 +48,8 @@ export interface SheetConfig {
   sheetName: string;
   headerRow: number;
   columns: ColumnMapping[];
+  /** Optional header-area fields under the ticket subject. */
+  uiFieldSlots?: UiFieldSlot[];
   /** When true, saved column roles are not auto-overwritten on load. */
   manuallyMapped?: boolean;
   createdAt: string;
@@ -51,7 +66,13 @@ export interface Ticket {
   /** Value from sheet Column D (Salesforce search) */
   columnD: string;
   requesterName: string;
+  /** Mappable header field shown under the ticket subject (Setup → column role). */
+  headerField: string;
+  /** Values for Setup → UI field slots keyed by slot id. */
+  uiFields: Record<string, string>;
   subject: string;
+  /** CRM-only subject suffix (after the fixed email prefix) for list display. */
+  crmSubjectLabel: string;
   description: string;
   /** Contact reason from sheet Column I */
   contactReason: string;
@@ -71,6 +92,10 @@ export interface Ticket {
   listingId: string;
   /** CRM overlay status */
   status: string;
+  /** When status was set to pending/longterm_hold — anchors response timer while waiting */
+  statusChangedAt: string | null;
+  /** Calendar-hour pending timer when set via Set to Pending (null = business-hour default). */
+  pendingReopenHours: number | null;
   internalTools: {
     k: string;
     m: string;
@@ -83,7 +108,22 @@ export interface Ticket {
   lastResponseAt: string | null;
   /** No agent reply yet and past initial-response SLA */
   needsInitialResponse: boolean;
+  /** Linked Gmail thread open URL from overlay (null when not linked) */
+  gmailOpenUrl: string | null;
+  /** CRM-only linked case URLs (not synced to intake sheet) */
+  linkedCases: [string, string, string];
   raw: Record<string, string>;
+}
+
+export interface ThreadMessageAttachment {
+  id: string;
+  threadMessageId: string;
+  ticketRowId: string;
+  gmailMessageId: string;
+  gmailAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export interface ThreadMessage {
@@ -98,7 +138,24 @@ export interface ThreadMessage {
   gmailMessageId: string | null;
   gmailThreadId: string | null;
   sentAt: string;
+  attachments?: ThreadMessageAttachment[];
 }
+
+export interface GmailThreadCandidatePreview {
+  apiThreadId: string;
+  subject: string;
+  from: string;
+  to: string;
+  sentAt: string;
+  snippet: string;
+  messageCount: number;
+  folders: string[];
+}
+
+export type GmailThreadLinkResolveResult =
+  | { status: "resolved"; apiThreadId: string }
+  | { status: "ambiguous"; threadIds: string[] }
+  | { status: "not_found" };
 
 export interface StatusOption {
   id: string;

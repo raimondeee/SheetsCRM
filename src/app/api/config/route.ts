@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { saveSheetConfig } from "@/lib/overlay-db";
 import type { SheetConfig } from "@/lib/types";
+import { prepareSheetConfig } from "@/lib/ui-field-slots";
 
 export async function POST(request: Request) {
   try {
-    const config = (await request.json()) as SheetConfig;
+    const config = prepareSheetConfig((await request.json()) as SheetConfig);
     config.updatedAt = new Date().toISOString();
     saveSheetConfig(config);
     return NextResponse.json({ ok: true, config });

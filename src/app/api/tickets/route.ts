@@ -3,6 +3,10 @@ import { buildDefaultSheetConfig } from "@/lib/default-sheet-config";
 import { loadSheetConfig, saveSheetConfig } from "@/lib/overlay-db";
 import { fetchTicketsFromSheet, hasGoogleCredentials } from "@/lib/sheets";
 import { getMockTickets } from "@/lib/mock-data";
+import { migrateLegacyInitialResponseSla } from "@/lib/legacy-initial-sla-migration";
+import { loadTimerSettings } from "@/lib/crm-preferences-store";
+import { getSignedInUser } from "@/lib/google-auth";
+import { runBackgroundGmailSyncForTickets } from "@/lib/background-gmail-sync";
 import { enrichTicketsWithLastResponse } from "@/lib/tickets-enrich";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +26,16 @@ export async function GET() {
 
     const hasAuth = await hasGoogleCredentials();
     const useMock = process.env.USE_MOCK_DATA === "true" || !hasAuth;
-    let tickets = useMock ? getMockTickets() : await fetchTicketsFromSheet(config);
-    tickets = enrichTicketsWithLastResponse(tickets);
+    const { email } = await getSignedInUser();
+    const timerSettings = loadTimerSettings(email);
+    let tickets = useMock
+      ? getMockTickets(timerSettings)
+      : await fetchTicketsFromSheet(config, timerSettings);
+    if (!useMock) {
+      tickets = await runBackgroundGmailSyncForTickets(tickets, timerSettings);
+    }
+    const legacySlaCleared = migrateLegacyInitialResponseSla(tickets);
+    tickets = enrichTicketsWithLastResponse(tickets, timerSettings);
 
     return NextResponse.json(
       {
@@ -32,6 +44,7 @@ export async function GET() {
         source: useMock ? "mock" : "sheets",
         hasCredentials: hasAuth,
         syncedAt: new Date().toISOString(),
+        legacyInitialSlaCleared: legacySlaCleared > 0 ? legacySlaCleared : undefined,
       },
       { headers: NO_CACHE_HEADERS }
     );

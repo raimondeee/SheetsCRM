@@ -6,6 +6,7 @@ export interface DashboardFilter {
   contactReason?: string;
   marketManager?: string;
   requesterName?: string;
+  requesterEmail?: string;
   statusBucket?: "Resolved" | "Pending";
   weekLabel?: string;
 }
@@ -25,6 +26,12 @@ export function applyDashboardFilter(tickets: Ticket[], filter: DashboardFilter 
       return false;
     }
     if (filter.requesterName && ticket.requesterName.trim() !== filter.requesterName) {
+      return false;
+    }
+    if (
+      filter.requesterEmail &&
+      !ticket.requesterEmail.toLowerCase().includes(filter.requesterEmail.toLowerCase())
+    ) {
       return false;
     }
     if (filter.statusBucket) {
@@ -57,6 +64,7 @@ export function dashboardFilterLabel(filter: DashboardFilter | null): string | n
   if (filter.contactReason) parts.push(`Reason: ${filter.contactReason}`);
   if (filter.marketManager) parts.push(`MM: ${filter.marketManager}`);
   if (filter.requesterName) parts.push(`Host: ${filter.requesterName}`);
+  if (filter.requesterEmail) parts.push(`Email: ${filter.requesterEmail}`);
   if (filter.statusBucket) parts.push(`Status: ${filter.statusBucket}`);
   if (filter.weekLabel) parts.push(`Week: ${filter.weekLabel}`);
   return parts.length > 0 ? parts.join(" · ") : null;

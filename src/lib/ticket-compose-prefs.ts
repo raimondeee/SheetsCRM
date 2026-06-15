@@ -2,43 +2,33 @@ export interface TicketComposePrefs {
   ccMarketManager: boolean;
 }
 
-const STORAGE_KEY = "sheetscrm_compose_prefs";
-const MAX_PREFS = 500;
+export const DEFAULT_COMPOSE_PREFS: TicketComposePrefs = {
+  ccMarketManager: false,
+};
 
-function loadAll(): Record<string, TicketComposePrefs> {
-  if (typeof window === "undefined") return {};
+export async function fetchComposePrefs(ticketRowId: string): Promise<TicketComposePrefs> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, TicketComposePrefs>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const res = await fetch(
+      `/api/compose-prefs/${encodeURIComponent(ticketRowId)}`,
+      { cache: "no-store", credentials: "same-origin" }
+    );
+    const data = await res.json();
+    if (!res.ok) return DEFAULT_COMPOSE_PREFS;
+    return {
+      ccMarketManager: Boolean(data.prefs?.ccMarketManager),
+    };
   } catch {
-    return {};
+    return DEFAULT_COMPOSE_PREFS;
   }
 }
 
-function persistAll(prefs: Record<string, TicketComposePrefs>): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-}
-
-export function loadComposePrefs(rowId: string): TicketComposePrefs {
-  const stored = loadAll()[rowId];
-  return {
-    ccMarketManager: Boolean(stored?.ccMarketManager),
-  };
-}
-
-export function saveComposePrefs(rowId: string, prefs: TicketComposePrefs): void {
-  if (typeof window === "undefined") return;
-  const all = loadAll();
-  all[rowId] = { ccMarketManager: Boolean(prefs.ccMarketManager) };
-
-  const entries = Object.entries(all);
-  if (entries.length > MAX_PREFS) {
-    persistAll(Object.fromEntries(entries.slice(-MAX_PREFS)));
-    return;
-  }
-
-  persistAll(all);
+export async function saveComposePrefs(
+  ticketRowId: string,
+  prefs: TicketComposePrefs
+): Promise<void> {
+  await fetch(`/api/compose-prefs/${encodeURIComponent(ticketRowId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
+  });
 }

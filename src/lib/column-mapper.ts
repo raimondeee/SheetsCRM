@@ -54,6 +54,7 @@ export function analyzeHeaders(headers: string[]): ColumnMapping[] {
     index,
     letter: indexToLetter(index),
     header: header.trim(),
+    sheetHeader: header.trim(),
     role: "unknown" as ColumnRole,
   }));
 
@@ -83,7 +84,7 @@ export function normalizeSheetConfig(config: SheetConfig): SheetConfig {
   const maxIndex = sorted.reduce((max, col) => Math.max(max, col.index), 0);
   const headers = Array.from({ length: maxIndex + 1 }, (_, index) => {
     const col = sorted.find((c) => c.index === index);
-    return col?.header?.trim() || `Column ${indexToLetter(index)}`;
+    return col?.sheetHeader?.trim() || col?.header?.trim() || `Column ${indexToLetter(index)}`;
   });
 
   const hasRealHeaders = headers.some(
@@ -122,8 +123,14 @@ function applyFixedPositions(mappings: ColumnMapping[]): void {
     const existing = mappings.find((m) => m.role === role);
     if (existing && existing.index === index) continue;
 
-    // Keep header-detected Market Manager / contact reason even if not at H / I
-    if (existing && existing.index !== index && roleMatchedByHeader(role, existing.header)) {
+    // Keep header-detected Market Manager / contact reason even if not at H / I.
+    // Airbnb User ID is always Column AD — do not keep ambiguous "user id" headers elsewhere.
+    if (
+      role !== "airbnbUserId" &&
+      existing &&
+      existing.index !== index &&
+      roleMatchedByHeader(role, existing.header)
+    ) {
       continue;
     }
 
@@ -150,7 +157,21 @@ export function getColumnByRole(
   config: SheetConfig,
   role: ColumnRole
 ): ColumnMapping | undefined {
+  if (role === "airbnbUserId") return getAirbnbUserIdColumn(config);
   return config.columns.find((c) => c.role === role);
+}
+
+/** Airbnb User ID always lives in Column AD on the intake sheet. */
+export function getAirbnbUserIdColumn(config: SheetConfig): ColumnMapping {
+  const atAd = config.columns.find(
+    (c) => c.index === EXAMPLE_COLUMN_POSITIONS.airbnbUserId.index
+  );
+  return {
+    index: EXAMPLE_COLUMN_POSITIONS.airbnbUserId.index,
+    letter: EXAMPLE_COLUMN_POSITIONS.airbnbUserId.letter,
+    header: atAd?.header?.trim() || "Airbnb User ID",
+    role: "airbnbUserId",
+  };
 }
 
 /** Read a cell by role, with a direct header-pattern fallback for marketManager. */

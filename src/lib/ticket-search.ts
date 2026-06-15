@@ -1,6 +1,30 @@
 import type { Ticket } from "./types";
+import { uiFieldValuesForSearch } from "./ui-field-slots";
+import { normalizeStatusId } from "./status-mapper";
 
 const RESO_LISTING_RAW_KEY = /reso|reservation|listing|property|space|confirmation/i;
+
+/** Search results group tickets by status in this order. */
+export const SEARCH_RESULT_STATUS_ORDER = [
+  "new",
+  "open",
+  "pending",
+  "resolved",
+  "longterm_hold",
+  "do_not_action",
+] as const;
+
+export function getSearchResultStatusRank(status: string): number {
+  const normalized = normalizeStatusId(status);
+  const index = SEARCH_RESULT_STATUS_ORDER.indexOf(
+    normalized as (typeof SEARCH_RESULT_STATUS_ORDER)[number]
+  );
+  return index >= 0 ? index : SEARCH_RESULT_STATUS_ORDER.length;
+}
+
+export function compareSearchResultStatusRank(a: Ticket, b: Ticket): number {
+  return getSearchResultStatusRank(a.status) - getSearchResultStatusRank(b.status);
+}
 
 function normalizeSearchToken(value: string): string {
   return value.toLowerCase().replace(/[\s_\-./]+/g, "");
@@ -57,6 +81,8 @@ function generalSearchValues(ticket: Ticket): string[] {
     ticket.requesterEmail,
     ticket.columnD,
     ticket.requesterName,
+    ticket.headerField,
+    ...uiFieldValuesForSearch(ticket),
     ticket.subject,
     ticket.airbnbUserId,
     ...getResoAndListingValues(ticket),
@@ -70,7 +96,7 @@ export function ticketMatchesSearch(ticket: Ticket, query: string): boolean {
   return generalSearchValues(ticket).some((value) => valueMatchesQuery(value, q));
 }
 
-/** Status filter + search; reso/listing matches are shown across all CRM statuses. */
+/** Status filter + search. Active search ignores the sidebar status view and matches all tickets. */
 export function ticketPassesListFilters(params: {
   ticket: Ticket;
   statusFilter: string;
@@ -81,6 +107,5 @@ export function ticketPassesListFilters(params: {
     params.statusFilter === "all" || params.ticket.status === params.statusFilter;
 
   if (!q) return matchStatus;
-  if (ticketMatchesResoOrListingSearch(params.ticket, q)) return true;
-  return matchStatus && ticketMatchesSearch(params.ticket, q);
+  return ticketMatchesSearch(params.ticket, q);
 }

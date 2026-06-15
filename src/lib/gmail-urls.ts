@@ -8,11 +8,34 @@ export function getGmailBaseUrl(): string {
 export function buildGmailSearchUrl(email: string): string | null {
   const trimmed = email.trim();
   if (!trimmed) return null;
-  return `${getGmailBaseUrl()}/#search/${encodeURIComponent(trimmed)}`;
+  const query = trimmed.includes("@") ? `from:${trimmed}` : trimmed;
+  return `${getGmailBaseUrl()}/#search/${encodeURIComponent(query)}`;
 }
 
 export function buildGmailMessageUrl(messageId: string): string {
   return `${getGmailBaseUrl()}/#all/${messageId}`;
+}
+
+/** Gmail API thread/message ids are lowercase hex strings. */
+export function isGmailApiThreadId(id: string): boolean {
+  return /^[0-9a-f]{10,}$/i.test(id.trim());
+}
+
+/** Legacy Gmail web ids (e.g. FMfcgz…) open in the browser but not via the API. */
+export function isGmailLegacyWebId(id: string): boolean {
+  const trimmed = id.trim();
+  if (!trimmed) return false;
+  if (isGmailApiThreadId(trimmed)) return false;
+  if (trimmed.startsWith("FMfcgz") || trimmed.startsWith("msg-f:")) return true;
+  return /[A-Z]/.test(trimmed);
+}
+
+/** Build a Gmail URL that opens a thread or legacy web conversation id. */
+export function buildGmailConversationUrl(id: string): string {
+  if (isGmailLegacyWebId(id)) {
+    return buildGmailMessageUrl(id);
+  }
+  return buildGmailThreadUrl(id);
 }
 
 export function buildGmailThreadUrl(threadId: string): string {

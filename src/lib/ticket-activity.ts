@@ -30,10 +30,27 @@ export function getTicketSortTime(ticket: Ticket): number {
   return ticket.rowNumber;
 }
 
+/** Sort key from latest thread activity or intake time; falls back to submission time. */
+export function getTicketUpdatedSortTime(ticket: Ticket): number {
+  if (ticket.lastResponseAt) {
+    const updated = new Date(ticket.lastResponseAt);
+    if (!Number.isNaN(updated.getTime())) return updated.getTime();
+  }
+  return getTicketSortTime(ticket);
+}
+
 export function resolveLastResponseAt(
-  ticket: Ticket,
+  ticket: Pick<Ticket, "timestamp" | "status" | "statusChangedAt">,
   threadLastSentAt?: string | null
 ): string | null {
+  if (
+    (ticket.status === "pending" || ticket.status === "longterm_hold") &&
+    ticket.statusChangedAt
+  ) {
+    const anchor = new Date(ticket.statusChangedAt);
+    if (!Number.isNaN(anchor.getTime())) return ticket.statusChangedAt;
+  }
+
   const threadDate = threadLastSentAt ? new Date(threadLastSentAt) : null;
   const sheetDate = parseSheetTimestamp(ticket.timestamp);
 
@@ -43,6 +60,32 @@ export function resolveLastResponseAt(
   }
 
   return sheetDate?.toISOString() ?? null;
+}
+
+/** Apply timer fields returned from a pending status change (API or mock). */
+export function applyPendingStatusTimerFields(
+  ticket: Ticket,
+  fields: {
+    status: string;
+    statusChangedAt?: string | null;
+    slaDueAt?: string | null;
+  }
+): Ticket {
+  const status = fields.status;
+  const statusChangedAt =
+    fields.statusChangedAt !== undefined ? fields.statusChangedAt : ticket.statusChangedAt;
+  const slaDueAt = fields.slaDueAt !== undefined ? fields.slaDueAt : ticket.slaDueAt;
+  const updated = {
+    ...ticket,
+    status,
+    statusChangedAt,
+    slaDueAt,
+    slaBreached: slaDueAt ? new Date(slaDueAt) < new Date() : ticket.slaBreached,
+  };
+  return {
+    ...updated,
+    lastResponseAt: resolveLastResponseAt(updated),
+  };
 }
 
 /** Hours since last response (thread or intake timestamp). */

@@ -8,6 +8,8 @@ import { parseMarketManagerPaste, sortMarketManagers } from "@/lib/market-manage
 export function MarketManagersPanel() {
   const [managers, setManagers] = useState<MarketManager[]>([]);
   const [search, setSearch] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -55,8 +57,17 @@ export function MarketManagersPanel() {
     );
   }
 
-  function addRow() {
-    setManagers((prev) => [...prev, { name: "", email: "" }]);
+  function addMarketManager() {
+    const name = newName.trim();
+    const email = newEmail.trim();
+    if (!name || !email) {
+      setMessage("Enter both name and email for the new market manager.");
+      return;
+    }
+    setManagers((prev) => sortMarketManagers([...prev, { name, email }]));
+    setNewName("");
+    setNewEmail("");
+    setMessage(null);
   }
 
   function removeRow(index: number) {
@@ -170,14 +181,45 @@ export function MarketManagersPanel() {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={addRow}
-        className="mt-3 flex items-center gap-1 rounded border border-zendesk-border px-3 py-1.5 text-sm hover:bg-gray-50"
-      >
-        <Plus className="h-4 w-4" />
-        Add row
-      </button>
+      <div className="mt-3 rounded border border-zendesk-border bg-gray-50/80 p-3">
+        <p className="text-xs font-medium text-zendesk-navy">New market manager</p>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="min-w-[10rem] flex-1 text-xs text-zendesk-muted">
+            Name
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addMarketManager();
+              }}
+              className="mt-1 w-full rounded border border-zendesk-border bg-white px-2 py-1.5 text-sm text-zendesk-navy outline-none focus:border-zendesk-green"
+              placeholder="Full name"
+            />
+          </label>
+          <label className="min-w-[12rem] flex-[1.5] text-xs text-zendesk-muted">
+            Email
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addMarketManager();
+              }}
+              className="mt-1 w-full rounded border border-zendesk-border bg-white px-2 py-1.5 text-sm text-zendesk-navy outline-none focus:border-zendesk-green"
+              placeholder="name@airbnb.com"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={addMarketManager}
+            className="flex shrink-0 items-center gap-1 rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-100"
+          >
+            <Plus className="h-4 w-4" />
+            Add Market Manager
+          </button>
+        </div>
+      </div>
 
       <details className="mt-4 rounded border border-zendesk-border bg-gray-50/80 p-3">
         <summary className="cursor-pointer text-sm font-medium">Bulk import (Name + Email)</summary>
