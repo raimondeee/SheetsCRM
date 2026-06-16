@@ -1,5 +1,5 @@
 import type { DashboardPeriod } from "./dashboard-period";
-import { dashboardPeriodDays, dashboardPeriodLabel } from "./dashboard-period";
+import { dashboardPeriodLabel, ticketMatchesDashboardPeriod } from "./dashboard-period";
 import type { Ticket } from "./types";
 import { parseSheetTimestamp } from "./ticket-activity";
 
@@ -79,17 +79,7 @@ export function filterTicketsByPeriod(
   tickets: Ticket[],
   period: DashboardPeriod
 ): Ticket[] {
-  const days = dashboardPeriodDays(period);
-  if (days === null) return tickets;
-
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - days);
-
-  return tickets.filter((t) => {
-    const d = parseSheetTimestamp(t.timestamp);
-    return d && d >= cutoff;
-  });
+  return tickets.filter((ticket) => ticketMatchesDashboardPeriod(ticket, period));
 }
 
 export function buildDashboardStats(

@@ -96,6 +96,38 @@ export function ticketMatchesSearch(ticket: Ticket, query: string): boolean {
   return generalSearchValues(ticket).some((value) => valueMatchesQuery(value, q));
 }
 
+/** Statuses eligible for missing-field queue filters. */
+export const QUALITY_FILTER_STATUSES = ["new", "open", "pending"] as const;
+
+export type TicketQualityFilter = "missing_reason" | "missing_id";
+
+export function ticketIsInQualityFilterScope(status: string): boolean {
+  const normalized = normalizeStatusId(status);
+  return (QUALITY_FILTER_STATUSES as readonly string[]).includes(normalized);
+}
+
+export function ticketMissingContactReason(ticket: Ticket): boolean {
+  return !ticket.contactReason.trim();
+}
+
+export function ticketMissingAirbnbUserId(ticket: Ticket): boolean {
+  return !ticket.airbnbUserId.trim();
+}
+
+export function ticketPassesQualityFilters(
+  ticket: Ticket,
+  qualityFilters: TicketQualityFilter[]
+): boolean {
+  if (qualityFilters.length === 0) return true;
+  if (!ticketIsInQualityFilterScope(ticket.status)) return false;
+
+  for (const filter of qualityFilters) {
+    if (filter === "missing_reason" && !ticketMissingContactReason(ticket)) return false;
+    if (filter === "missing_id" && !ticketMissingAirbnbUserId(ticket)) return false;
+  }
+  return true;
+}
+
 /** Status filter + search. Active search ignores the sidebar status view and matches all tickets. */
 export function ticketPassesListFilters(params: {
   ticket: Ticket;

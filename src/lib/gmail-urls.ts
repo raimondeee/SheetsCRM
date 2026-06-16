@@ -59,3 +59,14 @@ export function buildGmailComposeUrl(params: {
   if (params.body?.trim()) qs.set("body", params.body.trim());
   return `${getGmailBaseUrl()}/?${qs.toString()}`;
 }
+
+/** Sized popup for Gmail compose (Mixmax extension can enhance the Gmail page inside). */
+export const GMAIL_COMPOSE_POPUP_FEATURES =
+  "width=720,height=820,left=80,top=40,resizable=yes,scrollbars=yes";
+
+export function openGmailComposePopup(
+  url: string,
+  windowName = "sheetscrm-gmail-compose"
+): Window | null {
+  return window.open(url, windowName, GMAIL_COMPOSE_POPUP_FEATURES);
+}

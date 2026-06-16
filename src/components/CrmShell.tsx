@@ -56,6 +56,7 @@ import { isResponseSlaEligibleStatus } from "@/lib/sla-display";
 import { normalizeStatusId } from "@/lib/status-mapper";
 import { InboxVictoryView } from "./InboxVictoryView";
 import { buildContactReasonOptions } from "@/lib/contact-reasons";
+import type { TicketQualityFilter } from "@/lib/ticket-search";
 import type { DashboardPeriod } from "@/lib/dashboard-period";
 import {
   DEFAULT_USER_PREFERENCES,
@@ -113,6 +114,7 @@ export function CrmShell() {
   const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("3m");
   const prefsRef = useRef<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [search, setSearch] = useState("");
+  const [qualityFilters, setQualityFilters] = useState<TicketQualityFilter[]>([]);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupInitialTab, setSetupInitialTab] = useState<SetupModalTab>("sheet");
   const [marketManagersVersion, setMarketManagersVersion] = useState(0);
@@ -382,9 +384,16 @@ export function CrmShell() {
         sortBy,
         sortOrder,
         dashboardFilter,
+        qualityFilters,
       }),
-    [tickets, statusFilter, search, sortBy, sortOrder, dashboardFilter]
+    [tickets, statusFilter, search, sortBy, sortOrder, dashboardFilter, qualityFilters]
   );
+
+  function handleQualityFilterToggle(filter: TicketQualityFilter) {
+    setQualityFilters((prev) =>
+      prev.includes(filter) ? prev.filter((item) => item !== filter) : [...prev, filter]
+    );
+  }
 
   useEffect(() => {
     if (!prefsLoaded || loading || initialSelectionDone.current) return;
@@ -538,6 +547,7 @@ export function CrmShell() {
       sortBy,
       sortOrder,
       dashboardFilter,
+      qualityFilters,
     });
 
     if (result.kind === "victory") {
@@ -1089,6 +1099,8 @@ export function CrmShell() {
             onSortByChange={handleSortByChange}
             sortOrder={sortOrder}
             onSortOrderChange={handleSortOrderChange}
+            qualityFilters={qualityFilters}
+            onQualityFilterToggle={handleQualityFilterToggle}
             collapsed={ticketListCollapsed}
             onToggleCollapsed={() => setTicketListCollapsed((v) => !v)}
             initialResponseHours={initialResponseHours}

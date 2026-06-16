@@ -1,8 +1,14 @@
 import type { Ticket } from "./types";
+import {
+  dashboardPeriodLabel,
+  ticketMatchesDashboardPeriod,
+  type DashboardPeriod,
+} from "./dashboard-period";
 import { shortMarketManagerLabel } from "./dashboard-stats";
 import { parseSheetTimestamp } from "./ticket-activity";
 
 export interface DashboardFilter {
+  period?: DashboardPeriod;
   contactReason?: string;
   marketManager?: string;
   requesterName?: string;
@@ -15,6 +21,9 @@ export function applyDashboardFilter(tickets: Ticket[], filter: DashboardFilter 
   if (!filter || Object.keys(filter).length === 0) return tickets;
 
   return tickets.filter((ticket) => {
+    if (filter.period && !ticketMatchesDashboardPeriod(ticket, filter.period)) {
+      return false;
+    }
     if (filter.contactReason && ticket.contactReason.trim() !== filter.contactReason) {
       return false;
     }
@@ -61,6 +70,9 @@ function getWeekStartSunday(date: Date): Date {
 export function dashboardFilterLabel(filter: DashboardFilter | null): string | null {
   if (!filter) return null;
   const parts: string[] = [];
+  if (filter.period && filter.period !== "all") {
+    parts.push(`Period: ${dashboardPeriodLabel(filter.period)}`);
+  }
   if (filter.contactReason) parts.push(`Reason: ${filter.contactReason}`);
   if (filter.marketManager) parts.push(`MM: ${filter.marketManager}`);
   if (filter.requesterName) parts.push(`Host: ${filter.requesterName}`);

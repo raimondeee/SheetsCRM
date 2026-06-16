@@ -1,6 +1,6 @@
 import { applyDashboardFilter, type DashboardFilter } from "./dashboard-filter";
 import { getTicketSortTime, getTicketUpdatedSortTime } from "./ticket-activity";
-import { compareSearchResultStatusRank, ticketPassesListFilters } from "./ticket-search";
+import { compareSearchResultStatusRank, ticketPassesListFilters, ticketPassesQualityFilters, type TicketQualityFilter } from "./ticket-search";
 import type { Ticket } from "./types";
 import type { SortBy, SortOrder } from "./user-preferences";
 
@@ -36,13 +36,14 @@ export function buildFilteredTicketList(params: {
   sortBy: SortBy;
   sortOrder: SortOrder;
   dashboardFilter: DashboardFilter | null;
+  qualityFilters?: TicketQualityFilter[];
 }): Ticket[] {
   const matched = params.tickets.filter((t) =>
     ticketPassesListFilters({
       ticket: t,
       statusFilter: params.statusFilter,
       search: params.search,
-    })
+    }) && ticketPassesQualityFilters(t, params.qualityFilters ?? [])
   );
   const dashFiltered = applyDashboardFilter(matched, params.dashboardFilter);
   const hasSearch = params.search.trim().length > 0;
@@ -62,6 +63,7 @@ function buildStatusQueue(params: {
   sortBy: SortBy;
   sortOrder: SortOrder;
   dashboardFilter: DashboardFilter | null;
+  qualityFilters?: TicketQualityFilter[];
   excludeRowId?: string;
 }): Ticket[] {
   return buildFilteredTicketList({
@@ -73,6 +75,7 @@ function buildStatusQueue(params: {
     sortBy: params.sortBy,
     sortOrder: params.sortOrder,
     dashboardFilter: params.dashboardFilter,
+    qualityFilters: params.qualityFilters,
   });
 }
 
@@ -83,6 +86,7 @@ function pickFromStatusFallbacks(params: {
   sortBy: SortBy;
   sortOrder: SortOrder;
   dashboardFilter: DashboardFilter | null;
+  qualityFilters?: TicketQualityFilter[];
 }): NextTicketAfterSendResult | null {
   for (const status of HANDOFF_STATUS_FALLBACK_ORDER) {
     const queue = buildStatusQueue({
@@ -92,6 +96,7 @@ function pickFromStatusFallbacks(params: {
       sortBy: params.sortBy,
       sortOrder: params.sortOrder,
       dashboardFilter: params.dashboardFilter,
+      qualityFilters: params.qualityFilters,
       excludeRowId: params.sentRowId,
     });
     if (queue.length > 0) {
@@ -109,6 +114,7 @@ export function pickNextTicketAfterSend(params: {
   sortBy: SortBy;
   sortOrder: SortOrder;
   dashboardFilter: DashboardFilter | null;
+  qualityFilters?: TicketQualityFilter[];
 }): NextTicketAfterSendResult {
   const visibleList = buildFilteredTicketList({
     tickets: params.tickets,
@@ -117,6 +123,7 @@ export function pickNextTicketAfterSend(params: {
     sortBy: params.sortBy,
     sortOrder: params.sortOrder,
     dashboardFilter: params.dashboardFilter,
+    qualityFilters: params.qualityFilters,
   });
 
   const sentIndex = visibleList.findIndex((t) => t.rowId === params.sentRowId);

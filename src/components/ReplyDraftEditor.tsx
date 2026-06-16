@@ -470,6 +470,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
+            spellCheck
             role="textbox"
             aria-multiline="true"
             data-placeholder={placeholder}

@@ -5,6 +5,7 @@ import { getSlaCountdownPreviewForTicket, slaCountdownClassName } from "@/lib/sl
 import { formatLastResponseHours } from "@/lib/ticket-activity";
 import { getResoAndListingValues } from "@/lib/ticket-search";
 import type { SortBy, SortOrder } from "@/lib/user-preferences";
+import type { TicketQualityFilter } from "@/lib/ticket-search";
 import {
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
@@ -26,6 +27,8 @@ interface TicketListProps {
   onSortByChange: (by: SortBy) => void;
   sortOrder: SortOrder;
   onSortOrderChange: (order: SortOrder) => void;
+  qualityFilters: TicketQualityFilter[];
+  onQualityFilterToggle: (filter: TicketQualityFilter) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   initialResponseHours: number;
@@ -47,6 +50,8 @@ export function TicketList({
   onSortByChange,
   sortOrder,
   onSortOrderChange,
+  qualityFilters,
+  onQualityFilterToggle,
   collapsed,
   onToggleCollapsed,
   initialResponseHours,
@@ -55,6 +60,16 @@ export function TicketList({
   const text = panelTextSizes(fontScale);
   const initialResponseLabel = `${initialResponseHours}h+`;
   const sortNewestFirst = sortOrder === "desc";
+  const missingReasonActive = qualityFilters.includes("missing_reason");
+  const missingIdActive = qualityFilters.includes("missing_id");
+
+  function qualityFilterButtonClass(active: boolean) {
+    return `rounded border px-2 py-0.5 ${text.tiny} font-medium ${
+      active
+        ? "border-zendesk-green bg-green-50 text-zendesk-navy"
+        : "border-zendesk-border text-zendesk-muted hover:bg-gray-100"
+    }`;
+  }
   const listRef = useRef<HTMLDivElement>(null);
   const prevSelectedRef = useRef<string | null>(selectedId);
 
@@ -167,6 +182,26 @@ export function TicketList({
                 {sortBy === "updated" ? "Stale" : "Oldest"}
               </>
             )}
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => onQualityFilterToggle("missing_reason")}
+            className={qualityFilterButtonClass(missingReasonActive)}
+            title="Show New, Open, and Pending tickets without a contact reason"
+            aria-pressed={missingReasonActive}
+          >
+            Missing reason
+          </button>
+          <button
+            type="button"
+            onClick={() => onQualityFilterToggle("missing_id")}
+            className={qualityFilterButtonClass(missingIdActive)}
+            title="Show New, Open, and Pending tickets without an Airbnb user ID"
+            aria-pressed={missingIdActive}
+          >
+            Missing ID
           </button>
         </div>
       </div>

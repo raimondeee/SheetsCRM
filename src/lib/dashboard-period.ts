@@ -1,3 +1,6 @@
+import { parseSheetTimestamp } from "./ticket-activity";
+import type { Ticket } from "./types";
+
 export type DashboardPeriod = "all" | "6m" | "3m" | "1m" | "2w";
 
 export const DASHBOARD_PERIOD_OPTIONS: {
@@ -31,4 +34,21 @@ export function dashboardPeriodDays(period: DashboardPeriod): number | null {
     default:
       return null;
   }
+}
+
+export function ticketMatchesDashboardPeriod(
+  ticket: Ticket,
+  period: DashboardPeriod
+): boolean {
+  const days = dashboardPeriodDays(period);
+  if (days === null) return true;
+
+  const submittedAt = parseSheetTimestamp(ticket.timestamp);
+  if (!submittedAt) return false;
+
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - days);
+
+  return submittedAt >= cutoff;
 }

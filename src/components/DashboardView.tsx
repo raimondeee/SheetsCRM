@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -48,6 +48,10 @@ export function DashboardView({
 }: DashboardViewProps) {
   const stats = useMemo(() => buildDashboardStats(tickets, period), [tickets, period]);
   const periodNote = stats.periodLabel;
+  const dashFilter = useCallback(
+    (fields: Omit<DashboardFilter, "period"> = {}) => ({ ...fields, period }),
+    [period]
+  );
 
   if (loading) {
     return (
@@ -92,14 +96,14 @@ export function DashboardView({
         <ChartCard title="Contact Reason" subtitle={`${periodNote} · click to filter`}>
           <PieChartBlock
             data={stats.contactReasonBreakdown.slice(0, 10)}
-            onSliceClick={(name) => onFilter?.({ contactReason: name })}
+            onSliceClick={(name) => onFilter?.(dashFilter({ contactReason: name }))}
           />
         </ChartCard>
 
         <ChartCard title="Contacts by MM" subtitle={`${periodNote} · click to filter`}>
           <PieChartBlock
             data={stats.marketManagerBreakdown.slice(0, 10)}
-            onSliceClick={(name) => onFilter?.({ marketManager: name })}
+            onSliceClick={(name) => onFilter?.(dashFilter({ marketManager: name }))}
           />
         </ChartCard>
 
@@ -110,9 +114,11 @@ export function DashboardView({
             otherKey="Other"
             onWeekClick={(weekLabel, reason) =>
               onFilter?.(
-                reason && reason !== "Other"
-                  ? { weekLabel, contactReason: reason }
-                  : { weekLabel }
+                dashFilter(
+                  reason && reason !== "Other"
+                    ? { weekLabel, contactReason: reason }
+                    : { weekLabel }
+                )
               )
             }
           />
@@ -121,7 +127,7 @@ export function DashboardView({
         <ChartCard title="Contact Reason by MM" subtitle={`${periodNote} · click an MM`}>
           <PercentStackedMM
             data={stats.contactReasonByMM}
-            onMMClick={(mm) => onFilter?.({ marketManager: mm })}
+            onMMClick={(mm) => onFilter?.(dashFilter({ marketManager: mm }))}
           />
         </ChartCard>
 
@@ -131,7 +137,7 @@ export function DashboardView({
               data={stats.casesByWeek}
               onClick={(state) => {
                 const label = state?.activeLabel;
-                if (label) onFilter?.({ weekLabel: String(label) });
+                if (label) onFilter?.(dashFilter({ weekLabel: String(label) }));
               }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -164,9 +170,9 @@ export function DashboardView({
                 if (!payload?.weekLabel) return;
                 const key = state.activePayload?.[0]?.dataKey;
                 if (key === "Resolved" || key === "Pending") {
-                  onFilter?.({ weekLabel: payload.weekLabel, statusBucket: key });
+                  onFilter?.(dashFilter({ weekLabel: payload.weekLabel, statusBucket: key }));
                 } else {
-                  onFilter?.({ weekLabel: payload.weekLabel });
+                  onFilter?.(dashFilter({ weekLabel: payload.weekLabel }));
                 }
               }}
             >
@@ -186,8 +192,8 @@ export function DashboardView({
             data={stats.topRegionalHosts}
             onBarClick={(name) => {
               const emailMatch = name.match(/\(([^)]+)\)$/);
-              if (emailMatch) onFilter?.({ requesterEmail: emailMatch[1] });
-              else onFilter?.({ requesterName: name });
+              if (emailMatch) onFilter?.(dashFilter({ requesterEmail: emailMatch[1] }));
+              else onFilter?.(dashFilter({ requesterName: name }));
             }}
           />
         </ChartCard>
@@ -196,7 +202,7 @@ export function DashboardView({
           title="Tickets in period"
           subtitle={periodNote}
           className="flex cursor-pointer flex-col justify-center"
-          onClick={() => onFilter?.({})}
+          onClick={() => onFilter?.(dashFilter())}
         >
           <p className="text-center text-5xl font-bold tracking-tight text-zendesk-navy">
             {stats.periodTicketCount.toLocaleString()}
@@ -215,10 +221,12 @@ export function DashboardView({
             data={stats.topHostsByMarketManager}
             onHostClick={(mm, host) => {
               const emailMatch = host.match(/\(([^)]+)\)$/);
-              onFilter?.({
-                marketManager: mm,
-                ...(emailMatch ? { requesterEmail: emailMatch[1] } : { requesterName: host }),
-              });
+              onFilter?.(
+                dashFilter({
+                  marketManager: mm,
+                  ...(emailMatch ? { requesterEmail: emailMatch[1] } : { requesterName: host }),
+                })
+              );
             }}
           />
         </ChartCard>
