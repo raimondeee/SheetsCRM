@@ -10,6 +10,7 @@ import { runBackgroundGmailSyncForTickets } from "@/lib/background-gmail-sync";
 import { archiveStaleGmailLinksForTickets } from "@/lib/gmail-link-archive";
 import { mergeOverlayOntoTicket } from "@/lib/overlay-db";
 import { enrichTicketsWithLastResponse } from "@/lib/tickets-enrich";
+import { recordOpsAppEvent } from "@/lib/ops-metrics";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +20,7 @@ const NO_CACHE_HEADERS = {
 };
 
 export async function GET() {
+  const started = Date.now();
   try {
     let config = loadSheetConfig("default");
     if (!config) {
@@ -45,6 +47,13 @@ export async function GET() {
     const legacySlaCleared = migrateLegacyInitialResponseSla(tickets);
     tickets = enrichTicketsWithLastResponse(tickets, timerSettings);
 
+    recordOpsAppEvent({
+      name: "ticket_list_refresh",
+      ok: true,
+      durationMs: Date.now() - started,
+      detail: `${tickets.length} tickets · ${useMock ? "mock" : "sheets"}`,
+    });
+
     return NextResponse.json(
       {
         tickets,
@@ -58,6 +67,12 @@ export async function GET() {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load tickets";
+    recordOpsAppEvent({
+      name: "ticket_list_refresh",
+      ok: false,
+      durationMs: Date.now() - started,
+      error: message,
+    });
     return NextResponse.json(
       { error: message, tickets: [], source: "error" },
       { status: 500, headers: NO_CACHE_HEADERS }

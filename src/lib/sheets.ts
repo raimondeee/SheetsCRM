@@ -27,6 +27,7 @@ import {
 import { buildUiFieldValues } from "./ui-field-slots";
 import { DEFAULT_TIMER_SETTINGS, type TimerSettings } from "./timer-settings";
 import type { ColumnMapping } from "./types";
+import { withOpsMetric } from "./ops-metrics";
 
 function rowQualifiesAsTicket(
   row: string[],
@@ -89,7 +90,9 @@ export async function fetchSheetHeaders(
   if (!auth) throw new Error("Sign in with Google or configure a service account");
 
   const sheets = google.sheets({ version: "v4", auth });
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const meta = await withOpsMetric("sheets", "spreadsheets.get", () =>
+    sheets.spreadsheets.get({ spreadsheetId })
+  );
   const targetSheet =
     meta.data.sheets?.find(
       (s) =>
@@ -98,10 +101,12 @@ export async function fetchSheetHeaders(
     ) ?? meta.data.sheets?.[0];
 
   const title = targetSheet?.properties?.title ?? "Sheet1";
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${title}'!1:1`,
-  });
+  const res = await withOpsMetric("sheets", "values.get", () =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${title}'!1:1`,
+    })
+  );
 
   return { headers: (res.data.values?.[0] ?? []) as string[], sheetName: title };
 }
@@ -114,10 +119,12 @@ export async function fetchTicketsFromSheet(
   if (!auth) throw new Error("Sign in with Google or configure a service account");
 
   const sheets = google.sheets({ version: "v4", auth });
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.spreadsheetId,
-    range: `'${config.sheetName}'!A:ZZ`,
-  });
+  const res = await withOpsMetric("sheets", "values.get", () =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId,
+      range: `'${config.sheetName}'!A:ZZ`,
+    })
+  );
 
   const rows = res.data.values ?? [];
   if (rows.length <= config.headerRow) return [];
@@ -298,12 +305,14 @@ export async function writeCaseSummaryOnSheet(
   const range = `'${config.sheetName}'!${letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values: [[fullText]] },
-  });
+  await withOpsMetric("sheets", "values.update", () =>
+    sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values: [[fullText]] },
+    })
+  );
 }
 
 /** Appends a bullet note to Column U (Case Summary). Returns the updated cell text. */
@@ -320,10 +329,12 @@ export async function appendAdminNoteOnSheet(
   const range = `'${config.sheetName}'!${letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
-  const current = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.spreadsheetId,
-    range,
-  });
+  const current = await withOpsMetric("sheets", "values.get", () =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId,
+      range,
+    })
+  );
   const existing = (current.data.values?.[0]?.[0] ?? "").toString();
   const updated = appendAdminNoteToText(existing, noteText);
 
@@ -345,12 +356,14 @@ export async function updateSheetStatusOnSheet(
   const range = `'${config.sheetName}'!${letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values: [[statusValue]] },
-  });
+  await withOpsMetric("sheets", "values.update", () =>
+    sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values: [[statusValue]] },
+    })
+  );
 }
 
 /** Writes contact reason to Column I (or mapped contact reason column). */
@@ -367,12 +380,14 @@ export async function updateContactReasonOnSheet(
   const range = `'${config.sheetName}'!${letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values: [[value]] },
-  });
+  await withOpsMetric("sheets", "values.update", () =>
+    sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values: [[value]] },
+    })
+  );
 }
 
 async function updateSheetCellByRole(
@@ -403,12 +418,14 @@ async function updateSheetCellByRole(
   const range = `'${config.sheetName}'!${letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values: [[value]] },
-  });
+  await withOpsMetric("sheets", "values.update", () =>
+    sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values: [[value]] },
+    })
+  );
 }
 
 /** Writes reservation code to Column E. */
@@ -455,12 +472,14 @@ export async function updateSheetCellByIndex(
   const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: config.spreadsheetId,
-    range,
-    valueInputOption: "RAW",
-    requestBody: { values: [[value]] },
-  });
+  await withOpsMetric("sheets", "values.update", () =>
+    sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values: [[value]] },
+    })
+  );
 }
 
 /** Writes ticket header field (mapped column under subject in CRM). */

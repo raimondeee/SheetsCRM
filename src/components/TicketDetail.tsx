@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { Ticket, ThreadMessage } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";
-import { buildGmailMessageUrl } from "@/lib/gmail-urls";
+import { buildGmailMessageUrl, buildGmailComposeUrl, openGmailComposePopup } from "@/lib/gmail-urls";
 import { buildSalesforceUnifiedSearchUrl } from "@/lib/salesforce";
 import {
   buildNovaListingUrl,
@@ -34,7 +34,7 @@ import {
   isEmailSubjectSuffixFilled,
   stripEmailSubjectPrefix,
 } from "@/lib/email-subject";
-import { isRichTextEmpty, normalizeDraftHtml } from "@/lib/html-utils";
+import { isRichTextEmpty, normalizeDraftHtml, stripHtmlToText } from "@/lib/html-utils";
 import { shouldShowResponseSla } from "@/lib/sla-display";
 import {
   PENDING_WITHOUT_EMAIL_HOURS_OPTIONS,
@@ -42,6 +42,12 @@ import {
   RESOLVED_WITHOUT_EMAIL_NOTE,
   type PendingWithoutEmailHours,
 } from "@/lib/admin-notes";
+import {
+  REQUIRED_FIELD_MISSING_MESSAGE,
+  hasAirbnbUserIdForResolve,
+  type TicketActionRequiredField,
+  type TicketActionValidation,
+} from "@/lib/ticket-action-validation";
 import {
   formatFileSize,
   MAX_OUTBOUND_ATTACHMENTS,
@@ -107,6 +113,7 @@ interface TicketDetailProps {
   onSubjectChange: (rowId: string, subject: string) => void;
   onContactReasonChange: (rowId: string, contactReason: string) => void;
   onAppendAdminNote: (rowId: string, note: string) => Promise<void>;
+  onAdminNotesChange?: (rowId: string, adminNotes: string) => void;
   onAirbnbUserIdChange: (rowId: string, airbnbUserId: string) => Promise<void>;
   onReservationCodeChange: (rowId: string, reservationCode: string) => Promise<void>;
   onListingIdChange: (rowId: string, listingId: string) => Promise<void>;
@@ -131,7 +138,7 @@ interface TicketDetailProps {
   onSetStatusWithoutEmail: (
     rowId: string,
     status: string,
-    options?: { adminNote?: string; pendingHours?: number }
+    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string }
   ) => Promise<void>;
   onLinkedCaseChange: (rowId: string, index: 0 | 1 | 2, url: string) => Promise<void>;
   externalTools?: ExternalToolLink[];
@@ -156,6 +163,7 @@ export function TicketDetail({
   onSubjectChange,
   onContactReasonChange,
   onAppendAdminNote,
+  onAdminNotesChange,
   onAirbnbUserIdChange,
   onReservationCodeChange,
   onListingIdChange,
@@ -182,9 +190,11 @@ export function TicketDetail({
 }: TicketDetailProps) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [redactingMessageId, setRedactingMessageId] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [subjectSuffix, setSubjectSuffix] = useState("");
-  const [subjectError, setSubjectError] = useState(false);
+  const [actionValidation, setActionValidation] = useState<TicketActionValidation | null>(null);
+  const [pressedActionButton, setPressedActionButton] = useState<string | null>(null);
   const [newAdminNote, setNewAdminNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [adminNoteError, setAdminNoteError] = useState<string | null>(null);
@@ -225,6 +235,7 @@ export function TicketDetail({
   const [marketManagers, setMarketManagers] = useState<MarketManager[]>([]);
   const [clearingInitialSla, setClearingInitialSla] = useState(false);
   const [userIdSaveError, setUserIdSaveError] = useState<string | null>(null);
+  const airbnbUserIdFieldRef = useRef<HTMLLIElement>(null);
   const [gmailOpenUrl, setGmailOpenUrl] = useState<string | null>(null);
   const threadLoadGenerationRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -424,7 +435,8 @@ export function TicketDetail({
         ? emailSubjectSuffixFromStored(saved.subject)
         : emailSubjectSuffixFromStored(ticket.subject)
     );
-    setSubjectError(false);
+    setActionValidation(null);
+    setPressedActionButton(null);
     setCcDraft(saved?.cc ?? "");
     setBccDraft(saved?.bcc ?? "");
     void fetchComposePrefs(ticket.rowId).then((prefs) => {
@@ -635,6 +647,7 @@ export function TicketDetail({
         file,
       })),
     ]);
+    clearActionFieldError("compose");
   }
 
   function removeReplyAttachment(id: string) {
@@ -644,15 +657,110 @@ export function TicketDetail({
 
   const subjectReady = isEmailSubjectSuffixFilled(subjectSuffix);
   const hasComposeContent = !isRichTextEmpty(replyBody) || replyAttachments.length > 0;
-  const canSend = hasComposeContent && subjectReady;
+  const subjectFieldError = actionValidation?.fields.includes("subject") ?? false;
+  const composeFieldError = actionValidation?.fields.includes("compose") ?? false;
+  const airbnbUserIdFieldError = actionValidation?.fields.includes("airbnbUserId") ?? false;
+
+  const ACTION_BUTTON_PRESS_MS = 180;
+
+  function flashActionPress(buttonId: string) {
+    setPressedActionButton(buttonId);
+    window.setTimeout(() => {
+      setPressedActionButton((current) => (current === buttonId ? null : current));
+    }, ACTION_BUTTON_PRESS_MS);
+  }
+
+  function actionButtonClass(buttonId: string, baseClass: string) {
+    const pressed = pressedActionButton === buttonId;
+    return `${baseClass} crm-action-button${pressed ? " crm-action-button-pressed" : ""}`;
+  }
+
+  function clearActionFieldError(field: TicketActionRequiredField) {
+    setActionValidation((current) => {
+      if (!current?.fields.includes(field)) return current;
+      const fields = current.fields.filter((item) => item !== field);
+      return fields.length ? { ...current, fields } : null;
+    });
+  }
+
+  function getEffectiveAirbnbUserId(): string {
+    return airbnbUserIdDraft.trim() || ticket?.airbnbUserId.trim() || "";
+  }
+
+  function collectSendValidation(): TicketActionValidation | null {
+    const fields: TicketActionRequiredField[] = [];
+    if (!subjectReady) fields.push("subject");
+    if (!hasComposeContent) fields.push("compose");
+    if (!fields.length) return null;
+    return { message: REQUIRED_FIELD_MISSING_MESSAGE, fields };
+  }
+
+  function collectResolvedValidation(): TicketActionValidation | null {
+    if (hasAirbnbUserIdForResolve(getEffectiveAirbnbUserId())) return null;
+    return {
+      message: REQUIRED_FIELD_MISSING_MESSAGE,
+      fields: ["airbnbUserId"],
+    };
+  }
+
+  function collectSendResolvedValidation(): TicketActionValidation | null {
+    const fields = new Set<TicketActionRequiredField>();
+    for (const field of collectSendValidation()?.fields ?? []) fields.add(field);
+    for (const field of collectResolvedValidation()?.fields ?? []) fields.add(field);
+    if (!fields.size) return null;
+    return { message: REQUIRED_FIELD_MISSING_MESSAGE, fields: [...fields] };
+  }
+
+  function showActionValidation(validation: TicketActionValidation) {
+    setActionValidation(validation);
+    if (validation.fields.includes("airbnbUserId")) {
+      airbnbUserIdFieldRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+    if (validation.fields.includes("compose") && composeTab !== "reply") {
+      switchComposeTab("reply");
+    }
+  }
+
+  async function ensureAirbnbUserIdBeforeResolve(): Promise<boolean> {
+    if (!ticket) return false;
+    const effective = getEffectiveAirbnbUserId();
+    if (!hasAirbnbUserIdForResolve(effective)) return false;
+    setSavingUserId(true);
+    setUserIdSaveError(null);
+    try {
+      await onAirbnbUserIdChange(ticket.rowId, effective);
+    } catch (error) {
+      setUserIdSaveError(error instanceof Error ? error.message : "Failed to save user ID");
+      return false;
+    } finally {
+      setSavingUserId(false);
+    }
+    return true;
+  }
 
   async function setStatusWithoutEmail(
     status: "pending" | "resolved",
-    options?: { adminNote?: string; pendingHours?: PendingWithoutEmailHours }
+    options?: { adminNote?: string; pendingHours?: PendingWithoutEmailHours },
+    buttonId?: string
   ) {
+    if (buttonId) flashActionPress(buttonId);
     if (!ticket || markingStatusOnly || markingPendingHours !== null || sendQueueBusy) {
       return;
     }
+    if (status === "resolved") {
+      const validation = collectResolvedValidation();
+      if (validation) {
+        showActionValidation(validation);
+        return;
+      }
+      const saved = await ensureAirbnbUserIdBeforeResolve();
+      if (!saved) {
+        const retryValidation = collectResolvedValidation();
+        if (retryValidation) showActionValidation(retryValidation);
+        return;
+      }
+    }
+    setActionValidation(null);
     if (status === "pending" && options?.pendingHours) {
       setMarkingPendingHours(options.pendingHours);
     } else {
@@ -661,7 +769,12 @@ export function TicketDetail({
     setPendingMenuOpen(false);
     setStatusOnlyError(null);
     try {
-      await onSetStatusWithoutEmail(ticket.rowId, status, options);
+      await onSetStatusWithoutEmail(ticket.rowId, status, {
+        ...options,
+        ...(status === "resolved"
+          ? { airbnbUserId: getEffectiveAirbnbUserId() }
+          : {}),
+      });
     } catch (error) {
       setStatusOnlyError(
         error instanceof Error ? error.message : "Failed to update ticket status"
@@ -672,30 +785,45 @@ export function TicketDetail({
     }
   }
 
-  function queueSend(statusAfterSend: "pending" | "resolved") {
+  function queueSend(statusAfterSend: "pending" | "resolved", buttonId: string) {
+    flashActionPress(buttonId);
     if (!ticket || sendQueueBusy) return;
-    if (!hasComposeContent) return;
-    if (!isEmailSubjectSuffixFilled(subjectSuffix)) {
-      setSubjectError(true);
+    const validation =
+      statusAfterSend === "resolved"
+        ? collectSendResolvedValidation()
+        : collectSendValidation();
+    if (validation) {
+      showActionValidation(validation);
       return;
     }
-    setSubjectError(false);
+    setActionValidation(null);
     onClearSendError?.();
 
-    onQueueSend({
-      ticketRowId: ticket.rowId,
-      to: ticket.requesterEmail,
-      subject: buildEmailSubject(subjectSuffix),
-      message: replyBody,
-      cc: buildOutboundCc(ccDraft, {
-        extra: ccMarketManager ? marketManagerEmail : null,
-      }),
-      bcc: buildOutboundBcc(bccDraft),
-      statusAfterSend,
-      attachmentFiles: replyAttachments.map((entry) => entry.file),
-      intakeTimestamp: ticket.timestamp,
-      label: ticket.requesterName || ticket.requesterEmail,
-    });
+    void (async () => {
+      if (statusAfterSend === "resolved") {
+        const saved = await ensureAirbnbUserIdBeforeResolve();
+        if (!saved) {
+          const retryValidation = collectSendResolvedValidation() ?? collectResolvedValidation();
+          if (retryValidation) showActionValidation(retryValidation);
+          return;
+        }
+      }
+
+      onQueueSend({
+        ticketRowId: ticket.rowId,
+        to: ticket.requesterEmail,
+        subject: buildEmailSubject(subjectSuffix),
+        message: replyBody,
+        cc: buildOutboundCc(ccDraft, {
+          extra: ccMarketManager ? marketManagerEmail : null,
+        }),
+        bcc: buildOutboundBcc(bccDraft),
+        statusAfterSend,
+        attachmentFiles: replyAttachments.map((entry) => entry.file),
+        intakeTimestamp: ticket.timestamp,
+        label: ticket.requesterName || ticket.requesterEmail,
+      });
+    })();
   }
 
   const salesforceSearchUrl = buildSalesforceUnifiedSearchUrl(ticket.columnD);
@@ -765,6 +893,57 @@ export function TicketDetail({
     window.open(gmailThreadUrl, "_blank", "noopener,noreferrer");
   }
 
+  function openDraftInGmail() {
+    if (!ticket) return;
+    const html = replyEditorRef.current?.flush() ?? replyBody;
+    const plainBody = stripHtmlToText(html);
+    const url = buildGmailComposeUrl({
+      to: ticket.requesterEmail,
+      cc:
+        buildOutboundCc(ccDraft, {
+          extra: ccMarketManager ? marketManagerEmail : null,
+        }) ?? undefined,
+      bcc: buildOutboundBcc(bccDraft) ?? undefined,
+      subject: buildEmailSubject(subjectSuffix),
+      body: plainBody,
+    });
+    const popup = openGmailComposePopup(url);
+    if (!popup) {
+      window.alert(
+        "Your browser blocked the Gmail compose popup. Allow popups for SheetsCRM and try again."
+      );
+    }
+  }
+
+  async function handleRedactMessage(msg: ThreadMessage) {
+    if (!ticket || redactingMessageId) return;
+    const confirmed = window.confirm(
+      "Redact this message from the CRM? Its content will be removed and will not be re-imported from Gmail. An admin note will be added.\n\nDelete the message in Gmail separately if it contained sensitive information."
+    );
+    if (!confirmed) return;
+
+    setRedactingMessageId(msg.id);
+    try {
+      const res = await fetch(
+        `/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/messages/${encodeURIComponent(msg.id)}/redact`,
+        { method: "POST", credentials: "same-origin" }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to redact message");
+      }
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      if (typeof data.adminNotes === "string") {
+        onAdminNotesChange?.(ticket.rowId, data.adminNotes);
+      }
+      onThreadUpdate();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to redact message");
+    } finally {
+      setRedactingMessageId(null);
+    }
+  }
+
   function handleCcMarketManagerChange(checked: boolean) {
     if (!ticket) return;
     setCcMarketManager(checked);
@@ -785,7 +964,9 @@ export function TicketDetail({
           <div className="min-w-0 flex-1">
             <div
               className={`flex overflow-hidden rounded border focus-within:border-zendesk-green ${
-                subjectError ? "border-red-400" : "border-zendesk-border"
+                subjectFieldError
+                  ? "crm-field-required-missing border-red-300"
+                  : "border-zendesk-border"
               }`}
             >
               <span className="shrink-0 border-r border-zendesk-border bg-gray-50 px-2 py-1 text-[10px] font-medium text-zendesk-muted">
@@ -796,13 +977,13 @@ export function TicketDetail({
                 value={subjectSuffix}
                 onChange={(e) => {
                   setSubjectSuffix(e.target.value);
-                  if (subjectError && isEmailSubjectSuffixFilled(e.target.value)) {
-                    setSubjectError(false);
+                  if (isEmailSubjectSuffixFilled(e.target.value)) {
+                    clearActionFieldError("subject");
                   }
                 }}
                 required
                 aria-label="Email subject"
-                aria-invalid={subjectError}
+                aria-invalid={subjectFieldError}
                 onBlur={saveSubject}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -813,7 +994,7 @@ export function TicketDetail({
                 placeholder="Subject (required)…"
               />
             </div>
-            {subjectError && (
+            {subjectFieldError && (
               <p className="mt-0.5 text-[10px] text-red-600">Add subject details before sending.</p>
             )}
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -1037,6 +1218,35 @@ export function TicketDetail({
               <p className="py-2 text-xs text-zendesk-muted">Loading conversation…</p>
             )}
             {messages.map((msg) => {
+              if (msg.direction === "redacted") {
+                return (
+                  <div
+                    key={msg.id}
+                    className="mb-2 rounded border border-amber-300 bg-amber-50 p-2.5"
+                  >
+                    <div className="flex justify-between gap-2 text-xs font-semibold text-amber-900">
+                      <span className="inline-flex items-center gap-1">
+                        <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                        Message redacted
+                      </span>
+                      <span>{new Date(msg.sentAt).toLocaleString()}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-amber-950">{msg.body}</p>
+                    {gmailThreadUrl && (
+                      <a
+                        href={gmailThreadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-amber-900 underline hover:text-amber-950"
+                      >
+                        Open thread in Gmail to delete the message
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                );
+              }
+
               if (msg.direction === "system") {
                 return (
                   <div
@@ -1116,18 +1326,34 @@ export function TicketDetail({
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   )}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleRedactMessage(msg)}
+                      disabled={redactingMessageId === msg.id}
+                      title="Remove this message from the CRM and block Gmail re-import"
+                      className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                      {redactingMessageId === msg.id ? "Redacting…" : "Redact & stop re-sync"}
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
           <div
-            className={`-mt-[10px] flex min-h-0 flex-col overflow-hidden border-t border-zendesk-border pb-3 transition-[flex-basis] duration-200 ease-out ${
+            className={`-mt-[10px] flex min-h-0 flex-col overflow-hidden border bg-white shadow-[0_-6px_16px_rgba(23,73,77,0.08)] pb-3 transition-[flex-basis,border-color,background-color] duration-200 ease-out ${
+              composeFieldError
+                ? "crm-field-required-missing border-red-300"
+                : "border-zendesk-border"
+            } border-b-0 ${
               composeTab === "reply" && replyFocused
                 ? "flex-[0_0_calc(58%+25px)]"
                 : "flex-[0_0_calc(42%+25px)]"
             }`}
           >
-            <div className="relative z-10 flex shrink-0 border-b border-zendesk-border bg-gray-50 px-2.5">
+            <div className="relative z-10 flex shrink-0 border-b border-zendesk-border bg-slate-100 px-2.5">
               {composeTabButton("reply", "Email draft")}
               {composeTabButton("admin-notes", "Admin notes")}
               {composeTabButton("crm-log", "CRM log")}
@@ -1162,11 +1388,17 @@ export function TicketDetail({
                   <ReplyDraftEditor
                     ref={replyEditorRef}
                     value={replyBody}
-                    onChange={setReplyBody}
+                    onChange={(html) => {
+                      setReplyBody(html);
+                      if (!isRichTextEmpty(html) || replyAttachments.length > 0) {
+                        clearActionFieldError("compose");
+                      }
+                    }}
                     focused={replyFocused}
                     onFocusChange={setReplyFocused}
                     fillAvailable
                     placeholder="Draft a reply here, or pick a Mixmax template from the sidebar…"
+                    onDraftInGmail={openDraftInGmail}
                   />
                 </div>
                 <div className="shrink-0 space-y-2 border-t border-zendesk-border/60 px-2.5 pt-1.5">
@@ -1261,20 +1493,21 @@ export function TicketDetail({
                       </p>
                     )}
                   </div>
-                  <div className="space-y-2">
+                  <div className="relative space-y-2">
+                    {actionValidation && (
+                      <p className="text-center text-[10px] font-medium text-red-600">
+                        {actionValidation.message}
+                      </p>
+                    )}
                     <div className="flex w-full flex-wrap items-end gap-2">
                     <button
                       type="button"
-                      onClick={() => queueSend("pending")}
-                      disabled={sendQueueBusy || !canSend}
-                      title={
-                        !subjectReady
-                          ? "Add a subject before sending"
-                          : !hasComposeContent
-                            ? "Add a message or attachment before sending"
-                            : undefined
-                      }
-                      className="flex items-center gap-1.5 rounded bg-zendesk-green px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      onClick={() => queueSend("pending", "send-pending")}
+                      disabled={sendQueueBusy || isSending}
+                      className={actionButtonClass(
+                        "send-pending",
+                        "flex items-center gap-1.5 rounded bg-zendesk-green px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      )}
                     >
                       <Send className="h-4 w-4" />
                       {isSending ? "Sending..." : "Send/Pending"}
@@ -1282,21 +1515,30 @@ export function TicketDetail({
                     <div ref={pendingMenuRef} className="relative inline-flex">
                       <button
                         type="button"
-                        onClick={() => setPendingMenuOpen((open) => !open)}
+                        onClick={() => {
+                          flashActionPress("set-pending");
+                          setPendingMenuOpen((open) => !open);
+                        }}
                         disabled={
                           markingStatusOnly !== null ||
                           markingPendingHours !== null ||
                           sendQueueBusy
                         }
                         title="Set status to Pending without sending an email"
-                        className="flex items-center gap-1.5 rounded-l border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                        className={actionButtonClass(
+                          "set-pending",
+                          "flex items-center gap-1.5 rounded-l border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                        )}
                       >
                         <CircleCheck className="h-4 w-4" />
                         {markingPendingHours !== null ? "Setting…" : "Set to Pending"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPendingMenuOpen((open) => !open)}
+                        onClick={() => {
+                          flashActionPress("set-pending-menu");
+                          setPendingMenuOpen((open) => !open);
+                        }}
                         disabled={
                           markingStatusOnly !== null ||
                           markingPendingHours !== null ||
@@ -1304,7 +1546,10 @@ export function TicketDetail({
                         }
                         aria-expanded={pendingMenuOpen}
                         aria-label="Choose pending duration"
-                        className="rounded-r border border-l-0 border-zendesk-border bg-white px-1.5 py-1.5 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                        className={actionButtonClass(
+                          "set-pending-menu",
+                          "rounded-r border border-l-0 border-zendesk-border bg-white px-1.5 py-1.5 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                        )}
                       >
                         <ChevronDown
                           className={`h-3.5 w-3.5 transition-transform ${pendingMenuOpen ? "rotate-180" : ""}`}
@@ -1317,10 +1562,14 @@ export function TicketDetail({
                               key={hours}
                               type="button"
                               onClick={() =>
-                                void setStatusWithoutEmail("pending", {
-                                  pendingHours: hours,
-                                  adminNote: pendingWithoutEmailAdminNote(hours),
-                                })
+                                void setStatusWithoutEmail(
+                                  "pending",
+                                  {
+                                    pendingHours: hours,
+                                    adminNote: pendingWithoutEmailAdminNote(hours),
+                                  },
+                                  `set-pending-${hours}h`
+                                )
                               }
                               className="block w-full px-3 py-1.5 text-left text-xs text-zendesk-navy hover:bg-gray-100"
                             >
@@ -1332,16 +1581,12 @@ export function TicketDetail({
                     </div>
                     <button
                       type="button"
-                      onClick={() => queueSend("resolved")}
-                      disabled={sendQueueBusy || !canSend}
-                      title={
-                        !subjectReady
-                          ? "Add a subject before sending"
-                          : !hasComposeContent
-                            ? "Add a message or attachment before sending"
-                            : undefined
-                      }
-                      className="flex items-center gap-1.5 rounded border border-zendesk-green bg-white px-3 py-1.5 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
+                      onClick={() => queueSend("resolved", "send-resolved")}
+                      disabled={sendQueueBusy || isSending}
+                      className={actionButtonClass(
+                        "send-resolved",
+                        "flex items-center gap-1.5 rounded border border-zendesk-green bg-white px-3 py-1.5 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
+                      )}
                     >
                       <Send className="h-4 w-4" />
                       {isSending ? "Sending..." : "Send/Resolved"}
@@ -1349,9 +1594,13 @@ export function TicketDetail({
                     <button
                       type="button"
                       onClick={() =>
-                        setStatusWithoutEmail("resolved", {
-                          adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
-                        })
+                        void setStatusWithoutEmail(
+                          "resolved",
+                          {
+                            adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
+                          },
+                          "set-resolved"
+                        )
                       }
                       disabled={
                         markingStatusOnly !== null ||
@@ -1360,7 +1609,10 @@ export function TicketDetail({
                         ticket.status === "resolved"
                       }
                       title="Set status to Resolved without sending an email"
-                      className="flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                      className={actionButtonClass(
+                        "set-resolved",
+                        "flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                      )}
                     >
                       <CircleCheck className="h-4 w-4" />
                       {markingStatusOnly === "resolved" ? "Setting…" : "Set to Resolved"}
@@ -1536,7 +1788,14 @@ export function TicketDetail({
                   <p className="mt-1 break-all text-[10px] text-zendesk-muted">{ticket.columnD}</p>
                 )}
               </li>
-              <li className="rounded border border-zendesk-border bg-white p-2">
+              <li
+                ref={airbnbUserIdFieldRef}
+                className={`rounded border bg-white p-2 ${
+                  airbnbUserIdFieldError
+                    ? "crm-field-required-missing border-red-300"
+                    : "border-zendesk-border"
+                }`}
+              >
                 <label className="block text-[10px]">
                   <span className="font-medium text-zendesk-muted">
                     {columnLabels?.airbnbUserId || "User ID (AD)"}
@@ -1544,7 +1803,12 @@ export function TicketDetail({
                   <input
                     type="text"
                     value={airbnbUserIdDraft}
-                    onChange={(e) => setAirbnbUserIdDraft(e.target.value)}
+                    onChange={(e) => {
+                      setAirbnbUserIdDraft(e.target.value);
+                      if (hasAirbnbUserIdForResolve(e.target.value)) {
+                        clearActionFieldError("airbnbUserId");
+                      }
+                    }}
                     onBlur={saveAirbnbUserId}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();

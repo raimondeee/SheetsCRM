@@ -13,7 +13,7 @@ import {
   ChevronRight,
   Search,
 } from "lucide-react";
-import { panelTextSizes } from "@/lib/panel-density";
+import { panelTextSizes, panelSortByLabel, panelSortOrderLabel } from "@/lib/panel-density";
 import { ticketListPrimaryLine } from "@/lib/email-subject";
 
 interface TicketListProps {
@@ -64,12 +64,16 @@ export function TicketList({
   const missingIdActive = qualityFilters.includes("missing_id");
 
   function qualityFilterButtonClass(active: boolean) {
-    return `rounded border px-2 py-0.5 ${text.tiny} font-medium ${
+    return `h-7 rounded border px-2 ${text.tiny} font-medium leading-none ${
       active
         ? "border-zendesk-green bg-green-50 text-zendesk-navy"
         : "border-zendesk-border text-zendesk-muted hover:bg-gray-100"
     }`;
   }
+
+  const sortButtonBase = `h-7 rounded border px-2 ${text.tiny} font-medium leading-none`;
+  const sortByLabel = panelSortByLabel(sortBy, text.compact);
+  const sortOrderLabel = panelSortOrderLabel(sortBy, sortNewestFirst, text.compact);
   const listRef = useRef<HTMLDivElement>(null);
   const prevSelectedRef = useRef<string | null>(selectedId);
 
@@ -121,10 +125,10 @@ export function TicketList({
   }
 
   return (
-    <section className="flex h-full w-full flex-col border-r border-zendesk-border bg-white">
-      <div className="border-b border-zendesk-border p-2.5">
+    <section className="flex h-full w-full min-w-0 flex-col border-r border-zendesk-border bg-white">
+      <div className={`border-b border-zendesk-border ${text.compact ? "p-2" : "p-2.5"}`}>
         <div className="mb-2 flex items-center justify-between gap-1">
-          <p className={`${text.tiny} font-semibold uppercase tracking-wide text-zendesk-muted`}>
+          <p className={`${text.micro} font-semibold uppercase tracking-wide text-zendesk-muted`}>
             Tickets
           </p>
           <button
@@ -138,29 +142,59 @@ export function TicketList({
           </button>
         </div>
         <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zendesk-muted" />
+          <Search
+            className={`absolute left-2 top-1/2 ${text.icon} -translate-y-1/2 text-zendesk-muted`}
+          />
           <input
             type="search"
-            placeholder="Search all tickets"
+            placeholder={text.compact ? "Search" : "Search all tickets"}
             value={search}
             onChange={(e) => onSearch(e.target.value)}
-            className={`w-full rounded border border-zendesk-border py-2 pl-9 pr-3 ${text.body} outline-none focus:border-zendesk-green`}
+            className={`w-full rounded border border-zendesk-border ${text.inputPy} pl-8 pr-2 ${text.body} outline-none focus:border-zendesk-green`}
           />
         </div>
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <select
-            value={sortBy}
-            onChange={(e) => onSortByChange(e.target.value as SortBy)}
-            className={`min-w-0 flex-1 rounded border border-zendesk-border px-2 py-0.5 ${text.tiny} text-zendesk-muted outline-none focus:border-zendesk-green`}
-            aria-label="Sort tickets by"
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => onQualityFilterToggle("missing_reason")}
+            className={qualityFilterButtonClass(missingReasonActive)}
+            title="Show New, Open, and Pending tickets without a contact reason"
+            aria-pressed={missingReasonActive}
           >
-            <option value="submitted">Form submission date</option>
-            <option value="updated">Recently updated</option>
-          </select>
+            <span className="truncate">{text.compact ? "No reason" : "Missing reason"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onQualityFilterToggle("missing_id")}
+            className={qualityFilterButtonClass(missingIdActive)}
+            title="Show New, Open, and Pending tickets without an Airbnb user ID"
+            aria-pressed={missingIdActive}
+          >
+            <span className="truncate">{text.compact ? "No ID" : "Missing ID"}</span>
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_5rem] items-stretch gap-2">
+          <button
+            type="button"
+            onClick={() => onSortByChange(sortBy === "submitted" ? "updated" : "submitted")}
+            className={`${sortButtonBase} min-w-0 truncate ${
+              sortBy === "updated"
+                ? "border-zendesk-green bg-green-50 text-zendesk-navy"
+                : "border-zendesk-border text-zendesk-muted hover:bg-gray-100"
+            }`}
+            title={
+              sortBy === "submitted"
+                ? "Sorted by form submission date — click for recently updated"
+                : "Sorted by recently updated — click for form submission date"
+            }
+            aria-pressed={sortBy === "updated"}
+          >
+            <span className="block truncate">{sortByLabel}</span>
+          </button>
           <button
             type="button"
             onClick={() => onSortOrderChange(sortNewestFirst ? "asc" : "desc")}
-            className={`flex shrink-0 items-center gap-1 rounded border border-zendesk-border px-2 py-0.5 ${text.tiny} font-medium text-zendesk-muted hover:bg-gray-100`}
+            className={`${sortButtonBase} flex w-full shrink-0 items-center justify-center gap-1 border-zendesk-border text-zendesk-muted hover:bg-gray-100`}
             title={
               sortNewestFirst
                 ? sortBy === "updated"
@@ -172,36 +206,11 @@ export function TicketList({
             }
           >
             {sortNewestFirst ? (
-              <>
-                <ArrowDownWideNarrow className="h-3 w-3" />
-                {sortBy === "updated" ? "Recent" : "Newest"}
-              </>
+              <ArrowDownWideNarrow className={`${text.icon} shrink-0`} />
             ) : (
-              <>
-                <ArrowUpWideNarrow className="h-3 w-3" />
-                {sortBy === "updated" ? "Stale" : "Oldest"}
-              </>
+              <ArrowUpWideNarrow className={`${text.icon} shrink-0`} />
             )}
-          </button>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => onQualityFilterToggle("missing_reason")}
-            className={qualityFilterButtonClass(missingReasonActive)}
-            title="Show New, Open, and Pending tickets without a contact reason"
-            aria-pressed={missingReasonActive}
-          >
-            Missing reason
-          </button>
-          <button
-            type="button"
-            onClick={() => onQualityFilterToggle("missing_id")}
-            className={qualityFilterButtonClass(missingIdActive)}
-            title="Show New, Open, and Pending tickets without an Airbnb user ID"
-            aria-pressed={missingIdActive}
-          >
-            Missing ID
+            <span className="truncate">{sortOrderLabel}</span>
           </button>
         </div>
       </div>
@@ -230,7 +239,9 @@ export function TicketList({
               type="button"
               data-ticket-id={ticket.rowId}
               onClick={() => onSelect(ticket.rowId)}
-              className={`block w-full border-b border-zendesk-border px-3 py-2.5 text-left transition-colors duration-200 ${
+              className={`block w-full border-b border-zendesk-border text-left transition-colors duration-200 ${
+                text.compact ? "px-2 py-2" : "px-3 py-2.5"
+              } ${
                 selectedId === ticket.rowId
                   ? "bg-blue-50 ring-1 ring-inset ring-blue-200/80"
                   : "hover:bg-gray-100"
@@ -273,7 +284,7 @@ export function TicketList({
               {idHint && (
                 <p className={`mt-0.5 line-clamp-1 font-mono ${text.tiny} text-zendesk-muted`}>{idHint}</p>
               )}
-              <div className={`mt-1 flex items-center justify-between ${text.small} text-zendesk-muted`}>
+              <div className={`mt-1 flex items-center justify-between ${text.tiny} text-zendesk-muted`}>
                 <span>{statusLabel(ticket.status)}</span>
                 <span>{ticket.timestamp?.slice(0, 10)}</span>
               </div>

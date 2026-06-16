@@ -1,4 +1,5 @@
 import type { DashboardPeriod } from "./dashboard-period";
+import { normalizeDashboardPeriod } from "./dashboard-period";
 import type { ExternalToolLink } from "./external-tools";
 import { defaultExternalTools, normalizeExternalTools } from "./external-tools";
 import {
@@ -53,14 +54,7 @@ export function readLegacyUserPreferences(): UserPreferences | null {
         parsed.sortOrder === "asc" || parsed.sortOrder === "desc"
           ? parsed.sortOrder
           : DEFAULT_USER_PREFERENCES.sortOrder,
-      dashboardPeriod:
-        parsed.dashboardPeriod === "all" ||
-        parsed.dashboardPeriod === "6m" ||
-        parsed.dashboardPeriod === "3m" ||
-        parsed.dashboardPeriod === "1m" ||
-        parsed.dashboardPeriod === "2w"
-          ? parsed.dashboardPeriod
-          : DEFAULT_USER_PREFERENCES.dashboardPeriod,
+      dashboardPeriod: normalizeDashboardPeriod(parsed.dashboardPeriod),
       errorLoggingEnabled:
         typeof parsed.errorLoggingEnabled === "boolean"
           ? parsed.errorLoggingEnabled

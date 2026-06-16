@@ -131,7 +131,7 @@ export interface ThreadMessageAttachment {
 export interface ThreadMessage {
   id: string;
   ticketRowId: string;
-  direction: "inbound" | "outbound" | "system";
+  direction: "inbound" | "outbound" | "system" | "redacted";
   from: string;
   to: string;
   cc: string | null;

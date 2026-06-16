@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -16,26 +16,37 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Copy } from "lucide-react";
 import type { Ticket } from "@/lib/types";
 import {
   DASHBOARD_PERIOD_OPTIONS,
   type DashboardPeriod,
+  type RollingDashboardPeriod,
 } from "@/lib/dashboard-period";
 import {
   buildDashboardStats,
   chartColor,
+  formatHostContactReasonBreakdown,
+  formatHostsByMarketManagerReport,
+  formatHostsByMarketManagerReportHtml,
+  listMarketManagersInPeriod,
   percentLabel,
   type CountItem,
+  type HostContactItem,
   type StackedGroup,
   type WeekSeriesPoint,
 } from "@/lib/dashboard-stats";
 import type { DashboardFilter } from "@/lib/dashboard-filter";
+import { IntegrationsHealthPanel } from "./IntegrationsHealthPanel";
 
 interface DashboardViewProps {
   tickets: Ticket[];
   loading?: boolean;
   period: DashboardPeriod;
-  onPeriodChange: (period: DashboardPeriod) => void;
+  rollingPeriod: RollingDashboardPeriod;
+  calendarMonth: string;
+  onRollingPeriodChange: (period: RollingDashboardPeriod) => void;
+  onCalendarMonthChange: (monthKey: string) => void;
   onFilter?: (filter: DashboardFilter) => void;
 }
 
@@ -43,15 +54,75 @@ export function DashboardView({
   tickets,
   loading,
   period,
-  onPeriodChange,
+  rollingPeriod,
+  calendarMonth,
+  onRollingPeriodChange,
+  onCalendarMonthChange,
   onFilter,
 }: DashboardViewProps) {
-  const stats = useMemo(() => buildDashboardStats(tickets, period), [tickets, period]);
-  const periodNote = stats.periodLabel;
-  const dashFilter = useCallback(
-    (fields: Omit<DashboardFilter, "period"> = {}) => ({ ...fields, period }),
-    [period]
+  const [marketManagerFilter, setMarketManagerFilter] = useState<string>("all");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+
+  const stats = useMemo(
+    () => buildDashboardStats(tickets, period, marketManagerFilter),
+    [tickets, period, marketManagerFilter]
   );
+  const periodNote = stats.periodLabel;
+  const singleMarketManagerView = marketManagerFilter !== "all";
+  const marketManagerOptions = useMemo(
+    () => listMarketManagersInPeriod(tickets, period),
+    [tickets, period]
+  );
+
+  useEffect(() => {
+    if (
+      marketManagerFilter !== "all" &&
+      !marketManagerOptions.includes(marketManagerFilter)
+    ) {
+      setMarketManagerFilter("all");
+    }
+  }, [marketManagerFilter, marketManagerOptions]);
+
+  const dashFilter = useCallback(
+    (fields: Omit<DashboardFilter, "period"> = {}) => {
+      const mm =
+        fields.marketManager ??
+        (marketManagerFilter !== "all" ? marketManagerFilter : undefined);
+      return {
+        ...fields,
+        period,
+        ...(mm ? { marketManager: mm } : {}),
+      };
+    },
+    [period, marketManagerFilter]
+  );
+
+  async function copyHostsReport() {
+    const reportParams = {
+      periodLabel: periodNote,
+      marketManagerFilter,
+      groups: stats.topHostsByMarketManager,
+    };
+    const text = formatHostsByMarketManagerReport(reportParams);
+    const html = formatHostsByMarketManagerReportHtml(reportParams);
+    try {
+      if (typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([text], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("error");
+      window.setTimeout(() => setCopyState("idle"), 2500);
+    }
+  }
 
   if (loading) {
     return (
@@ -74,8 +145,8 @@ export function DashboardView({
           <label className="flex items-center gap-2 text-xs text-zendesk-muted">
             <span className="font-medium">Period</span>
             <select
-              value={period}
-              onChange={(e) => onPeriodChange(e.target.value as DashboardPeriod)}
+              value={rollingPeriod}
+              onChange={(e) => onRollingPeriodChange(e.target.value as RollingDashboardPeriod)}
               className="rounded border border-zendesk-border bg-white px-2 py-1.5 text-sm text-gray-900"
             >
               {DASHBOARD_PERIOD_OPTIONS.map((opt) => (
@@ -85,8 +156,43 @@ export function DashboardView({
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-xs text-zendesk-muted">
+            <span className="font-medium">Month</span>
+            <input
+              type="month"
+              value={calendarMonth}
+              onChange={(e) => onCalendarMonthChange(e.target.value)}
+              className="rounded border border-zendesk-border bg-white px-2 py-1.5 text-sm text-gray-900"
+              title="Filter to a specific calendar month (overrides rolling period)"
+            />
+            {calendarMonth ? (
+              <button
+                type="button"
+                onClick={() => onCalendarMonthChange("")}
+                className="rounded border border-zendesk-border bg-white px-2 py-1 text-xs text-zendesk-muted hover:bg-gray-50"
+              >
+                Clear
+              </button>
+            ) : null}
+          </label>
+          <label className="flex items-center gap-2 text-xs text-zendesk-muted">
+            <span className="font-medium">Market manager</span>
+            <select
+              value={marketManagerFilter}
+              onChange={(e) => setMarketManagerFilter(e.target.value)}
+              className="max-w-[12rem] rounded border border-zendesk-border bg-white px-2 py-1.5 text-sm text-gray-900"
+            >
+              <option value="all">All in period</option>
+              {marketManagerOptions.map((mm) => (
+                <option key={mm} value={mm}>
+                  {mm}
+                </option>
+              ))}
+            </select>
+          </label>
           <p className="text-xs text-zendesk-muted">
-            {stats.periodTicketCount.toLocaleString()} in period ·{" "}
+            {stats.periodTicketCount.toLocaleString()} in period
+            {marketManagerFilter !== "all" ? ` · ${marketManagerFilter}` : ""} ·{" "}
             {stats.totalTickets.toLocaleString()} all time
           </p>
         </div>
@@ -101,10 +207,14 @@ export function DashboardView({
         </ChartCard>
 
         <ChartCard title="Contacts by MM" subtitle={`${periodNote} · click to filter`}>
-          <PieChartBlock
-            data={stats.marketManagerBreakdown.slice(0, 10)}
-            onSliceClick={(name) => onFilter?.(dashFilter({ marketManager: name }))}
-          />
+          {singleMarketManagerView ? (
+            <ChangeMmFilterPlaceholder />
+          ) : (
+            <PieChartBlock
+              data={stats.marketManagerBreakdown.slice(0, 10)}
+              onSliceClick={(name) => onFilter?.(dashFilter({ marketManager: name }))}
+            />
+          )}
         </ChartCard>
 
         <ChartCard title="Contact Reason by Week" subtitle={`${periodNote} · click a week`}>
@@ -125,10 +235,14 @@ export function DashboardView({
         </ChartCard>
 
         <ChartCard title="Contact Reason by MM" subtitle={`${periodNote} · click an MM`}>
-          <PercentStackedMM
-            data={stats.contactReasonByMM}
-            onMMClick={(mm) => onFilter?.(dashFilter({ marketManager: mm }))}
-          />
+          {singleMarketManagerView ? (
+            <ChangeMmFilterPlaceholder />
+          ) : (
+            <PercentStackedMM
+              data={stats.contactReasonByMM}
+              onMMClick={(mm) => onFilter?.(dashFilter({ marketManager: mm }))}
+            />
+          )}
         </ChartCard>
 
         <ChartCard title="Cases by Week" subtitle={`${periodNote} · click a point`}>
@@ -149,9 +263,19 @@ export function DashboardView({
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Cases by Month" subtitle={`${periodNote} · monthly volume`}>
+        <ChartCard title="Cases by Month" subtitle={`${periodNote} · click a month`}>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={stats.casesByMonth}>
+            <BarChart
+              data={stats.casesByMonth}
+              onClick={(state) => {
+                const payload = state?.activePayload?.[0]?.payload as
+                  | { monthStart?: string }
+                  | undefined;
+                if (payload?.monthStart) {
+                  onFilter?.(dashFilter({ monthStart: payload.monthStart }));
+                }
+              }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="monthLabel" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
               <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
@@ -212,11 +336,33 @@ export function DashboardView({
           </p>
         </ChartCard>
 
-        <ChartCard
-          title="Top hosts by Market Manager"
-          subtitle={`${periodNote} · activity report`}
-          className="xl:col-span-2"
-        >
+        <section className="rounded-lg border border-zendesk-border bg-white p-4 shadow-sm xl:col-span-2">
+          <header className="mb-3 flex items-start justify-between gap-3 border-b border-zendesk-border/60 pb-2">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-zendesk-navy">
+                Top hosts by Market Manager
+              </h2>
+              <p className="text-xs text-zendesk-muted">
+                {periodNote}
+                {marketManagerFilter === "all"
+                  ? " · all market managers in period"
+                  : ` · ${marketManagerFilter}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void copyHostsReport()}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50"
+              title="Copy report for email or Slack"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {copyState === "copied"
+                ? "Copied"
+                : copyState === "error"
+                  ? "Copy failed"
+                  : "Copy"}
+            </button>
+          </header>
           <HostsByMMReport
             data={stats.topHostsByMarketManager}
             onHostClick={(mm, host) => {
@@ -229,7 +375,7 @@ export function DashboardView({
               );
             }}
           />
-        </ChartCard>
+        </section>
 
         <ChartCard title="Overturn Rate" subtitle={`by agent · ${periodNote}`}>
           {stats.overturnByAgent.length > 0 ? (
@@ -247,7 +393,19 @@ export function DashboardView({
           )}
         </ChartCard>
       </div>
+
+      <div className="mt-4">
+        <IntegrationsHealthPanel />
+      </div>
     </main>
+  );
+}
+
+function ChangeMmFilterPlaceholder() {
+  return (
+    <p className="py-8 text-center text-sm text-zendesk-muted">
+      Change filter view to all in period
+    </p>
   );
 }
 
@@ -255,7 +413,7 @@ function HostsByMMReport({
   data,
   onHostClick,
 }: {
-  data: { marketManager: string; hosts: CountItem[]; total: number }[];
+  data: { marketManager: string; hosts: HostContactItem[]; total: number }[];
   onHostClick?: (mm: string, host: string) => void;
 }) {
   const withData = data.filter((g) => g.total > 0);
@@ -272,18 +430,30 @@ function HostsByMMReport({
             <span className="text-xs text-zendesk-muted">{group.total} contacts</span>
           </div>
           <ul className="mt-1.5 space-y-1">
-            {group.hosts.map((host) => (
-              <li key={host.name}>
-                <button
-                  type="button"
-                  onClick={() => onHostClick?.(group.marketManager, host.name)}
-                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-gray-100"
-                >
-                  <span className="line-clamp-1 pr-2">{host.name}</span>
-                  <span className="shrink-0 font-semibold text-zendesk-navy">{host.value}</span>
-                </button>
-              </li>
-            ))}
+            {group.hosts.map((host) => {
+              const reasonSummary = formatHostContactReasonBreakdown(host.contactReasons);
+              return (
+                <li key={host.name}>
+                  <button
+                    type="button"
+                    onClick={() => onHostClick?.(group.marketManager, host.name)}
+                    className="flex w-full flex-col rounded px-2 py-1 text-left hover:bg-gray-100"
+                  >
+                    <span className="flex w-full items-center justify-between gap-2 text-xs">
+                      <span className="line-clamp-1 pr-2 font-medium text-zendesk-navy">
+                        {host.name}
+                      </span>
+                      <span className="shrink-0 font-semibold text-zendesk-navy">{host.value}</span>
+                    </span>
+                    {reasonSummary && (
+                      <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-zendesk-muted">
+                        {reasonSummary}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}

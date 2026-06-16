@@ -1,6 +1,7 @@
 import type { Ticket } from "./types";
 import {
   dashboardPeriodLabel,
+  formatCalendarMonthLabel,
   ticketMatchesDashboardPeriod,
   type DashboardPeriod,
 } from "./dashboard-period";
@@ -9,6 +10,7 @@ import { parseSheetTimestamp } from "./ticket-activity";
 
 export interface DashboardFilter {
   period?: DashboardPeriod;
+  monthStart?: string;
   contactReason?: string;
   marketManager?: string;
   requesterName?: string;
@@ -21,7 +23,12 @@ export function applyDashboardFilter(tickets: Ticket[], filter: DashboardFilter 
   if (!filter || Object.keys(filter).length === 0) return tickets;
 
   return tickets.filter((ticket) => {
-    if (filter.period && !ticketMatchesDashboardPeriod(ticket, filter.period)) {
+    if (filter.monthStart) {
+      const d = parseSheetTimestamp(ticket.timestamp);
+      if (!d) return false;
+      const ticketMonthStart = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+      if (ticketMonthStart !== filter.monthStart) return false;
+    } else if (filter.period && !ticketMatchesDashboardPeriod(ticket, filter.period)) {
       return false;
     }
     if (filter.contactReason && ticket.contactReason.trim() !== filter.contactReason) {
@@ -70,7 +77,13 @@ function getWeekStartSunday(date: Date): Date {
 export function dashboardFilterLabel(filter: DashboardFilter | null): string | null {
   if (!filter) return null;
   const parts: string[] = [];
-  if (filter.period && filter.period !== "all") {
+  if (filter.monthStart) {
+    const d = new Date(filter.monthStart);
+    if (!Number.isNaN(d.getTime())) {
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      parts.push(`Month: ${formatCalendarMonthLabel(monthKey)}`);
+    }
+  } else if (filter.period && filter.period !== "all") {
     parts.push(`Period: ${dashboardPeriodLabel(filter.period)}`);
   }
   if (filter.contactReason) parts.push(`Reason: ${filter.contactReason}`);

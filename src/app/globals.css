@@ -27,6 +27,25 @@ body {
 }
 
 @layer components {
+  .crm-action-button {
+    transition:
+      transform 120ms ease,
+      box-shadow 120ms ease,
+      filter 120ms ease;
+  }
+
+  .crm-action-button:active,
+  .crm-action-button-pressed {
+    transform: translateY(1px) scale(0.98);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
+    filter: brightness(0.98);
+  }
+
+  .crm-field-required-missing {
+    border-color: #fca5a5 !important;
+    background-color: #fef2f2;
+  }
+
   .crm-notes-panel {
     border-radius: 0.25rem;
     border: 1px solid #dab64a;

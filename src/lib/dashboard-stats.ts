@@ -1,9 +1,11 @@
 import type { DashboardPeriod } from "./dashboard-period";
 import { dashboardPeriodLabel, ticketMatchesDashboardPeriod } from "./dashboard-period";
+import { escapeHtml } from "./html-utils";
 import type { Ticket } from "./types";
 import { parseSheetTimestamp } from "./ticket-activity";
 
 export const DASHBOARD_WEEK_COUNT = 8;
+export const HOSTS_PER_MARKET_MANAGER = 5;
 
 const CHART_COLORS = [
   "#17494d",
@@ -48,9 +50,15 @@ export interface MonthSeriesPoint {
   cases: number;
 }
 
+export interface HostContactItem {
+  name: string;
+  value: number;
+  contactReasons: CountItem[];
+}
+
 export interface HostsByMarketManagerGroup {
   marketManager: string;
-  hosts: CountItem[];
+  hosts: HostContactItem[];
   total: number;
 }
 
@@ -82,11 +90,26 @@ export function filterTicketsByPeriod(
   return tickets.filter((ticket) => ticketMatchesDashboardPeriod(ticket, period));
 }
 
+export function filterTicketsByMarketManager(
+  tickets: Ticket[],
+  marketManager: string | "all"
+): Ticket[] {
+  if (marketManager === "all") return tickets;
+  return tickets.filter(
+    (ticket) => shortMarketManagerLabel(ticket.marketManager) === marketManager
+  );
+}
+
 export function buildDashboardStats(
   tickets: Ticket[],
-  period: DashboardPeriod = "3m"
+  period: DashboardPeriod = "3m",
+  marketManager: string | "all" = "all"
 ): DashboardStats {
-  const inPeriod = filterTicketsByPeriod(tickets, period);
+  const inPeriod = filterTicketsByMarketManager(
+    filterTicketsByPeriod(tickets, period),
+    marketManager
+  );
+  const allTimeScoped = filterTicketsByMarketManager(tickets, marketManager);
   const contactReasonBreakdown = countBy(inPeriod, (t) =>
     normalizeLabel(t.contactReason, "Other")
   );
@@ -100,7 +123,10 @@ export function buildDashboardStats(
     contactReasonWeekKeys,
     "Other"
   );
-  const topMMs = topKeys(marketManagerBreakdown, 6);
+  const topMMs =
+    marketManager === "all"
+      ? topKeys(marketManagerBreakdown, 6)
+      : [marketManager];
   const contactReasonByMM = buildGroupedStack(
     inPeriod.filter((t) => topMMs.includes(shortMarketManagerLabel(t.marketManager))),
     (t) => shortMarketManagerLabel(t.marketManager),
@@ -113,7 +139,15 @@ export function buildDashboardStats(
   const topRegionalHosts = countBy(inPeriod, (t) =>
     hostContactLabel(t)
   ).slice(0, 10);
-  const topHostsByMarketManager = buildTopHostsByMarketManager(inPeriod, topMMs);
+  const hostsMarketManagers =
+    marketManager === "all"
+      ? listMarketManagersInPeriod(tickets, period)
+      : [marketManager];
+  const topHostsByMarketManager = buildTopHostsByMarketManager(
+    inPeriod,
+    hostsMarketManagers,
+    HOSTS_PER_MARKET_MANAGER
+  );
   const appealsBySA = buildAppealStacks(inPeriod, "sa");
   const overturnByAgent = buildAppealStacks(inPeriod, "overturn");
   const appealCsVsPolicy = buildAppealStacks(inPeriod, "csPolicy");
@@ -121,7 +155,7 @@ export function buildDashboardStats(
   return {
     period,
     periodLabel: dashboardPeriodLabel(period),
-    totalTickets: tickets.length,
+    totalTickets: allTimeScoped.length,
     periodTicketCount: inPeriod.length,
     contactReasonBreakdown,
     marketManagerBreakdown,
@@ -148,27 +182,162 @@ function hostContactLabel(ticket: Ticket): string {
   return name || email || "Unknown";
 }
 
+export function formatHostContactReasonBreakdown(reasons: CountItem[]): string {
+  return [...reasons]
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
+    .map((reason) => `${reason.name} (${reason.value})`)
+    .join(", ");
+}
+
+/** Market managers present on tickets in the selected period (dataset only). */
+export function listMarketManagersInPeriod(
+  tickets: Ticket[],
+  period: DashboardPeriod
+): string[] {
+  const inPeriod = filterTicketsByPeriod(tickets, period);
+  const names = new Set<string>();
+  for (const ticket of inPeriod) {
+    names.add(shortMarketManagerLabel(ticket.marketManager));
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+export function buildTopHostsByMarketManagerReport(
+  tickets: Ticket[],
+  period: DashboardPeriod,
+  marketManagerFilter: string | "all",
+  hostsPerMm = HOSTS_PER_MARKET_MANAGER
+): HostsByMarketManagerGroup[] {
+  const inPeriod = filterTicketsByPeriod(tickets, period);
+  const marketManagers =
+    marketManagerFilter === "all"
+      ? listMarketManagersInPeriod(tickets, period)
+      : [marketManagerFilter];
+  return buildTopHostsByMarketManager(inPeriod, marketManagers, hostsPerMm);
+}
+
+export function formatHostsByMarketManagerReport(params: {
+  periodLabel: string;
+  marketManagerFilter: string | "all";
+  groups: HostsByMarketManagerGroup[];
+}): string {
+  const lines: string[] = [
+    `Top host contacts — ${params.periodLabel}`,
+    params.marketManagerFilter === "all"
+      ? "Market managers: all in period"
+      : `Market manager: ${params.marketManagerFilter}`,
+    "",
+  ];
+
+  const withData = params.groups.filter((group) => group.total > 0);
+  if (withData.length === 0) {
+    lines.push("No host contacts in this period.");
+    return lines.join("\n");
+  }
+
+  for (const group of withData) {
+    lines.push(`${group.marketManager} — ${group.total} contact${group.total === 1 ? "" : "s"}`);
+    group.hosts.forEach((host, index) => {
+      const reasons = formatHostContactReasonBreakdown(host.contactReasons);
+      lines.push(
+        `${index + 1}. ${host.name} — ${host.value}${reasons ? `: ${reasons}` : ""}`
+      );
+    });
+    lines.push("");
+  }
+
+  lines.push("Generated from SheetsCRM");
+  return lines.join("\n").trimEnd();
+}
+
+export function formatHostsByMarketManagerReportHtml(params: {
+  periodLabel: string;
+  marketManagerFilter: string | "all";
+  groups: HostsByMarketManagerGroup[];
+}): string {
+  const filterLine =
+    params.marketManagerFilter === "all"
+      ? "Market managers: all in period"
+      : `Market manager: ${escapeHtml(params.marketManagerFilter)}`;
+
+  const withData = params.groups.filter((group) => group.total > 0);
+  const parts: string[] = [
+    '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #17494d;">',
+    `<p style="margin: 0 0 8px;"><strong>Top host contacts — ${escapeHtml(params.periodLabel)}</strong></p>`,
+    `<p style="margin: 0 0 16px; color: #68737d;">${filterLine}</p>`,
+  ];
+
+  if (withData.length === 0) {
+    parts.push('<p style="color: #68737d;">No host contacts in this period.</p></div>');
+    return parts.join("");
+  }
+
+  const cellStyle = "border: 1px solid #d8dcde; padding: 8px;";
+  for (const group of withData) {
+    parts.push(
+      `<p style="margin: 16px 0 8px; font-weight: bold;">${escapeHtml(group.marketManager)} — ${group.total} contact${group.total === 1 ? "" : "s"}</p>`,
+      '<table style="border-collapse: collapse; width: 100%; max-width: 720px; margin-bottom: 16px; font-size: 13px;">',
+      "<thead>",
+      '<tr style="background: #f4f6f8;">',
+      `<th style="${cellStyle} text-align: left; width: 32px;">#</th>`,
+      `<th style="${cellStyle} text-align: left;">Host</th>`,
+      `<th style="${cellStyle} text-align: right; width: 72px;">Contacts</th>`,
+      `<th style="${cellStyle} text-align: left;">Contact reasons</th>`,
+      "</tr>",
+      "</thead>",
+      "<tbody>"
+    );
+    group.hosts.forEach((host, index) => {
+      const reasons = formatHostContactReasonBreakdown(host.contactReasons);
+      parts.push(
+        "<tr>",
+        `<td style="${cellStyle}">${index + 1}</td>`,
+        `<td style="${cellStyle}">${escapeHtml(host.name)}</td>`,
+        `<td style="${cellStyle} text-align: right; font-weight: bold;">${host.value}</td>`,
+        `<td style="${cellStyle} color: #68737d;">${escapeHtml(reasons)}</td>`,
+        "</tr>"
+      );
+    });
+    parts.push("</tbody></table>");
+  }
+
+  parts.push(
+    '<p style="margin-top: 8px; font-size: 11px; color: #87929d;">Generated from SheetsCRM</p>',
+    "</div>"
+  );
+  return parts.join("");
+}
+
 function buildTopHostsByMarketManager(
   tickets: Ticket[],
   marketManagers: string[],
-  hostsPerMm = 5
+  hostsPerMm = HOSTS_PER_MARKET_MANAGER
 ): HostsByMarketManagerGroup[] {
-  const map = new Map<string, Map<string, number>>();
+  const map = new Map<string, Map<string, Map<string, number>>>();
 
   for (const ticket of tickets) {
     const mm = shortMarketManagerLabel(ticket.marketManager);
     if (!marketManagers.includes(mm)) continue;
     const host = hostContactLabel(ticket);
+    const reason = normalizeLabel(ticket.contactReason, "Other");
     if (!map.has(mm)) map.set(mm, new Map());
     const hosts = map.get(mm)!;
-    hosts.set(host, (hosts.get(host) ?? 0) + 1);
+    if (!hosts.has(host)) hosts.set(host, new Map());
+    const reasons = hosts.get(host)!;
+    reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
   }
 
   return marketManagers.map((marketManager) => {
     const hostsMap = map.get(marketManager) ?? new Map();
     const hosts = [...hostsMap.entries()]
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
+      .map(([name, reasonsMap]) => {
+        const contactReasons = [...reasonsMap.entries()]
+          .map(([reasonName, value]) => ({ name: reasonName, value }))
+          .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+        const value = contactReasons.reduce((sum, item) => sum + item.value, 0);
+        return { name, value, contactReasons };
+      })
+      .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
       .slice(0, hostsPerMm);
     const total = hosts.reduce((sum, h) => sum + h.value, 0);
     return { marketManager, hosts, total };

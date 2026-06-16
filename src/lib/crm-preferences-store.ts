@@ -1,4 +1,5 @@
 import type { DashboardPeriod } from "./dashboard-period";
+import { normalizeDashboardPeriod } from "./dashboard-period";
 import type { ExternalToolLink } from "./external-tools";
 import { defaultExternalTools, normalizeExternalTools } from "./external-tools";
 import { getOverlayDb } from "./overlay-db";
@@ -54,14 +55,7 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
         parsed.sortOrder === "asc" || parsed.sortOrder === "desc"
           ? parsed.sortOrder
           : DEFAULT_STORED_PREFERENCES.sortOrder,
-      dashboardPeriod:
-        parsed.dashboardPeriod === "all" ||
-        parsed.dashboardPeriod === "6m" ||
-        parsed.dashboardPeriod === "3m" ||
-        parsed.dashboardPeriod === "1m" ||
-        parsed.dashboardPeriod === "2w"
-          ? parsed.dashboardPeriod
-          : DEFAULT_STORED_PREFERENCES.dashboardPeriod,
+      dashboardPeriod: normalizeDashboardPeriod(parsed.dashboardPeriod),
       errorLoggingEnabled:
         typeof parsed.errorLoggingEnabled === "boolean"
           ? parsed.errorLoggingEnabled

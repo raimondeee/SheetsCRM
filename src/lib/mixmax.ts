@@ -1,3 +1,5 @@
+import { withOpsMetric } from "./ops-metrics";
+
 export interface MixmaxSnippet {
   id: string;
   name: string;
@@ -45,10 +47,12 @@ export async function fetchMixmaxTemplates(search?: string): Promise<MixmaxSnipp
     search: buildOwnedTemplatesSearch(search),
   });
 
-  const res = await fetch(`${MIXMAX_API_BASE}/snippets?${params.toString()}`, {
-    headers: { "X-API-Token": token },
-    cache: "no-store",
-  });
+  const res = await withOpsMetric("mixmax", "snippets.list", () =>
+    fetch(`${MIXMAX_API_BASE}/snippets?${params.toString()}`, {
+      headers: { "X-API-Token": token },
+      cache: "no-store",
+    })
+  );
 
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { message?: string };

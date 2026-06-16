@@ -18,6 +18,7 @@ import { DashboardView } from "./DashboardView";
 import { SetupModal, type SetupModalTab } from "./SetupModal";
 import { PreferencesModal } from "./PreferencesModal";
 import { CrmDebugLogPanel } from "./CrmDebugLogPanel";
+import { CalendarReminderToast } from "./CalendarReminderToast";
 import { UnreadInboxModal } from "./UnreadInboxModal";
 import { appendAdminNoteToText } from "@/lib/admin-notes";
 import { crmSubjectLabelFromStored } from "@/lib/email-subject";
@@ -36,6 +37,7 @@ import { usePersistedBoolean } from "@/hooks/usePersistedBoolean";
 import { usePendingSendQueue } from "@/hooks/usePendingSendQueue";
 import { usePersistedWidth, useResponsivePanelMax } from "@/hooks/usePersistedWidth";
 import { useRefreshCountdown } from "@/hooks/useRefreshCountdown";
+import { useCalendarReminders } from "@/hooks/useCalendarReminders";
 import { useTicketChimeUnlock } from "@/hooks/useTicketChime";
 import {
   buildTicketChimeSnapshots,
@@ -57,7 +59,12 @@ import { normalizeStatusId } from "@/lib/status-mapper";
 import { InboxVictoryView } from "./InboxVictoryView";
 import { buildContactReasonOptions } from "@/lib/contact-reasons";
 import type { TicketQualityFilter } from "@/lib/ticket-search";
-import type { DashboardPeriod } from "@/lib/dashboard-period";
+import type { DashboardPeriod, RollingDashboardPeriod } from "@/lib/dashboard-period";
+import {
+  calendarMonthKeyFromPeriod,
+  dashboardPeriodFromCalendarMonthKey,
+  isRollingDashboardPeriod,
+} from "@/lib/dashboard-period";
 import {
   DEFAULT_USER_PREFERENCES,
   fetchUserPreferences,
@@ -112,6 +119,8 @@ export function CrmShell() {
   const [sortBy, setSortBy] = useState<UserPreferences["sortBy"]>("submitted");
   const [sortOrder, setSortOrder] = useState<UserPreferences["sortOrder"]>("desc");
   const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("3m");
+  const [lastRollingDashboardPeriod, setLastRollingDashboardPeriod] =
+    useState<RollingDashboardPeriod>("3m");
   const prefsRef = useRef<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [search, setSearch] = useState("");
   const [qualityFilters, setQualityFilters] = useState<TicketQualityFilter[]>([]);
@@ -137,9 +146,14 @@ export function CrmShell() {
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<string>("mock");
-  const [auth, setAuth] = useState<{ signedIn: boolean; email: string | null }>({
+  const [auth, setAuth] = useState<{
+    signedIn: boolean;
+    email: string | null;
+    method: "oauth" | "service-account" | null;
+  }>({
     signedIn: false,
     email: null,
+    method: null,
   });
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [inboxVictory, setInboxVictory] = useState(false);
@@ -279,8 +293,16 @@ export function CrmShell() {
   const loadAuth = useCallback(async () => {
     const res = await fetch("/api/auth/status");
     const data = await res.json();
-    setAuth({ signedIn: data.signedIn, email: data.email });
+    setAuth({
+      signedIn: data.signedIn,
+      email: data.email,
+      method: data.method ?? null,
+    });
   }, []);
+
+  const calendarReminders = useCalendarReminders(
+    auth.signedIn && auth.method === "oauth" && source !== "mock"
+  );
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -297,6 +319,9 @@ export function CrmShell() {
       setSortBy(prefs.sortBy);
       setSortOrder(prefs.sortOrder);
       setDashboardPeriod(prefs.dashboardPeriod);
+      if (isRollingDashboardPeriod(prefs.dashboardPeriod)) {
+        setLastRollingDashboardPeriod(prefs.dashboardPeriod);
+      }
       setErrorLoggingEnabled(prefs.errorLoggingEnabled);
       setCrmErrorLoggingEnabled(prefs.errorLoggingEnabled);
       setInitialResponseHours(prefs.initialResponseHours);
@@ -419,9 +444,25 @@ export function CrmShell() {
     persistPreferences({ ...prefsRef.current, sortOrder: order });
   }
 
-  function handleDashboardPeriodChange(period: DashboardPeriod) {
+  function handleDashboardRollingPeriodChange(period: RollingDashboardPeriod) {
+    setLastRollingDashboardPeriod(period);
     setDashboardPeriod(period);
     persistPreferences({ ...prefsRef.current, dashboardPeriod: period });
+  }
+
+  function handleDashboardCalendarMonthChange(monthKey: string) {
+    if (monthKey) {
+      const period = dashboardPeriodFromCalendarMonthKey(monthKey);
+      if (!period) return;
+      setDashboardPeriod(period);
+      persistPreferences({ ...prefsRef.current, dashboardPeriod: period });
+      return;
+    }
+    setDashboardPeriod(lastRollingDashboardPeriod);
+    persistPreferences({
+      ...prefsRef.current,
+      dashboardPeriod: lastRollingDashboardPeriod,
+    });
   }
 
   function handlePreferencesSaved(prefs: UserPreferences) {
@@ -430,6 +471,9 @@ export function CrmShell() {
     setSortBy(prefs.sortBy);
     setSortOrder(prefs.sortOrder);
     setDashboardPeriod(prefs.dashboardPeriod);
+    if (isRollingDashboardPeriod(prefs.dashboardPeriod)) {
+      setLastRollingDashboardPeriod(prefs.dashboardPeriod);
+    }
     setErrorLoggingEnabled(prefs.errorLoggingEnabled);
     setCrmErrorLoggingEnabled(prefs.errorLoggingEnabled);
     setInitialResponseHours(prefs.initialResponseHours);
@@ -598,6 +642,14 @@ export function CrmShell() {
     );
   }, []);
 
+  const handleAdminNotesChange = useCallback((rowId: string, adminNotes: string) => {
+    setTickets((prev) =>
+      prev.map((t) =>
+        t.rowId === rowId ? { ...t, adminNotes, sheetCaseSummary: adminNotes } : t
+      )
+    );
+  }, []);
+
   const handleThreadUpdate = useCallback(() => {
     scheduleTicketsRefresh({ silent: true });
   }, [scheduleTicketsRefresh]);
@@ -618,7 +670,7 @@ export function CrmShell() {
   async function handleSetStatusWithoutEmail(
     rowId: string,
     status: string,
-    options?: { adminNote?: string; pendingHours?: number }
+    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string }
   ) {
     if (source === "mock") {
       const now = new Date().toISOString();
@@ -682,6 +734,7 @@ export function CrmShell() {
           ...(typeof options?.pendingHours === "number"
             ? { pendingReopenHours: options.pendingHours }
             : {}),
+          ...(options?.airbnbUserId ? { airbnbUserId: options.airbnbUserId } : {}),
         }),
       });
       const data = await res.json();
@@ -1063,7 +1116,14 @@ export function CrmShell() {
             tickets={tickets}
             loading={loading || !prefsLoaded}
             period={dashboardPeriod}
-            onPeriodChange={handleDashboardPeriodChange}
+            rollingPeriod={
+              isRollingDashboardPeriod(dashboardPeriod)
+                ? dashboardPeriod
+                : lastRollingDashboardPeriod
+            }
+            calendarMonth={calendarMonthKeyFromPeriod(dashboardPeriod) ?? ""}
+            onRollingPeriodChange={handleDashboardRollingPeriodChange}
+            onCalendarMonthChange={handleDashboardCalendarMonthChange}
             onFilter={handleDashboardFilter}
           />
         ) : (
@@ -1147,6 +1207,7 @@ export function CrmShell() {
               onSubjectChange={handleSubjectChange}
               onContactReasonChange={handleContactReasonChange}
               onAppendAdminNote={handleAppendAdminNote}
+              onAdminNotesChange={handleAdminNotesChange}
               onAirbnbUserIdChange={handleAirbnbUserIdChange}
               onReservationCodeChange={handleReservationCodeChange}
               onListingIdChange={handleListingIdChange}
@@ -1170,6 +1231,15 @@ export function CrmShell() {
           </div>
         )}
       </div>
+
+      {calendarReminders.toast && (
+        <div className="pointer-events-none fixed right-4 top-4 z-50">
+          <CalendarReminderToast
+            event={calendarReminders.toast}
+            onDismiss={calendarReminders.dismissToast}
+          />
+        </div>
+      )}
 
       {pendingSendQueue.sendError &&
         pendingSendQueue.sendError.rowId !== selected?.rowId && (

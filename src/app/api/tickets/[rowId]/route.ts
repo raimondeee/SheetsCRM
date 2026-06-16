@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   appendAdminNoteToOverlay,
   clearInitialResponseSla,
+  getTicketOverlay,
   updateTicketStatus,
   updateTicketSla,
   updateTicketSubject,
@@ -10,6 +11,7 @@ import {
   updateTicketLinkedCase,
   loadSheetConfig,
 } from "@/lib/overlay-db";
+import { hasAirbnbUserIdForResolve } from "@/lib/ticket-action-validation";
 import {
   crmStatusLabel,
   mapCrmStatusToSheetValue,
@@ -112,6 +114,18 @@ export async function PATCH(request: Request) {
 
     if (status) {
       const normalizedStatus = normalizeStatusId(status);
+      if (normalizedStatus === "resolved") {
+        const pendingUserId =
+          typeof airbnbUserId === "string" ? airbnbUserId.trim() : "";
+        const overlay = getTicketOverlay(rowId);
+        const resolvedUserId = pendingUserId || overlay.crmAirbnbUserId?.trim() || "";
+        if (!hasAirbnbUserIdForResolve(resolvedUserId)) {
+          return NextResponse.json(
+            { error: "Airbnb User ID is required before marking resolved." },
+            { status: 400 }
+          );
+        }
+      }
       const { email } = await getSignedInUser();
       const timerSettings = loadTimerSettings(email);
       const timerFields = updateTicketStatus(

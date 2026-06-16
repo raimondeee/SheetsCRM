@@ -115,3 +115,27 @@ export function playTicketChime(): void {
     osc.stop(start + 0.45);
   }
 }
+
+/** Three-tone alert for upcoming calendar events. */
+export function playCalendarReminderSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx || ctx.state !== "running") return;
+
+  const now = ctx.currentTime;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+  gain.connect(ctx.destination);
+
+  const tones = [659.25, 880, 1046.5];
+  for (let i = 0; i < tones.length; i += 1) {
+    const start = now + i * 0.12;
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(tones[i]!, start);
+    osc.connect(gain);
+    osc.start(start);
+    osc.stop(start + 0.35);
+  }
+}

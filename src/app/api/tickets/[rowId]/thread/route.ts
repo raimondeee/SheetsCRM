@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   getThreadMessages,
+  getTicketOverlay,
   loadSheetConfig,
   reopenPendingOnCustomerReply,
   resolveTicketGmailOpenUrl,
   updateTicketStatus,
 } from "@/lib/overlay-db";
+import { hasAirbnbUserIdForResolve } from "@/lib/ticket-action-validation";
 import { sendReplyEmail, syncGmailThreadForTicket } from "@/lib/gmail";
 import { parseOutboundAttachments } from "@/lib/outbound-attachments";
 import { isCompleteEmailSubject } from "@/lib/email-subject";
@@ -123,6 +125,15 @@ export async function POST(
     });
 
     const statusAfterSend = status === "resolved" || status === "solved" ? "resolved" : "pending";
+    if (statusAfterSend === "resolved") {
+      const overlay = getTicketOverlay(decoded);
+      if (!hasAirbnbUserIdForResolve(overlay.crmAirbnbUserId ?? "")) {
+        return NextResponse.json(
+          { error: "Airbnb User ID is required before marking resolved." },
+          { status: 400 }
+        );
+      }
+    }
     const { email } = await getSignedInUser();
     const timerSettings = loadTimerSettings(email);
     updateTicketStatus(decoded, statusAfterSend, timerSettings, intakeTimestamp);

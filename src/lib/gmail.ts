@@ -8,6 +8,7 @@ import { encodeMimeHeaderValue } from "./mime-headers";
 import { getGoogleAuthClient, getSignedInUser } from "./google-auth";
 import { joinRecipientList, parseHeaderRecipientList } from "./email-recipients";
 import { stripQuotedReplyPlainText } from "./email-reply-body";
+import { withOpsMetric } from "./ops-metrics";
 import {
   addThreadMessage,
   claimGmailThreadForTicket,
@@ -16,6 +17,7 @@ import {
   getGmailThreadOpenUrl,
   getTicketRowIdForGmailThread,
   getThreadMessages,
+  isGmailMessageRedactionBlocked,
   pruneMismatchedThreadMessages,
   refreshResponseSlaDueAt,
   reopenPendingOnCustomerReply,
@@ -776,6 +778,7 @@ export async function fetchGmailThreadCandidatePreviews(
 
 /** Fetch unread inbox threads with CRM link status. */
 export async function fetchUnreadGmailThreads(limit = 40): Promise<import("./types").GmailUnreadThreadPreview[]> {
+  return withOpsMetric("gmail", "threads.unread", async () => {
   const gmail = await getGmailClient();
   if (!gmail) return [];
 
@@ -833,6 +836,7 @@ export async function fetchUnreadGmailThreads(limit = 40): Promise<import("./typ
   return previews
     .filter((item): item is import("./types").GmailUnreadThreadPreview => Boolean(item))
     .sort((a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime());
+  });
 }
 
 /** Resolve and persist a Gmail API thread id for a ticket when the stored id is missing or legacy. */
@@ -1222,6 +1226,7 @@ async function importThreadMessages(
 
   for (const msg of thread.data.messages ?? []) {
     if (!msg.id) continue;
+    if (isGmailMessageRedactionBlocked(ticketRowId, msg.id)) continue;
     if (msg.threadId && msg.threadId !== threadId) continue;
 
     const parsed = parseGmailMessage(msg, ticketRowId, requesterEmail, agentEmail);
@@ -1250,6 +1255,7 @@ export async function syncGmailThreadForTicket(params: {
   requesterEmail: string;
   intakeTimestamp?: string;
 }): Promise<{ messages: ThreadMessage[]; statusReopened: boolean }> {
+  return withOpsMetric("gmail", "thread.sync", async () => {
   const gmail = await getGmailClient();
 
   pruneMismatchedThreadMessages(params.ticketRowId);
@@ -1324,6 +1330,7 @@ export async function syncGmailThreadForTicket(params: {
   );
 
   return { messages, statusReopened };
+  });
 }
 
 export async function sendReplyEmail(params: {
@@ -1335,6 +1342,7 @@ export async function sendReplyEmail(params: {
   bcc?: string | null;
   attachments?: OutboundEmailAttachment[];
 }): Promise<ThreadMessage> {
+  return withOpsMetric("gmail", "messages.send", async () => {
   const from = await resolveSenderEmail();
   let boundThreadId = resolveTicketGmailThreadId(params.ticketRowId);
   if (!boundThreadId || !isGmailApiThreadId(boundThreadId)) {
@@ -1413,6 +1421,7 @@ export async function sendReplyEmail(params: {
   }
 
   return message;
+  });
 }
 
 /** Remove UNREAD from a Gmail API thread id. */

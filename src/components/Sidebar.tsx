@@ -20,7 +20,8 @@ function sidebarNavItemClass(
   text: ReturnType<typeof panelTextSizes>,
   accentColor?: string
 ) {
-  const base = `mb-1 flex w-full items-center justify-between rounded-r-md border-l-4 py-1.5 pr-2.5 pl-2 text-left ${text.body} transition-colors`;
+  const labelSize = text.compact ? text.small : text.body;
+  const base = `mb-1 flex w-full items-center justify-between rounded-r-md border-l-4 py-1 pr-2 pl-1.5 text-left ${labelSize} leading-tight transition-colors`;
   if (selected) {
     const borderClass = accentColor ? "" : "border-zendesk-green";
     return `${base} ${borderClass} bg-blue-50 font-semibold text-zendesk-navy shadow-sm ring-1 ring-inset ring-blue-200/80`;
@@ -47,6 +48,17 @@ export function Sidebar({
   fontScale = 1,
 }: SidebarProps) {
   const text = panelTextSizes(fontScale);
+  const inboxShortcutFromDashboard = activeView === "dashboard";
+  const inboxLabel = inboxShortcutFromDashboard ? "Inbox" : "All tickets";
+  const inboxStatusId = inboxShortcutFromDashboard ? "new" : "all";
+  const inboxCount = counts[inboxStatusId] ?? 0;
+  const inboxSelected = activeView === "tickets" && statusFilter === inboxStatusId;
+
+  function openInbox() {
+    onViewChange("tickets");
+    onStatusFilter(inboxStatusId);
+  }
+
   if (collapsed) {
     return (
       <aside className="flex h-full w-full flex-col border-r border-zendesk-border bg-zendesk-sidebar">
@@ -70,17 +82,14 @@ export function Sidebar({
           </button>
           <button
             type="button"
-            onClick={() => {
-              onViewChange("tickets");
-              onStatusFilter("all");
-            }}
-            title={`All tickets (${counts.all ?? 0})`}
-            className={`${sidebarIconButtonClass(activeView === "tickets" && statusFilter === "all")} relative h-9 w-9`}
+            onClick={openInbox}
+            title={`${inboxLabel} (${inboxCount})`}
+            className={`${sidebarIconButtonClass(inboxSelected)} relative h-9 w-9`}
           >
             <Ticket className="h-4 w-4 text-zendesk-navy" />
-            {(counts.all ?? 0) > 0 && (
+            {inboxCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 min-w-[1rem] rounded-full bg-zendesk-navy px-1 text-center text-[9px] font-semibold leading-4 text-white">
-                {(counts.all ?? 0) > 99 ? "99+" : counts.all}
+                {inboxCount > 99 ? "99+" : inboxCount}
               </span>
             )}
           </button>
@@ -109,8 +118,8 @@ export function Sidebar({
 
   return (
     <aside className="flex h-full w-full flex-col border-r border-zendesk-border bg-zendesk-sidebar">
-      <div className="flex items-center justify-between border-b border-zendesk-border px-3 py-2">
-        <p className={`${text.tiny} font-semibold uppercase tracking-wide text-zendesk-muted`}>Views</p>
+      <div className={`flex items-center justify-between border-b border-zendesk-border ${text.compact ? "px-2 py-1.5" : "px-3 py-2"}`}>
+        <p className={`${text.micro} font-semibold uppercase tracking-wide text-zendesk-muted`}>Views</p>
         <button
           type="button"
           onClick={onToggleCollapsed}
@@ -121,28 +130,25 @@ export function Sidebar({
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
       </div>
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className={`flex-1 overflow-y-auto ${text.compact ? "p-1.5" : "p-2"}`}>
         <button
           type="button"
           onClick={() => onViewChange("dashboard")}
           className={sidebarNavItemClass(activeView === "dashboard", text)}
         >
-          <span className="flex min-w-0 items-center gap-2">
-            <LayoutDashboard className="h-4 w-4 shrink-0 text-zendesk-teal" />
-            <span>Dashboard</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <LayoutDashboard className={`${text.icon} shrink-0 text-zendesk-teal`} />
+            <span className="truncate">Dashboard</span>
           </span>
         </button>
         <button
           type="button"
-          onClick={() => {
-            onViewChange("tickets");
-            onStatusFilter("all");
-          }}
-          className={`${sidebarNavItemClass(activeView === "tickets" && statusFilter === "all", text)} mb-2`}
+          onClick={openInbox}
+          className={`${sidebarNavItemClass(inboxSelected, text)} mb-2`}
         >
-          <span>All tickets</span>
-          <span className={`${text.small} ${activeView === "tickets" && statusFilter === "all" ? "font-semibold text-zendesk-navy" : "text-zendesk-muted"}`}>
-            {counts.all ?? 0}
+          <span className="truncate">{inboxLabel}</span>
+          <span className={`shrink-0 ${text.micro} ${inboxSelected ? "font-semibold text-zendesk-navy" : "text-zendesk-muted"}`}>
+            {inboxCount}
           </span>
         </button>
         {activeView === "tickets" && (
@@ -160,14 +166,14 @@ export function Sidebar({
                 className={sidebarNavItemClass(selected, text, status.color)}
                 style={selected ? { borderLeftColor: status.color } : undefined}
               >
-                <span className="flex min-w-0 items-center gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
                   <span
-                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    className={`inline-block shrink-0 rounded-full ${text.compact ? "h-1.5 w-1.5" : "h-2 w-2"}`}
                     style={{ backgroundColor: status.color }}
                   />
                   <span className="truncate">{status.label}</span>
                 </span>
-                <span className={`shrink-0 ${text.small} ${selected ? "font-semibold text-zendesk-navy" : "text-zendesk-muted"}`}>
+                <span className={`shrink-0 ${text.micro} ${selected ? "font-semibold text-zendesk-navy" : "text-zendesk-muted"}`}>
                   {counts[status.id] ?? 0}
                 </span>
               </button>
@@ -176,7 +182,7 @@ export function Sidebar({
           </>
         )}
       </nav>
-      <div className={`hidden border-t border-zendesk-border p-2.5 ${text.tiny} leading-snug text-zendesk-muted xl:block`}>
+      <div className={`hidden border-t border-zendesk-border ${text.compact ? "p-2" : "p-2.5"} ${text.micro} leading-snug text-zendesk-muted xl:block`}>
         Status is stored in CRM overlay — sheet Column N is read-only reference.
       </div>
     </aside>

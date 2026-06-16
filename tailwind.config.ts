@@ -5,7 +5,9 @@ const config: Config = {
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/lib/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: ["text-[8px]", "text-[9px]", "text-[10px]", "text-[11px]"],
   theme: {
     extend: {
       colors: {

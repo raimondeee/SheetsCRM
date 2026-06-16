@@ -43,6 +43,10 @@ import type { AirbnbUserIdSource } from "./airbnb-user-id";
 import { appendAdminNoteToText } from "./admin-notes";
 import { buildGmailConversationUrl } from "./gmail-urls";
 import {
+  buildRedactAdminNote,
+  buildRedactedMessagePlaceholderBody,
+} from "./thread-redaction";
+import {
   clearGmailLinkArchivedAt,
   clearTicketResolvedAt,
   getTicketGmailLinkArchivedAt,
@@ -261,6 +265,14 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_attachments_message ON message_attachments(thread_message_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_gmail_part
       ON message_attachments(gmail_message_id, gmail_attachment_id);
+    CREATE TABLE IF NOT EXISTS blocked_gmail_messages (
+      ticket_row_id TEXT NOT NULL,
+      gmail_message_id TEXT NOT NULL,
+      redacted_at TEXT NOT NULL,
+      original_sent_at TEXT NOT NULL,
+      original_direction TEXT NOT NULL,
+      PRIMARY KEY (ticket_row_id, gmail_message_id)
+    );
   `);
 
   return db;
@@ -1203,7 +1215,7 @@ function getAllThreadMessagesRaw(ticketRowId: string): ThreadMessage[] {
   return rows.map((r) => ({
     id: r.id,
     ticketRowId: r.ticket_row_id,
-    direction: r.direction as "inbound" | "outbound",
+    direction: r.direction as ThreadMessage["direction"],
     from: r.from_addr,
     to: r.to_addr,
     cc: r.cc_addr,
@@ -1423,6 +1435,105 @@ export function getThreadMessages(ticketRowId: string): ThreadMessage[] {
   return loadAttachmentsForMessages(filtered);
 }
 
+export function isGmailMessageRedactionBlocked(
+  ticketRowId: string,
+  gmailMessageId: string
+): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 FROM blocked_gmail_messages
+       WHERE ticket_row_id = ? AND gmail_message_id = ?`
+    )
+    .get(ticketRowId, gmailMessageId);
+  return Boolean(row);
+}
+
+function deleteThreadMessageAndAttachments(messageId: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM message_attachments WHERE thread_message_id = ?`).run(messageId);
+  db.prepare(`DELETE FROM thread_messages WHERE id = ?`).run(messageId);
+}
+
+export function redactThreadMessage(params: {
+  ticketRowId: string;
+  messageId: string;
+}):
+  | { ok: true; messages: ThreadMessage[]; adminNotes: string }
+  | { ok: false; error: string } {
+  const rows = getDb()
+    .prepare("SELECT * FROM thread_messages WHERE id = ? AND ticket_row_id = ?")
+    .all(params.messageId, params.ticketRowId) as Array<{
+    id: string;
+    ticket_row_id: string;
+    direction: string;
+    from_addr: string;
+    to_addr: string;
+    cc_addr: string | null;
+    subject: string;
+    body: string;
+    gmail_message_id: string | null;
+    gmail_thread_id: string | null;
+    sent_at: string;
+  }>;
+
+  const row = rows[0];
+  if (!row) {
+    return { ok: false, error: "Message not found" };
+  }
+  if (row.direction === "system" || row.direction === "redacted") {
+    return { ok: false, error: "This message cannot be redacted" };
+  }
+  if (row.direction !== "inbound" && row.direction !== "outbound") {
+    return { ok: false, error: "This message cannot be redacted" };
+  }
+
+  const direction = row.direction;
+  const sentAt = row.sent_at;
+  const gmailMessageId = row.gmail_message_id?.trim() || null;
+
+  deleteThreadMessageAndAttachments(row.id);
+
+  if (gmailMessageId) {
+    getDb()
+      .prepare(
+        `INSERT INTO blocked_gmail_messages (
+           ticket_row_id, gmail_message_id, redacted_at, original_sent_at, original_direction
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(ticket_row_id, gmail_message_id) DO UPDATE SET
+           redacted_at = excluded.redacted_at,
+           original_sent_at = excluded.original_sent_at,
+           original_direction = excluded.original_direction`
+      )
+      .run(params.ticketRowId, gmailMessageId, new Date().toISOString(), sentAt, direction);
+  }
+
+  const placeholder: ThreadMessage = {
+    id: uuidv4(),
+    ticketRowId: params.ticketRowId,
+    direction: "redacted",
+    from: "SheetsCRM",
+    to: "",
+    cc: null,
+    subject: "Message redacted",
+    body: buildRedactedMessagePlaceholderBody(sentAt),
+    gmailMessageId: null,
+    gmailThreadId: null,
+    sentAt,
+  };
+  addThreadMessage(placeholder);
+
+  const adminNotes = appendAdminNoteToOverlay(
+    params.ticketRowId,
+    buildRedactAdminNote({ direction, sentAt })
+  );
+
+  return {
+    ok: true,
+    messages: getThreadMessages(params.ticketRowId),
+    adminNotes,
+  };
+}
+
 export function addThreadMessage(message: ThreadMessage): void {
   getDb()
     .prepare(
@@ -1453,6 +1564,10 @@ export function upsertThreadMessageFromGmail(
 
   if (!message.gmailMessageId) {
     addThreadMessage(message);
+    return;
+  }
+
+  if (isGmailMessageRedactionBlocked(message.ticketRowId, message.gmailMessageId)) {
     return;
   }
 

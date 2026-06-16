@@ -20,6 +20,7 @@ import {
   Link2,
   List,
   ListOrdered,
+  Mail,
   Underline,
 } from "lucide-react";
 
@@ -46,6 +47,7 @@ interface ReplyDraftEditorProps {
   placeholder?: string;
   /** Fill space between header and send actions instead of a fixed expanded height. */
   fillAvailable?: boolean;
+  onDraftInGmail?: () => void;
 }
 
 function ToolbarButton({
@@ -150,7 +152,7 @@ function linkShortcutLabel(): string {
 
 export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEditorProps>(
   function ReplyDraftEditor(
-    { value, onChange, focused, onFocusChange, placeholder, fillAvailable = false },
+    { value, onChange, focused, onFocusChange, placeholder, fillAvailable = false, onDraftInGmail },
     ref
   ) {
     const composerRef = useRef<HTMLDivElement>(null);
@@ -487,7 +489,8 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
             }`}
           />
         </div>
-        <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-0.5 rounded border border-zendesk-border bg-gray-50 px-1 py-0.5">
+        <div className="mt-1.5 flex shrink-0 items-center justify-between gap-2 rounded border border-zendesk-border bg-gray-50 px-1 py-0.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           <ToolbarButton title="Bold" onMouseDown={saveSelection} onClick={() => runCommand("bold")}>
             <Bold className="h-3.5 w-3.5" />
           </ToolbarButton>
@@ -627,6 +630,18 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
           >
             <IndentDecrease className="h-3.5 w-3.5" />
           </ToolbarButton>
+          </div>
+          {onDraftInGmail && (
+            <button
+              type="button"
+              onClick={onDraftInGmail}
+              title="Open Gmail compose in a popup with this draft (plain text)"
+              className="inline-flex shrink-0 items-center gap-1 rounded border border-zendesk-border bg-white px-2 py-1 text-[11px] font-medium text-zendesk-navy hover:bg-gray-100"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              Draft in Gmail
+            </button>
+          )}
         </div>
       </div>
     );
