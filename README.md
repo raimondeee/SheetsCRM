@@ -380,6 +380,16 @@ Update `NEXT_PUBLIC_APP_URL` and the Google OAuth redirect URI to match if you c
 - Right-click **Open SheetsCRM.command** → Open
 - Or run manually: `open "Open SheetsCRM.command"`
 
+### Broken page / 404 errors for layout.css or main-app.js
+
+Usually a **stale server** is still running on port 3000 from an earlier launch. Quit any old Terminal windows running SheetsCRM, then launch again with **Open SheetsCRM.command** (it now stops the previous server automatically).
+
+If it still looks unstyled, hard-refresh the browser (**Cmd+Shift+R**) or run:
+
+```bash
+rm -rf .next && npm run dev
+```
+
 ### Two Terminal windows appear
 
 Terminal may open a blank default window on cold start. The launcher closes empty extra windows and keeps the one running SheetsCRM. If you still see two windows, set **Terminal → Settings → General → “On startup, open”** to **“Do not open any windows”** (or “New tab with default profile” if you already use tabs).

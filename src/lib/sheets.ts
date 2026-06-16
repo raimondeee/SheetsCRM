@@ -189,6 +189,7 @@ export async function fetchTicketsFromSheet(
       statusChangedAt: null,
       pendingReopenHours: null,
       gmailOpenUrl: null,
+      gmailLinkArchivedAt: null,
       linkedCases: ["", "", ""],
       internalTools: {
         k: getCellValue(row, getColumnByRole(config, "internalToolK")),

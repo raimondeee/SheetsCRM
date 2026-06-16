@@ -110,6 +110,8 @@ export interface Ticket {
   needsInitialResponse: boolean;
   /** Linked Gmail thread open URL from overlay (null when not linked) */
   gmailOpenUrl: string | null;
+  /** When Gmail thread claim was archived after prolonged closed status */
+  gmailLinkArchivedAt: string | null;
   /** CRM-only linked case URLs (not synced to intake sheet) */
   linkedCases: [string, string, string];
   raw: Record<string, string>;
@@ -150,6 +152,19 @@ export interface GmailThreadCandidatePreview {
   snippet: string;
   messageCount: number;
   folders: string[];
+}
+
+export interface GmailUnreadThreadPreview {
+  threadId: string;
+  subject: string;
+  from: string;
+  fromEmail: string;
+  snippet: string;
+  latestAt: string;
+  messageCount: number;
+  unreadCount: number;
+  linkedTicketRowId: string | null;
+  openUrl: string;
 }
 
 export type GmailThreadLinkResolveResult =

@@ -50,6 +50,7 @@ import {
   validateReplyAttachmentFiles,
 } from "@/lib/outbound-attachments";
 import { activeExternalTools, type ExternalToolLink } from "@/lib/external-tools";
+import { buildSheetCellUrl } from "@/lib/sheet-urls";
 import {
   formatLinkedCaseForEdit,
   parseLinkedCase,
@@ -144,6 +145,7 @@ interface TicketDetailProps {
   };
   onOpenSetup?: (tab?: SetupModalTab) => void;
   marketManagersVersion?: number;
+  sheetUrl?: string | null;
 }
 
 export function TicketDetail({
@@ -176,6 +178,7 @@ export function TicketDetail({
   columnLabels,
   onOpenSetup,
   marketManagersVersion = 0,
+  sheetUrl = null,
 }: TicketDetailProps) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -414,7 +417,7 @@ export function TicketDetail({
     onClearSendError?.();
     setStatusChangeError(null);
     const saved = loadReplyDraft(ticket.rowId);
-    setReplyBody(saved?.body ?? "");
+    setReplyBody(saved?.body ? normalizeDraftHtml(saved.body) : "");
     setNewAdminNote(loadAdminNoteDraft(ticket.rowId) ?? "");
     setSubjectSuffix(
       saved?.subject
@@ -465,7 +468,7 @@ export function TicketDetail({
 
     const timeout = setTimeout(() => {
       saveReplyDraft(ticket.rowId, {
-        body: replyBody,
+        body: normalizeDraftHtml(replyBody),
         subject: buildEmailSubject(subjectSuffix),
         cc: ccDraft,
         bcc: bccDraft,
@@ -475,7 +478,7 @@ export function TicketDetail({
     return () => {
       clearTimeout(timeout);
       saveReplyDraft(ticket.rowId, {
-        body: replyBody,
+        body: normalizeDraftHtml(replyBody),
         subject: buildEmailSubject(subjectSuffix),
         cc: ccDraft,
         bcc: bccDraft,
@@ -504,7 +507,7 @@ export function TicketDetail({
       const rowId = ticketRowIdRef.current;
       if (!rowId) return;
       saveReplyDraft(rowId, {
-        body: replyBodyRef.current,
+        body: normalizeDraftHtml(replyBodyRef.current),
         subject: buildEmailSubject(subjectSuffixRef.current),
         cc: ccDraftRef.current,
         bcc: bccDraftRef.current,
@@ -544,6 +547,11 @@ export function TicketDetail({
     () => (ticket ? resolveMarketManagerEmail(ticket.marketManager, marketManagers) : null),
     [ticket, marketManagers]
   );
+
+  const sheetRowUrl = useMemo(() => {
+    if (!ticket || !sheetUrl) return null;
+    return buildSheetCellUrl(sheetUrl, ticket.rowNumber, "C");
+  }, [ticket, sheetUrl]);
 
   const marketManagerMissingFromDirectory = Boolean(
     ticket?.marketManager.trim() && !marketManagerEmail
@@ -702,12 +710,23 @@ export function TicketDetail({
 
   function applyTemplate(template: { subject: string; body: string }) {
     if (!ticket) return;
+    if (composeTab !== "reply") {
+      switchComposeTab("reply");
+    }
     if (template.subject.trim()) {
       const suffix = stripEmailSubjectPrefix(template.subject.trim());
       setSubjectSuffix(suffix);
       onSubjectChange(ticket.rowId, buildEmailSubject(suffix));
     }
-    if (template.body.trim()) setReplyBody(normalizeDraftHtml(template.body));
+    if (template.body.trim()) {
+      const body = normalizeDraftHtml(template.body);
+      const currentHtml = replyEditorRef.current?.flush() ?? replyBody;
+      if (isRichTextEmpty(currentHtml)) {
+        setReplyBody(body);
+      } else {
+        replyEditorRef.current?.insertHtmlAtCursor(body);
+      }
+    }
     setReplyFocused(true);
     requestAnimationFrame(() => {
       replyEditorRef.current?.focus();
@@ -866,7 +885,21 @@ export function TicketDetail({
                 ·
               </span>
               <span className="text-xs text-zendesk-muted">
-                Row {ticket.rowNumber}
+                {sheetRowUrl ? (
+                  <a
+                    href={sheetRowUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 hover:text-zendesk-navy hover:underline"
+                    title="Open in Sheets (column C)"
+                    aria-label={`Open row ${ticket.rowNumber} in Sheets (column C)`}
+                  >
+                    Row {ticket.rowNumber}
+                    <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                  </a>
+                ) : (
+                  <>Row {ticket.rowNumber}</>
+                )}
                 {ticket.needsInitialResponse && (
                   <span className="ml-1.5 rounded bg-red-100 px-1 py-px font-semibold text-red-700">
                     {initialResponseHours}h+
@@ -1363,13 +1396,23 @@ export function TicketDetail({
                         title={
                           gmailThreadUrl
                             ? "Open this email thread in Gmail"
-                            : "No linked Gmail thread for this ticket"
+                            : ticket.gmailLinkArchivedAt
+                              ? "Gmail link was archived — re-link from Unread Gmail if the customer replies"
+                              : "No linked Gmail thread for this ticket"
                         }
                         className="flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
                       >
                         <Mail className="h-4 w-4" />
                         Open in Gmail
                       </button>
+                      {ticket.gmailLinkArchivedAt && (
+                        <p className="max-w-xs text-right text-[10px] leading-snug text-zendesk-muted">
+                          Gmail link archived{" "}
+                          {new Date(ticket.gmailLinkArchivedAt).toLocaleDateString()}. Thread
+                          history is kept locally; bind again if the customer replies on the old
+                          thread.
+                        </p>
+                      )}
                     </div>
                     </div>
                     {statusOnlyError && (

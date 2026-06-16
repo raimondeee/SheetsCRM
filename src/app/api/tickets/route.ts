@@ -7,6 +7,8 @@ import { migrateLegacyInitialResponseSla } from "@/lib/legacy-initial-sla-migrat
 import { loadTimerSettings } from "@/lib/crm-preferences-store";
 import { getSignedInUser } from "@/lib/google-auth";
 import { runBackgroundGmailSyncForTickets } from "@/lib/background-gmail-sync";
+import { archiveStaleGmailLinksForTickets } from "@/lib/gmail-link-archive";
+import { mergeOverlayOntoTicket } from "@/lib/overlay-db";
 import { enrichTicketsWithLastResponse } from "@/lib/tickets-enrich";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +34,12 @@ export async function GET() {
       ? getMockTickets(timerSettings)
       : await fetchTicketsFromSheet(config, timerSettings);
     if (!useMock) {
+      const archivedCount = archiveStaleGmailLinksForTickets(tickets);
+      if (archivedCount > 0) {
+        tickets = tickets.map((ticket) =>
+          mergeOverlayOntoTicket(ticket, undefined, timerSettings)
+        );
+      }
       tickets = await runBackgroundGmailSyncForTickets(tickets, timerSettings);
     }
     const legacySlaCleared = migrateLegacyInitialResponseSla(tickets);

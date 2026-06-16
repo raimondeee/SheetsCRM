@@ -67,21 +67,62 @@ fi
 PORT="${PORT:-3000}"
 URL="http://localhost:${PORT}"
 
+stop_existing_server_on_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -z "$pids" ]; then
+    return
+  fi
+  echo "Stopping previous server on port ${port}…"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  sleep 1
+  pids="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+    sleep 1
+  fi
+}
+
+wait_for_sheetscrm_ready() {
+  local url="$1"
+  local attempt chunk_path
+  for attempt in $(seq 1 120); do
+    if ! curl -fsS "$url" >/dev/null 2>&1; then
+      sleep 1
+      continue
+    fi
+    chunk_path="$(
+      curl -fsS "$url" 2>/dev/null \
+        | grep -oE '/_next/static/chunks/main-app\.js[^" ]*' \
+        | head -1 \
+        || true
+    )"
+    if [ -n "$chunk_path" ] && curl -fsS "${url%/}${chunk_path}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 echo "Starting SheetsCRM…"
 echo "When ready, open: $URL"
 echo "Leave this window open while you use the CRM."
 echo "Press Ctrl+C to stop the server."
 echo ""
 
+stop_existing_server_on_port "$PORT"
+
 (
-  for _ in $(seq 1 60); do
-    if curl -fsS "$URL" >/dev/null 2>&1; then
-      open "$URL"
-      minimize_launcher_terminal
-      exit 0
-    fi
-    sleep 1
-  done
+  if wait_for_sheetscrm_ready "$URL"; then
+    open "$URL"
+    minimize_launcher_terminal
+  else
+    echo "SheetsCRM did not become ready in time. Open $URL manually once the server is up."
+  fi
 ) &
 
 npm run dev

@@ -13,6 +13,7 @@ export function getMockTickets(
     | "statusChangedAt"
     | "pendingReopenHours"
     | "gmailOpenUrl"
+    | "gmailLinkArchivedAt"
     | "linkedCases"
     | "slaHours"
     | "slaDueAt"
@@ -117,6 +118,7 @@ export function getMockTickets(
       statusChangedAt: null,
       pendingReopenHours: null,
       gmailOpenUrl: null,
+      gmailLinkArchivedAt: null,
       linkedCases: ["", "", ""],
       slaHours: timerSettings.defaultSlaHours,
       slaDueAt: null,

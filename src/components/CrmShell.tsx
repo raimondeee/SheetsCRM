@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
+import { LogIn, LogOut, Mail, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
 import type { SheetConfig, Ticket } from "@/lib/types";
 import { EXAMPLE_COLUMN_POSITIONS } from "@/lib/default-sheet-config";
 import {
@@ -18,6 +18,7 @@ import { DashboardView } from "./DashboardView";
 import { SetupModal, type SetupModalTab } from "./SetupModal";
 import { PreferencesModal } from "./PreferencesModal";
 import { CrmDebugLogPanel } from "./CrmDebugLogPanel";
+import { UnreadInboxModal } from "./UnreadInboxModal";
 import { appendAdminNoteToText } from "@/lib/admin-notes";
 import { crmSubjectLabelFromStored } from "@/lib/email-subject";
 import { applyPendingStatusTimerFields } from "@/lib/ticket-activity";
@@ -130,6 +131,7 @@ export function CrmShell() {
   const sidebarWidthState = usePersistedWidth("crm.sidebarWidth", sidebarMaxWidth);
   const ticketListWidthState = usePersistedWidth("crm.ticketListWidth", ticketListMaxWidth);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [unreadInboxOpen, setUnreadInboxOpen] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<string>("mock");
@@ -1147,6 +1149,7 @@ export function CrmShell() {
               columnLabels={columnLabels}
               onOpenSetup={openSetup}
               marketManagersVersion={marketManagersVersion}
+              sheetUrl={config?.sheetUrl ?? null}
             />
           </TicketDetailTransition>
         )}
@@ -1185,6 +1188,16 @@ export function CrmShell() {
           </div>
         )}
 
+      <button
+        type="button"
+        onClick={() => setUnreadInboxOpen(true)}
+        className="fixed bottom-20 left-4 z-30 inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-2 text-xs font-medium text-zendesk-navy shadow hover:bg-gray-100"
+        title="Open unread Gmail inbox"
+      >
+        <Mail className="h-3.5 w-3.5" />
+        Unread Gmail
+      </button>
+
       {preferencesOpen && (
         <PreferencesModal
           preferences={prefsRef.current}
@@ -1205,6 +1218,26 @@ export function CrmShell() {
             setSetupOpen(false);
             setMarketManagersVersion((version) => version + 1);
             void loadTickets({ reason: "setup" });
+          }}
+        />
+      )}
+
+      {unreadInboxOpen && (
+        <UnreadInboxModal
+          tickets={tickets}
+          selectedTicketId={selectedId}
+          onClose={() => setUnreadInboxOpen(false)}
+          onOpenTicket={(rowId) => {
+            setUnreadInboxOpen(false);
+            setInboxVictory(false);
+            setSelectedId(rowId);
+          }}
+          onCreatedTicket={(rowId) => {
+            setUnreadInboxOpen(false);
+            setInboxVictory(false);
+            void loadTickets({ reason: "manual" }).then(() => {
+              setSelectedId(rowId);
+            });
           }}
         />
       )}

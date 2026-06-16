@@ -14,8 +14,8 @@ import {
   dedupeThreadMessagesForTicket,
   getGmailThreadImportCutoff,
   getGmailThreadOpenUrl,
-  getThreadMessages,
   getTicketRowIdForGmailThread,
+  getThreadMessages,
   pruneMismatchedThreadMessages,
   refreshResponseSlaDueAt,
   reopenPendingOnCustomerReply,
@@ -42,6 +42,7 @@ import {
   type GmailFolderHint,
 } from "./gmail-thread-link";
 import { isGmailApiThreadId, isGmailLegacyWebId } from "./gmail-urls";
+import { buildGmailThreadUrl } from "./gmail-urls";
 
 async function getGmailClient() {
   const auth = await getGoogleAuthClient();
@@ -771,6 +772,67 @@ export async function fetchGmailThreadCandidatePreviews(
   return previews.sort(
     (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
   );
+}
+
+/** Fetch unread inbox threads with CRM link status. */
+export async function fetchUnreadGmailThreads(limit = 40): Promise<import("./types").GmailUnreadThreadPreview[]> {
+  const gmail = await getGmailClient();
+  if (!gmail) return [];
+
+  const listed = await gmail.users.threads.list({
+    userId: "me",
+    q: "in:inbox is:unread",
+    maxResults: Math.max(1, Math.min(limit, 100)),
+  });
+
+  const refs = listed.data.threads ?? [];
+  const previews = await Promise.all(
+    refs.map(async (ref) => {
+      if (!ref.id) return null;
+      try {
+        const thread = await gmail.users.threads.get({
+          userId: "me",
+          id: ref.id,
+          format: "metadata",
+          metadataHeaders: ["Subject", "From", "Date"],
+        });
+        const messages = thread.data.messages ?? [];
+        if (messages.length === 0) return null;
+        const latest = [...messages].sort(
+          (a, b) => Number(b.internalDate ?? 0) - Number(a.internalDate ?? 0)
+        )[0];
+        const headers = latest.payload?.headers ?? [];
+        const subject = getHeader(headers, "Subject").trim() || "(no subject)";
+        const from = getHeader(headers, "From").trim();
+        const fromEmail = extractEmailAddress(from);
+        const dateHeader = getHeader(headers, "Date").trim();
+        const latestAt =
+          dateHeader ||
+          (latest.internalDate
+            ? new Date(Number(latest.internalDate)).toISOString()
+            : new Date().toISOString());
+        const unreadCount = messages.filter((message) => message.labelIds?.includes("UNREAD")).length;
+        return {
+          threadId: ref.id,
+          subject,
+          from,
+          fromEmail,
+          snippet: thread.data.snippet ?? "",
+          latestAt,
+          messageCount: messages.length,
+          unreadCount,
+          linkedTicketRowId: getTicketRowIdForGmailThread(ref.id),
+          openUrl: buildGmailThreadUrl(ref.id),
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return previews
+    .filter((item): item is import("./types").GmailUnreadThreadPreview => Boolean(item))
+    .sort((a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime());
 }
 
 /** Resolve and persist a Gmail API thread id for a ticket when the stored id is missing or legacy. */

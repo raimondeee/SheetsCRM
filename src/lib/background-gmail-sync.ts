@@ -1,9 +1,12 @@
 import { syncGmailThreadForTicket } from "./gmail";
 import {
+  ensureBackgroundGmailSyncEnabled,
   getBackgroundGmailSyncSchedule,
   markBackgroundGmailSyncAttempt,
   mergeOverlayOntoTicket,
+  ticketHasExplicitGmailLink,
 } from "./overlay-db";
+import { ticketGmailLinkIsArchived } from "./gmail-link-archive";
 import { normalizeStatusId } from "./status-mapper";
 import type { TimerSettings } from "./timer-settings";
 import type { Ticket } from "./types";
@@ -27,9 +30,18 @@ export function isTicketDueForBackgroundGmailSync(ticket: Ticket, now = Date.now
   const interval = syncIntervalMs(ticket.status);
   if (!interval) return false;
   if (!ticket.requesterEmail?.trim()) return false;
+  if (ticketGmailLinkIsArchived(ticket.rowId)) return false;
+  if (normalizeStatusId(ticket.status) === "resolved" && !ticketHasExplicitGmailLink(ticket.rowId)) {
+    return false;
+  }
 
-  const schedule = getBackgroundGmailSyncSchedule(ticket.rowId);
-  if (!schedule) return false;
+  let schedule = getBackgroundGmailSyncSchedule(ticket.rowId);
+  if (!schedule) {
+    ensureBackgroundGmailSyncEnabled(ticket.rowId);
+    schedule = getBackgroundGmailSyncSchedule(ticket.rowId);
+    if (!schedule) return false;
+    return true;
+  }
 
   const anchorMs = new Date(schedule.lastAt ?? schedule.enabledAt).getTime();
   if (Number.isNaN(anchorMs)) return false;

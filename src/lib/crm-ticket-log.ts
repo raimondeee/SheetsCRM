@@ -6,7 +6,8 @@ export type CrmTicketEventKind =
   | "auto_reopen"
   | "pending_timer"
   | "sla_change"
-  | "anchor_backfill";
+  | "anchor_backfill"
+  | "gmail_link_archived";
 
 export interface CrmTicketEvent {
   id: string;

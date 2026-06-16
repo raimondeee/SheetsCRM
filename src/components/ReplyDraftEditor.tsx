@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { escapeHtml, isRichTextEmpty } from "@/lib/html-utils";
+import { compactDraftBlockSpacing, isRichTextEmpty } from "@/lib/html-utils";
 import {
   Bold,
   ChevronDown,
@@ -32,8 +32,10 @@ const FONT_SIZES = [
 
 export interface ReplyDraftEditorHandle {
   focus: () => void;
-  /** Sync contentEditable DOM into parent state (e.g. before tab switch or page hide). */
-  flush: () => void;
+  /** Sync contentEditable DOM into parent state; returns current HTML. */
+  flush: () => string;
+  /** Insert HTML at the saved cursor, or at the end if the editor is not focused. */
+  insertHtmlAtCursor: (html: string) => void;
 }
 
 interface ReplyDraftEditorProps {
@@ -92,6 +94,55 @@ function findAnchorFromSelection(editor: HTMLElement): HTMLAnchorElement | null 
   return null;
 }
 
+function findAnchorInRange(range: Range, editor: HTMLElement): HTMLAnchorElement | null {
+  const anchors = editor.querySelectorAll("a");
+  for (const anchor of anchors) {
+    if (range.intersectsNode(anchor)) return anchor;
+  }
+  return null;
+}
+
+function isRangeValidInEditor(range: Range, editor: HTMLElement): boolean {
+  return (
+    range.startContainer.isConnected &&
+    range.endContainer.isConnected &&
+    editor.contains(range.commonAncestorContainer)
+  );
+}
+
+function placeCaretAfter(node: Node) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const after = document.createRange();
+  after.setStartAfter(node);
+  after.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(after);
+}
+
+function wrapRangeWithLink(range: Range, href: string): HTMLAnchorElement {
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+
+  if (range.collapsed) {
+    anchor.textContent = href.replace(/^https?:\/\//i, "");
+    range.insertNode(anchor);
+    return anchor;
+  }
+
+  try {
+    range.surroundContents(anchor);
+  } catch {
+    const contents = range.extractContents();
+    anchor.appendChild(contents);
+    range.insertNode(anchor);
+  }
+
+  return anchor;
+}
+
 function linkShortcutLabel(): string {
   if (typeof navigator === "undefined") return "Ctrl+K";
   return /mac/i.test(navigator.platform) ? "⌘K" : "Ctrl+K";
@@ -108,20 +159,12 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
     const linkDialogRef = useRef<HTMLDivElement>(null);
     const linkUrlInputRef = useRef<HTMLInputElement>(null);
     const savedSelectionRef = useRef<Range | null>(null);
+    const linkDialogOpenRef = useRef(false);
     const lastValueRef = useRef(value);
     const [sizeMenuOpen, setSizeMenuOpen] = useState(false);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState("");
     const [linkHasSelection, setLinkHasSelection] = useState(false);
-
-    useImperativeHandle(ref, () => ({
-      focus: () => {
-        editorRef.current?.focus();
-      },
-      flush: () => {
-        syncContent();
-      },
-    }));
 
     useEffect(() => {
       const editor = editorRef.current;
@@ -134,12 +177,16 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       }
 
       if (value === lastValueRef.current) return;
-      lastValueRef.current = value;
-      if (editor.innerHTML !== value) {
-        editor.innerHTML = value;
-        updateEmptyState(value);
+      const normalized = compactDraftBlockSpacing(value);
+      lastValueRef.current = normalized;
+      if (editor.innerHTML !== normalized) {
+        editor.innerHTML = normalized;
+        updateEmptyState(normalized);
       }
-    }, [value]);
+      if (normalized !== value) {
+        onChange(normalized);
+      }
+    }, [value, onChange]);
 
     useEffect(() => {
       if (!sizeMenuOpen && !linkDialogOpen) return;
@@ -155,6 +202,10 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       document.addEventListener("mousedown", handlePointerDown);
       return () => document.removeEventListener("mousedown", handlePointerDown);
     }, [sizeMenuOpen, linkDialogOpen]);
+
+    useEffect(() => {
+      linkDialogOpenRef.current = linkDialogOpen;
+    }, [linkDialogOpen]);
 
     useEffect(() => {
       if (!linkDialogOpen) return;
@@ -179,10 +230,11 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       const saved = savedSelectionRef.current;
       const editor = editorRef.current;
       const selection = window.getSelection();
-      if (!saved || !editor || !selection) return false;
+      if (!saved || !editor || !selection || !isRangeValidInEditor(saved, editor)) return false;
 
+      const range = saved.cloneRange();
       selection.removeAllRanges();
-      selection.addRange(saved);
+      selection.addRange(range);
       return editor.contains(selection.anchorNode);
     }
 
@@ -209,6 +261,61 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       onChange(html);
       saveSelection();
     }
+
+    function insertHtmlAtCursor(html: string) {
+      const normalized = compactDraftBlockSpacing(html);
+      const editor = editorRef.current;
+      if (!normalized || !editor) return;
+
+      onFocusChange(true);
+      editor.focus();
+
+      if (!restoreSelection()) {
+        const selection = window.getSelection();
+        if (selection) {
+          const range = document.createRange();
+          range.selectNodeContents(editor);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          savedSelectionRef.current = range.cloneRange();
+        }
+      }
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const range = selection.getRangeAt(0);
+      const beforeRange = document.createRange();
+      beforeRange.selectNodeContents(editor);
+      beforeRange.setEnd(range.startContainer, range.startOffset);
+      const beforeContainer = document.createElement("div");
+      beforeContainer.appendChild(beforeRange.cloneContents());
+      const hasContentBefore = !isRichTextEmpty(beforeContainer.innerHTML);
+
+      let toInsert = normalized;
+      if (hasContentBefore && range.collapsed) {
+        toInsert = `<br><br>${normalized}`;
+      }
+
+      if (!range.collapsed) {
+        range.deleteContents();
+      }
+
+      document.execCommand("insertHTML", false, toInsert);
+      syncContent();
+    }
+
+    useImperativeHandle(ref, () => ({
+      focus: () => {
+        editorRef.current?.focus();
+      },
+      flush: () => {
+        syncContent();
+        return editorRef.current?.innerHTML ?? "";
+      },
+      insertHtmlAtCursor,
+    }));
 
     function runCommand(command: string, commandValue?: string) {
       ensureEditorFocus();
@@ -257,31 +364,31 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
         return;
       }
 
-      ensureEditorFocus();
       const editor = editorRef.current;
-      if (!editor) return;
+      const saved = savedSelectionRef.current;
+      if (!editor || !saved || !isRangeValidInEditor(saved, editor)) {
+        setLinkDialogOpen(false);
+        return;
+      }
+
+      const range = saved.cloneRange();
+      editor.focus();
 
       const selection = window.getSelection();
-      const existingAnchor = findAnchorFromSelection(editor);
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range.cloneRange());
+      }
 
+      const existingAnchor = findAnchorInRange(range, editor) ?? findAnchorFromSelection(editor);
       if (existingAnchor) {
         existingAnchor.href = href;
         existingAnchor.target = "_blank";
         existingAnchor.rel = "noopener noreferrer";
-      } else if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
-        document.execCommand("createLink", false, href);
-        const anchor = findAnchorFromSelection(editor);
-        if (anchor) {
-          anchor.target = "_blank";
-          anchor.rel = "noopener noreferrer";
-        }
+        placeCaretAfter(existingAnchor);
       } else {
-        const label = href.replace(/^https?:\/\//i, "");
-        document.execCommand(
-          "insertHTML",
-          false,
-          `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
-        );
+        const anchor = wrapRangeWithLink(range, href);
+        placeCaretAfter(anchor);
       }
 
       setLinkDialogOpen(false);
@@ -329,6 +436,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
     function handleComposerBlur(event: FocusEvent<HTMLDivElement>) {
       const next = event.relatedTarget as Node | null;
       if (next && composerRef.current?.contains(next)) return;
+      if (linkDialogOpenRef.current) return;
       syncContent();
       onFocusChange(false);
       setSizeMenuOpen(false);
@@ -435,6 +543,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
                 <div className="mt-2 flex justify-end gap-1.5">
                   <button
                     type="button"
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => setLinkDialogOpen(false)}
                     className="rounded px-2 py-1 text-[11px] text-zendesk-muted hover:bg-gray-100"
                   >
@@ -442,6 +551,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
                   </button>
                   <button
                     type="button"
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={applyLink}
                     className="rounded bg-zendesk-green px-2 py-1 text-[11px] font-medium text-white hover:opacity-90"
                   >

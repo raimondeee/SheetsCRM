@@ -42,6 +42,13 @@ import {
 import type { AirbnbUserIdSource } from "./airbnb-user-id";
 import { appendAdminNoteToText } from "./admin-notes";
 import { buildGmailConversationUrl } from "./gmail-urls";
+import {
+  clearGmailLinkArchivedAt,
+  clearTicketResolvedAt,
+  getTicketGmailLinkArchivedAt,
+  markTicketResolvedNow,
+  ticketGmailLinkIsArchived,
+} from "./gmail-link-archive";
 
 const DB_PATH = process.env.OVERLAY_DB_PATH || path.join(process.cwd(), "data", "overlay.db");
 
@@ -535,6 +542,13 @@ export function enableBackgroundGmailSync(rowId: string): void {
     .run(now, now, rowId);
 }
 
+/** Enroll pending/resolved tickets that predate background sync or were set via the sheet. */
+export function ensureBackgroundGmailSyncEnabled(rowId: string): boolean {
+  if (getBackgroundGmailSyncSchedule(rowId)) return false;
+  enableBackgroundGmailSync(rowId);
+  return true;
+}
+
 /** Stop background Gmail polling when a ticket leaves pending/resolved. */
 export function disableBackgroundGmailSync(rowId: string): void {
   getDb()
@@ -584,6 +598,8 @@ function applyBackgroundGmailSyncEligibility(
   if (prev === next) return;
 
   if (next === "pending" || next === "resolved") {
+    if (next === "resolved" && ticketGmailLinkIsArchived(rowId)) return;
+    if (next === "resolved" && !ticketHasExplicitGmailLink(rowId)) return;
     enableBackgroundGmailSync(rowId);
   } else {
     disableBackgroundGmailSync(rowId);
@@ -644,6 +660,16 @@ export function updateTicketStatus(
   }
 
   if (normalizedStatus !== existing.status) {
+    const previousNormalized = normalizeStatusId(existing.status);
+    const closedStatuses = new Set(["resolved", "do_not_action"]);
+    if (closedStatuses.has(normalizedStatus) && !closedStatuses.has(previousNormalized)) {
+      markTicketResolvedNow(rowId, now);
+    } else if (
+      closedStatuses.has(previousNormalized) &&
+      !closedStatuses.has(normalizedStatus)
+    ) {
+      clearTicketResolvedAt(rowId);
+    }
     applyBackgroundGmailSyncEligibility(rowId, existing.status, normalizedStatus);
     const detail: Record<string, unknown> = {
       from: existing.status,
@@ -984,6 +1010,11 @@ export function linkExistingGmailThread(
        WHERE row_id = ?`
     )
     .run(linkedAtIso, openUrl, linkedAtIso, ticketRowId);
+
+  clearGmailLinkArchivedAt(ticketRowId);
+  if (normalizeStatusId(existing.status) === "resolved") {
+    enableBackgroundGmailSync(ticketRowId);
+  }
 
   let message: ThreadMessage | null = null;
   if (!replacing) {
@@ -1614,6 +1645,9 @@ export function mergeOverlayOntoTicket(
       airbnbUserIdSource: "sheet",
       initialResponseSlaCleared: false,
     });
+    if (mappedFromSheet === "pending" || mappedFromSheet === "resolved") {
+      enableBackgroundGmailSync(ticket.rowId);
+    }
   } else {
     if (contactReasonSource === "sheet" && sheetContactReason !== overlay.contactReason) {
       contactReason = sheetContactReason ?? "";
@@ -1648,10 +1682,24 @@ export function mergeOverlayOntoTicket(
         ) {
           sheetStatusUpdates.statusChangedAt = null;
         }
+        if (
+          (nextStatus === "resolved" || nextStatus === "do_not_action") &&
+          previousStatus !== nextStatus
+        ) {
+          markTicketResolvedNow(ticket.rowId);
+        } else if (
+          (previousStatus === "resolved" || previousStatus === "do_not_action") &&
+          nextStatus !== previousStatus &&
+          nextStatus !== "resolved" &&
+          nextStatus !== "do_not_action"
+        ) {
+          clearTicketResolvedAt(ticket.rowId);
+        }
         upsertOverlayRow(ticket.rowId, overlayFields(overlay), sheetStatusUpdates);
         if (nextStatus === "pending" && previousStatus !== "pending") {
           setOverlayPendingReopenHours(ticket.rowId, null);
         }
+        applyBackgroundGmailSyncEligibility(ticket.rowId, previousStatus, nextStatus);
       } else if (sheetCaseSummaryValue !== overlay.sheetCaseSummary) {
         upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
           sheetCaseSummary: sheetCaseSummaryValue,
@@ -1695,6 +1743,17 @@ export function mergeOverlayOntoTicket(
     status = refreshed.status;
   }
 
+  const finalStatus = normalizeStatusId(status);
+  if (finalStatus === "pending") {
+    ensureBackgroundGmailSyncEnabled(ticket.rowId);
+  } else if (
+    finalStatus === "resolved" &&
+    ticketHasExplicitGmailLink(ticket.rowId) &&
+    !ticketGmailLinkIsArchived(ticket.rowId)
+  ) {
+    ensureBackgroundGmailSyncEnabled(ticket.rowId);
+  }
+
   if (refreshed.contactReasonSource === "crm" && refreshed.contactReason) {
     contactReason = refreshed.contactReason;
   } else if (refreshed.contactReason) {
@@ -1729,6 +1788,7 @@ export function mergeOverlayOntoTicket(
     statusChangedAt: refreshed.statusChangedAt,
     pendingReopenHours: refreshed.pendingReopenHours,
     gmailOpenUrl: resolveTicketGmailOpenUrl(ticket.rowId),
+    gmailLinkArchivedAt: getTicketGmailLinkArchivedAt(ticket.rowId),
     linkedCases: refreshed.linkedCases,
     needsInitialResponse: false,
   };

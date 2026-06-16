@@ -59,11 +59,16 @@ body {
 }
 
 .reply-draft-editor p {
-  margin: 0 0 0.75rem;
+  margin: 0;
 }
 
-.reply-draft-editor p:last-child {
-  margin-bottom: 0;
+.reply-draft-editor p + p,
+.reply-draft-editor div + div {
+  margin-top: 0.65em;
+}
+
+.reply-draft-editor div {
+  margin: 0;
 }
 
 .reply-draft-editor ul {
