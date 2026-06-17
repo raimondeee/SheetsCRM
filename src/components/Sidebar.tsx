@@ -1,6 +1,7 @@
-import { ChevronLeft, ChevronRight, LayoutDashboard, Ticket } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutDashboard, Mail, Ticket } from "lucide-react";
 import { DEFAULT_STATUSES } from "@/lib/types";
 import { panelTextSizes } from "@/lib/panel-density";
+import { SidebarCalendarPanel } from "./SidebarCalendarPanel";
 
 export type AppView = "tickets" | "dashboard";
 
@@ -13,6 +14,8 @@ interface SidebarProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   fontScale?: number;
+  calendarEnabled?: boolean;
+  onOpenUnreadInbox?: () => void;
 }
 
 function sidebarNavItemClass(
@@ -46,6 +49,8 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
   fontScale = 1,
+  calendarEnabled = false,
+  onOpenUnreadInbox,
 }: SidebarProps) {
   const text = panelTextSizes(fontScale);
   const inboxShortcutFromDashboard = activeView === "dashboard";
@@ -112,12 +117,23 @@ export function Sidebar({
               </button>
             ))}
         </nav>
+        {onOpenUnreadInbox && (
+          <button
+            type="button"
+            onClick={onOpenUnreadInbox}
+            title="Open unread Gmail inbox"
+            aria-label="Open unread Gmail inbox"
+            className="mx-1 mb-2 flex h-9 w-9 items-center justify-center rounded-md border border-zendesk-border bg-white text-zendesk-navy shadow-sm hover:bg-gray-100"
+          >
+            <Mail className="h-4 w-4" />
+          </button>
+        )}
       </aside>
     );
   }
 
   return (
-    <aside className="flex h-full w-full flex-col border-r border-zendesk-border bg-zendesk-sidebar">
+    <aside className="flex h-full min-h-0 w-full flex-col border-r border-zendesk-border bg-zendesk-sidebar">
       <div className={`flex items-center justify-between border-b border-zendesk-border ${text.compact ? "px-2 py-1.5" : "px-3 py-2"}`}>
         <p className={`${text.micro} font-semibold uppercase tracking-wide text-zendesk-muted`}>Views</p>
         <button
@@ -130,7 +146,7 @@ export function Sidebar({
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
       </div>
-      <nav className={`flex-1 overflow-y-auto ${text.compact ? "p-1.5" : "p-2"}`}>
+      <nav className={`min-h-0 flex-1 overflow-y-auto ${text.compact ? "p-1.5" : "p-2"}`}>
         <button
           type="button"
           onClick={() => onViewChange("dashboard")}
@@ -182,8 +198,21 @@ export function Sidebar({
           </>
         )}
       </nav>
-      <div className={`hidden border-t border-zendesk-border ${text.compact ? "p-2" : "p-2.5"} ${text.micro} leading-snug text-zendesk-muted xl:block`}>
-        Status is stored in CRM overlay — sheet Column N is read-only reference.
+      <div className="mt-auto shrink-0 pb-14">
+        <SidebarCalendarPanel enabled={calendarEnabled} fontScale={fontScale} />
+        {onOpenUnreadInbox && (
+          <div className={`border-t border-zendesk-border ${text.compact ? "p-2" : "p-2.5"}`}>
+            <button
+              type="button"
+              onClick={onOpenUnreadInbox}
+              className={`flex w-full items-center justify-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-2 ${text.tiny} font-medium text-zendesk-navy shadow-sm hover:bg-gray-100`}
+              title="Open unread Gmail inbox"
+            >
+              <Mail className={`${text.icon} shrink-0`} />
+              <span className="truncate">Unread Gmail</span>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

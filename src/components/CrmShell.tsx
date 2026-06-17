@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LogIn, LogOut, Mail, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
+import { LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
 import type { SheetConfig, Ticket } from "@/lib/types";
 import { EXAMPLE_COLUMN_POSITIONS } from "@/lib/default-sheet-config";
 import {
@@ -1109,6 +1109,8 @@ export function CrmShell() {
             collapsed={viewsCollapsed}
             onToggleCollapsed={() => setViewsCollapsed((v) => !v)}
             fontScale={sidebarWidthState.fontScale}
+            calendarEnabled={auth.signedIn && auth.method === "oauth" && source !== "mock"}
+            onOpenUnreadInbox={() => setUnreadInboxOpen(true)}
           />
         </ResizableColumn>
         {activeView === "dashboard" ? (
@@ -1269,16 +1271,6 @@ export function CrmShell() {
             </div>
           </div>
         )}
-
-      <button
-        type="button"
-        onClick={() => setUnreadInboxOpen(true)}
-        className="fixed bottom-20 left-4 z-30 inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-2 text-xs font-medium text-zendesk-navy shadow hover:bg-gray-100"
-        title="Open unread Gmail inbox"
-      >
-        <Mail className="h-3.5 w-3.5" />
-        Unread Gmail
-      </button>
 
       {preferencesOpen && (
         <PreferencesModal

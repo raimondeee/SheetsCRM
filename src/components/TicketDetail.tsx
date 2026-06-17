@@ -26,6 +26,7 @@ import type { SetupModalTab } from "./SetupModal";
 import { MixmaxTemplatePicker } from "./MixmaxTemplatePicker";
 import { SendArchivePanel } from "./SendArchivePanel";
 import { TrustEscalationsModal } from "./TrustEscalationsModal";
+import { RedactMessageConfirmModal } from "./RedactMessageConfirmModal";
 import { ReplyDraftEditor, type ReplyDraftEditorHandle } from "./ReplyDraftEditor";
 import {
   buildEmailSubject,
@@ -191,6 +192,7 @@ export function TicketDetail({
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [redactingMessageId, setRedactingMessageId] = useState<string | null>(null);
+  const [redactConfirmMessage, setRedactConfirmMessage] = useState<ThreadMessage | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [subjectSuffix, setSubjectSuffix] = useState("");
   const [actionValidation, setActionValidation] = useState<TicketActionValidation | null>(null);
@@ -915,12 +917,8 @@ export function TicketDetail({
     }
   }
 
-  async function handleRedactMessage(msg: ThreadMessage) {
+  async function performRedactMessage(msg: ThreadMessage) {
     if (!ticket || redactingMessageId) return;
-    const confirmed = window.confirm(
-      "Redact this message from the CRM? Its content will be removed and will not be re-imported from Gmail. An admin note will be added.\n\nDelete the message in Gmail separately if it contained sensitive information."
-    );
-    if (!confirmed) return;
 
     setRedactingMessageId(msg.id);
     try {
@@ -936,12 +934,18 @@ export function TicketDetail({
       if (typeof data.adminNotes === "string") {
         onAdminNotesChange?.(ticket.rowId, data.adminNotes);
       }
+      setRedactConfirmMessage(null);
       onThreadUpdate();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to redact message");
     } finally {
       setRedactingMessageId(null);
     }
+  }
+
+  function requestRedactMessage(msg: ThreadMessage) {
+    if (!ticket || redactingMessageId) return;
+    setRedactConfirmMessage(msg);
   }
 
   function handleCcMarketManagerChange(checked: boolean) {
@@ -1329,7 +1333,7 @@ export function TicketDetail({
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => void handleRedactMessage(msg)}
+                      onClick={() => requestRedactMessage(msg)}
                       disabled={redactingMessageId === msg.id}
                       title="Remove this message from the CRM and block Gmail re-import"
                       className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
@@ -1499,6 +1503,31 @@ export function TicketDetail({
                         {actionValidation.message}
                       </p>
                     )}
+                    {pendingSendUndo?.active && (
+                      <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-end">
+                        <div className="pointer-events-auto m-0 flex max-w-xs flex-col items-end gap-1 rounded-lg border border-amber-500 bg-amber-300 px-3 py-2 shadow-lg shadow-amber-900/25">
+                          <button
+                            type="button"
+                            onClick={pendingSendUndo.onUndo}
+                            className="flex items-center gap-2 rounded border border-amber-700 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-50"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" />
+                            Undo ({pendingSendUndo.secondsLeft}s)
+                          </button>
+                          <p className="text-right text-[10px] font-medium leading-snug text-amber-950">
+                            {pendingSendUndo.label ?? "Ticket"} →{" "}
+                            {pendingSendUndo.status === "resolved" ? "Resolved" : "Pending"}
+                            {pendingSendUndo.attachmentCount > 0 && (
+                              <span>
+                                {" "}
+                                · {pendingSendUndo.attachmentCount} attachment
+                                {pendingSendUndo.attachmentCount === 1 ? "" : "s"}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex w-full flex-wrap items-end gap-2">
                     <button
                       type="button"
@@ -1618,29 +1647,6 @@ export function TicketDetail({
                       {markingStatusOnly === "resolved" ? "Setting…" : "Set to Resolved"}
                     </button>
                     <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
-                      {pendingSendUndo?.active && (
-                        <div className="flex max-w-xs flex-col items-end gap-1 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 shadow-md shadow-amber-100/60">
-                          <button
-                            type="button"
-                            onClick={pendingSendUndo.onUndo}
-                            className="flex items-center gap-2 rounded border border-amber-300/70 bg-white/90 px-3 py-1.5 text-xs font-medium text-amber-950 hover:bg-green-50"
-                          >
-                            <Undo2 className="h-3.5 w-3.5" />
-                            Undo ({pendingSendUndo.secondsLeft}s)
-                          </button>
-                          <p className="text-right text-[10px] leading-snug text-amber-900/75">
-                            {pendingSendUndo.label ?? "Ticket"} →{" "}
-                            {pendingSendUndo.status === "resolved" ? "Resolved" : "Pending"}
-                            {pendingSendUndo.attachmentCount > 0 && (
-                              <span>
-                                {" "}
-                                · {pendingSendUndo.attachmentCount} attachment
-                                {pendingSendUndo.attachmentCount === 1 ? "" : "s"}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      )}
                       <button
                         type="button"
                         onClick={openInGmail}
@@ -1961,6 +1967,17 @@ export function TicketDetail({
         )}
       </div>
 
+      {redactConfirmMessage && (
+        <RedactMessageConfirmModal
+          messageSummary={redactConfirmMessage.subject || "Message"}
+          messageWhen={new Date(redactConfirmMessage.sentAt).toLocaleString()}
+          busy={redactingMessageId === redactConfirmMessage.id}
+          onCancel={() => {
+            if (!redactingMessageId) setRedactConfirmMessage(null);
+          }}
+          onConfirm={() => void performRedactMessage(redactConfirmMessage)}
+        />
+      )}
     </main>
   );
 }
