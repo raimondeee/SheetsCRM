@@ -1,6 +1,6 @@
-export const RESOLVED_WITHOUT_EMAIL_NOTE = "Marked as resolved (no email sent)";
+export const RESOLVED_WITHOUT_EMAIL_NOTE = "Resolved & closed (no email sent)";
 
-export const PENDING_WITHOUT_EMAIL_HOURS_OPTIONS = [4, 24, 72] as const;
+export const PENDING_WITHOUT_EMAIL_HOURS_OPTIONS = [4, 24, 48, 72] as const;
 export type PendingWithoutEmailHours = (typeof PENDING_WITHOUT_EMAIL_HOURS_OPTIONS)[number];
 
 export function pendingWithoutEmailAdminNote(hours: PendingWithoutEmailHours): string {

@@ -255,7 +255,7 @@ export function TicketList({
                   {ticket.needsInitialResponse && (
                     <span
                       className={`rounded bg-red-600 px-1.5 py-0.5 ${text.tiny} font-semibold text-white`}
-                      title={`No initial response within ${initialResponseHours} hours`}
+                      title={`No initial response within ${initialResponseHours} business hours`}
                     >
                       {initialResponseLabel}
                     </span>

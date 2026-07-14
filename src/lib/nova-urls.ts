@@ -8,6 +8,12 @@ export function buildNovaProfileUrl(userId: string): string | null {
   return `${NOVA_BASE}/profiles/${encodeURIComponent(trimmed)}`;
 }
 
+export function buildNovaHostPerformanceUrl(userId: string): string | null {
+  const trimmed = userId.trim();
+  if (!isNumericUserId(trimmed)) return null;
+  return `${NOVA_BASE}/profiles/${encodeURIComponent(trimmed)}#tab=Hosting&sub=Performance`;
+}
+
 export function buildNovaReservationUrl(code: string): string | null {
   const trimmed = code.trim();
   if (!trimmed) return null;

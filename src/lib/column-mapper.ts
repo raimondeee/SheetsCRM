@@ -1,6 +1,5 @@
 import type { ColumnMapping, ColumnRole, SheetConfig } from "./types";
 import { indexToLetter } from "./types";
-import { EXAMPLE_COLUMN_POSITIONS } from "./default-sheet-config";
 
 const HEADER_PATTERNS: { role: ColumnRole; patterns: RegExp[] }[] = [
   { role: "timestamp", patterns: [/timestamp/i, /submitted/i, /date\s*time/i, /^date$/i] },
@@ -48,6 +47,11 @@ const HEADER_PATTERNS: { role: ColumnRole; patterns: RegExp[] }[] = [
   },
 ];
 
+function roleMatchedByHeader(role: ColumnRole, header: string): boolean {
+  const entry = HEADER_PATTERNS.find((p) => p.role === role);
+  return entry?.patterns.some((p) => p.test(header.trim())) ?? false;
+}
+
 export function analyzeHeaders(headers: string[]): ColumnMapping[] {
   const assigned = new Set<ColumnRole>();
   const mappings: ColumnMapping[] = headers.map((header, index) => ({
@@ -69,13 +73,7 @@ export function analyzeHeaders(headers: string[]): ColumnMapping[] {
     }
   }
 
-  applyFixedPositions(mappings);
   return mappings;
-}
-
-function roleMatchedByHeader(role: ColumnRole, header: string): boolean {
-  const entry = HEADER_PATTERNS.find((p) => p.role === role);
-  return entry?.patterns.some((p) => p.test(header.trim())) ?? false;
 }
 
 /** Re-apply header analysis to a saved config (fixes stale mappings). */
@@ -87,113 +85,46 @@ export function normalizeSheetConfig(config: SheetConfig): SheetConfig {
     return col?.sheetHeader?.trim() || col?.header?.trim() || `Column ${indexToLetter(index)}`;
   });
 
-  const hasRealHeaders = headers.some(
-    (h) => h && !/^column [a-z]+$/i.test(h)
-  );
-
-  const columns = hasRealHeaders ? analyzeHeaders(headers) : ensureDefaultColumnRoles(sorted);
+  const hasRealHeaders = headers.some((h) => h && !/^column [a-z]+$/i.test(h));
+  const columns = hasRealHeaders ? analyzeHeaders(headers) : sorted;
   return { ...config, columns };
-}
-
-function ensureDefaultColumnRoles(columns: ColumnMapping[]): ColumnMapping[] {
-  const mappings = columns.map((c) => ({ ...c }));
-  applyFixedPositions(mappings);
-  return mappings;
-}
-
-/** Prefer known K/M/R/N positions when headers are ambiguous */
-function applyFixedPositions(mappings: ColumnMapping[]): void {
-  const fixed: { role: ColumnRole; index: number }[] = [
-    { role: "rowKey", index: EXAMPLE_COLUMN_POSITIONS.rowKey.index },
-    { role: "email", index: EXAMPLE_COLUMN_POSITIONS.email.index },
-    { role: "reservationCode", index: EXAMPLE_COLUMN_POSITIONS.reservationCode.index },
-    { role: "listingId", index: EXAMPLE_COLUMN_POSITIONS.listingId.index },
-    { role: "marketManager", index: EXAMPLE_COLUMN_POSITIONS.marketManager.index },
-    { role: "contactReason", index: EXAMPLE_COLUMN_POSITIONS.contactReason.index },
-    { role: "userEmailed", index: EXAMPLE_COLUMN_POSITIONS.userEmailed.index },
-    { role: "internalToolK", index: EXAMPLE_COLUMN_POSITIONS.internalToolK.index },
-    { role: "internalToolM", index: EXAMPLE_COLUMN_POSITIONS.internalToolM.index },
-    { role: "status", index: EXAMPLE_COLUMN_POSITIONS.status.index },
-    { role: "internalToolR", index: EXAMPLE_COLUMN_POSITIONS.internalToolR.index },
-    { role: "caseSummary", index: EXAMPLE_COLUMN_POSITIONS.caseSummary.index },
-    { role: "airbnbUserId", index: EXAMPLE_COLUMN_POSITIONS.airbnbUserId.index },
-  ];
-
-  for (const { role, index } of fixed) {
-    const existing = mappings.find((m) => m.role === role);
-    if (existing && existing.index === index) continue;
-
-    // Keep header-detected Market Manager / contact reason even if not at H / I.
-    // Airbnb User ID is always Column AD — do not keep ambiguous "user id" headers elsewhere.
-    if (
-      role !== "airbnbUserId" &&
-      existing &&
-      existing.index !== index &&
-      roleMatchedByHeader(role, existing.header)
-    ) {
-      continue;
-    }
-
-    if (existing) existing.role = "unknown";
-
-    let target = mappings.find((m) => m.index === index);
-    if (!target) {
-      target = {
-        index,
-        letter: indexToLetter(index),
-        header: `Column ${indexToLetter(index)}`,
-        role,
-      };
-      mappings.push(target);
-    } else {
-      target.role = role;
-    }
-  }
-
-  mappings.sort((a, b) => a.index - b.index);
 }
 
 export function getColumnByRole(
   config: SheetConfig,
   role: ColumnRole
 ): ColumnMapping | undefined {
-  if (role === "airbnbUserId") return getAirbnbUserIdColumn(config);
   return config.columns.find((c) => c.role === role);
 }
 
-/** Airbnb User ID always lives in Column AD on the intake sheet. */
-export function getAirbnbUserIdColumn(config: SheetConfig): ColumnMapping {
-  const atAd = config.columns.find(
-    (c) => c.index === EXAMPLE_COLUMN_POSITIONS.airbnbUserId.index
-  );
-  return {
-    index: EXAMPLE_COLUMN_POSITIONS.airbnbUserId.index,
-    letter: EXAMPLE_COLUMN_POSITIONS.airbnbUserId.letter,
-    header: atAd?.header?.trim() || "Airbnb User ID",
-    role: "airbnbUserId",
-  };
+export function requireColumnByRole(config: SheetConfig, role: ColumnRole): ColumnMapping {
+  const col = getColumnByRole(config, role);
+  if (!col?.letter) {
+    throw new Error(
+      `No sheet column mapped for "${role}" — assign it in Setup → Column mapping.`
+    );
+  }
+  return col;
 }
 
-/** Read a cell by role, with a direct header-pattern fallback for marketManager. */
+/** Read a mapped cell, with optional header-pattern match on unmapped columns. */
 export function getCellValueByRole(
   row: string[],
   config: SheetConfig,
   role: ColumnRole
 ): string {
-  const mapped = getCellValue(row, getColumnByRole(config, role));
-  if (mapped || role !== "marketManager") return mapped;
+  const mapped = getColumnByRole(config, role);
+  if (mapped) {
+    const value = getCellValue(row, mapped);
+    if (value) return value;
+  }
 
   const headerMatch = config.columns.find(
-    (c) => c.role === "unknown" && roleMatchedByHeader("marketManager", c.header)
+    (c) => c.role === "unknown" && roleMatchedByHeader(role, c.header)
   );
   if (headerMatch) return getCellValue(row, headerMatch);
 
-  return getCellValue(row, {
-    index: EXAMPLE_COLUMN_POSITIONS.marketManager.index,
-    letter: EXAMPLE_COLUMN_POSITIONS.marketManager.letter,
-    header: "Market Manager",
-    role: "marketManager",
-  });
+  return "";
 }
 
 export function getCellValue(row: string[], mapping: ColumnMapping | undefined): string {

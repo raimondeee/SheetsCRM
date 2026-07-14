@@ -151,3 +151,15 @@ export async function readFilesAsAttachmentPayload(
     }))
   );
 }
+
+/** Browser-only: build a File from a base64 payload (e.g. Mixmax template attachments). */
+export function base64ToFile(filename: string, mimeType: string, data: string): File {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new File([bytes], filename, {
+    type: inferAttachmentMimeType(filename, mimeType),
+  });
+}

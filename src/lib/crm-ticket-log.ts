@@ -7,7 +7,10 @@ export type CrmTicketEventKind =
   | "pending_timer"
   | "sla_change"
   | "anchor_backfill"
-  | "gmail_link_archived";
+  | "gmail_link_archived"
+  | "gmail_thread_reset"
+  | "sheet_resync"
+  | "cover_ignore";
 
 export interface CrmTicketEvent {
   id: string;

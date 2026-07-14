@@ -11,12 +11,14 @@ import {
 } from "./overlay-db";
 import { normalizeStatusId } from "./status-mapper";
 import type { Ticket } from "./types";
+import { defaultResolvedGmailLinkArchiveDays } from "./timer-settings";
 
-/** Default: release Gmail thread claims on tickets closed longer than this. */
-export const GMAIL_LINK_ARCHIVE_DAYS =
-  Number(process.env.GMAIL_LINK_ARCHIVE_DAYS) || 90;
+/** Default archive window when no user preference is loaded (see Preferences → Status timers). */
+export const GMAIL_LINK_ARCHIVE_DAYS = defaultResolvedGmailLinkArchiveDays();
 
-export const GMAIL_LINK_ARCHIVE_MS = GMAIL_LINK_ARCHIVE_DAYS * 24 * 60 * 60 * 1000;
+function gmailLinkArchiveMs(days: number): number {
+  return days * 24 * 60 * 60 * 1000;
+}
 
 const CLOSED_STATUSES = new Set(["resolved", "do_not_action"]);
 
@@ -139,6 +141,7 @@ export function ticketGmailLinkIsArchived(rowId: string): boolean {
 
 export function shouldArchiveTicketGmailLink(
   ticket: Pick<Ticket, "rowId" | "status">,
+  archiveDays: number = GMAIL_LINK_ARCHIVE_DAYS,
   now = Date.now()
 ): boolean {
   if (!isClosedTicketStatus(ticket.status)) return false;
@@ -151,10 +154,13 @@ export function shouldArchiveTicketGmailLink(
   const closedMs = new Date(closedAt).getTime();
   if (Number.isNaN(closedMs)) return false;
 
-  return now - closedMs >= GMAIL_LINK_ARCHIVE_MS;
+  return now - closedMs >= gmailLinkArchiveMs(archiveDays);
 }
 
-export function archiveGmailLinkForTicket(rowId: string): boolean {
+export function archiveGmailLinkForTicket(
+  rowId: string,
+  archiveDays: number = GMAIL_LINK_ARCHIVE_DAYS
+): boolean {
   if (!ticketHasExplicitGmailLink(rowId)) return false;
 
   const previousOpenUrl = getGmailThreadOpenUrl(rowId);
@@ -184,7 +190,7 @@ export function archiveGmailLinkForTicket(rowId: string): boolean {
     to: "",
     cc: null,
     subject: "Gmail link archived",
-    body: `Gmail thread link archived after ${GMAIL_LINK_ARCHIVE_DAYS} days closed. The thread can be linked to a new ticket if the customer replies on the old email thread.`,
+    body: `Gmail thread link archived after ${archiveDays} days closed. The thread can be linked to a new ticket if the customer replies on the old email thread.`,
     gmailMessageId: null,
     gmailThreadId: null,
     sentAt: now,
@@ -193,7 +199,7 @@ export function archiveGmailLinkForTicket(rowId: string): boolean {
   logCrmTicketEvent({
     ticketRowId: rowId,
     kind: "gmail_link_archived",
-    summary: `Gmail link archived (${GMAIL_LINK_ARCHIVE_DAYS}+ days closed)`,
+    summary: `Gmail link archived (${archiveDays}+ days closed)`,
     detail: {
       archivedAt: now,
       previousOpenUrl,
@@ -204,12 +210,15 @@ export function archiveGmailLinkForTicket(rowId: string): boolean {
 }
 
 /** Release stale Gmail claims before background sync runs. */
-export function archiveStaleGmailLinksForTickets(tickets: Ticket[]): number {
+export function archiveStaleGmailLinksForTickets(
+  tickets: Ticket[],
+  archiveDays: number = GMAIL_LINK_ARCHIVE_DAYS
+): number {
   let archived = 0;
   const now = Date.now();
   for (const ticket of tickets) {
-    if (!shouldArchiveTicketGmailLink(ticket, now)) continue;
-    if (archiveGmailLinkForTicket(ticket.rowId)) archived += 1;
+    if (!shouldArchiveTicketGmailLink(ticket, archiveDays, now)) continue;
+    if (archiveGmailLinkForTicket(ticket.rowId, archiveDays)) archived += 1;
   }
   return archived;
 }

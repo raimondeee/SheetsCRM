@@ -1,4 +1,5 @@
 import { readFilesAsAttachmentPayload } from "./outbound-attachments";
+import { normalizeDraftHtml } from "./html-utils";
 import type { QueuedSendPayload } from "./queued-send";
 
 export const SEND_ARCHIVE_LIMIT = 10;
@@ -124,7 +125,7 @@ export async function recordQueuedSend(
     label: payload.label,
     to: payload.to,
     subject: payload.subject,
-    message: payload.message,
+    message: normalizeDraftHtml(payload.message),
     cc: payload.cc,
     bcc: payload.bcc,
     statusAfterSend: payload.statusAfterSend,

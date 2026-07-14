@@ -46,6 +46,10 @@ function kindLabel(kind: string): string {
       return "SLA";
     case "anchor_backfill":
       return "Timer restored";
+    case "sheet_resync":
+      return "Sheet resync";
+    case "cover_ignore":
+      return "Cover ignore";
     default:
       return kind;
   }

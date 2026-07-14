@@ -7,9 +7,8 @@ export const EXAMPLE_SHEET_GID = "223304028";
 export const EXAMPLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${EXAMPLE_SPREADSHEET_ID}/edit?gid=${EXAMPLE_SHEET_GID}`;
 
 /**
- * Fixed column positions from the example sheet (1-based letters → 0-based index).
- * Headers are resolved at runtime via Sheets API or setup wizard.
- * K/M/R = internal tool access strings; N = sheet status.
+ * Bootstrap column layout when headers cannot be fetched (Setup → analyze is the source of truth).
+ * Positions match the team's original example intake sheet.
  */
 export const EXAMPLE_COLUMN_POSITIONS = {
   rowKey: { letter: "A", index: 0 },

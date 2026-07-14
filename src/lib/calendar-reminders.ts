@@ -161,3 +161,49 @@ export function calendarEventCardClass(highlight: "soon" | "current" | null): st
   }
   return "border-zendesk-border bg-white/90 hover:bg-white";
 }
+
+export function calendarEventCurrentPulseClass(
+  highlight: "soon" | "current" | null,
+  acknowledged: boolean
+): string {
+  if (highlight === "current" && !acknowledged) {
+    return "calendar-event-current-pulse";
+  }
+  return "";
+}
+
+function base64EncodeUtf8(value: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(value, "utf8").toString("base64");
+  }
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+/** Direct Google Calendar event URL (not the general week/month view). */
+export function buildCalendarEventOpenUrl(params: {
+  id: string;
+  htmlLink?: string | null;
+  calendarEmail?: string | null;
+}): string | null {
+  const { id, htmlLink, calendarEmail } = params;
+  if (htmlLink) {
+    try {
+      const url = new URL(htmlLink);
+      if (url.searchParams.has("eid")) return htmlLink;
+    } catch {
+      /* fall through */
+    }
+  }
+  if (!id) return htmlLink ?? null;
+
+  const calendarId = calendarEmail?.trim();
+  if (!calendarId) return htmlLink ?? null;
+
+  const eid = base64EncodeUtf8(`${id} ${calendarId}`);
+  return `https://www.google.com/calendar/event?eid=${encodeURIComponent(eid)}`;
+}

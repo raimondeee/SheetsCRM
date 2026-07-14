@@ -17,6 +17,9 @@ export interface StoredUserPreferences extends TimerSettings {
   sortOrder: SortOrder;
   dashboardPeriod: DashboardPeriod;
   errorLoggingEnabled: boolean;
+  calendarReminderFullscreen: boolean;
+  unreadInboxBindToSelectedEnabled: boolean;
+  unreadInboxAppendToSelectedEnabled: boolean;
   externalTools: ExternalToolLink[];
 }
 
@@ -60,6 +63,18 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
         typeof parsed.errorLoggingEnabled === "boolean"
           ? parsed.errorLoggingEnabled
           : DEFAULT_STORED_PREFERENCES.errorLoggingEnabled,
+      calendarReminderFullscreen:
+        typeof parsed.calendarReminderFullscreen === "boolean"
+          ? parsed.calendarReminderFullscreen
+          : DEFAULT_STORED_PREFERENCES.calendarReminderFullscreen,
+      unreadInboxBindToSelectedEnabled:
+        typeof parsed.unreadInboxBindToSelectedEnabled === "boolean"
+          ? parsed.unreadInboxBindToSelectedEnabled
+          : DEFAULT_STORED_PREFERENCES.unreadInboxBindToSelectedEnabled,
+      unreadInboxAppendToSelectedEnabled:
+        typeof parsed.unreadInboxAppendToSelectedEnabled === "boolean"
+          ? parsed.unreadInboxAppendToSelectedEnabled
+          : DEFAULT_STORED_PREFERENCES.unreadInboxAppendToSelectedEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
       ...normalizeTimerSettings(parsed),
     };

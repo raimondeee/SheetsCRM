@@ -3,20 +3,24 @@ import path from "path";
 import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
 import {
+  buildGmailResetForNewThreadBody,
+  buildThreadAppendNoticeBody,
   buildThreadLinkNoticeBody,
   buildThreadLinkUpdatedBody,
 } from "./gmail-thread-link";
 import { isGmailApiThreadId } from "./gmail-urls";
-import type { SheetConfig, ThreadMessage, ThreadMessageAttachment, Ticket } from "./types";
+import type { CoverSheetEntry, SheetConfig, ThreadMessage, ThreadMessageAttachment, Ticket } from "./types";
 import { parseTicketRowId } from "./types";
 import { normalizeSheetConfig } from "./column-mapper";
 import { prepareSheetConfig } from "./ui-field-slots";
 import {
+  blocksTicketAutoReopen,
   crmStatusLabel,
   mapCrmStatusToSheetValue,
   mapSheetStatusToCrmId,
   normalizeStatusId,
 } from "./status-mapper";
+import { businessHoursFromSheetConfig, type BusinessHoursConfig } from "./business-hours";
 import { ensureCrmTicketEventsTable, logCrmTicketEvent } from "./crm-ticket-log";
 import {
   combineNotesForPendingInference,
@@ -27,7 +31,7 @@ import {
   getReopenOnCustomerReplyStatus,
   resolveAutomatedReopenStatus,
 } from "./status-automation";
-import { resolveTicketAirbnbUserId } from "./airbnb-user-id";
+import { resolveTicketAirbnbUserId, manualAirbnbUserIdFromOverlay } from "./airbnb-user-id";
 import { crmSubjectLabelFromStored } from "./email-subject";
 import {
   computeResponseSlaDueAt,
@@ -53,6 +57,24 @@ import {
   markTicketResolvedNow,
   ticketGmailLinkIsArchived,
 } from "./gmail-link-archive";
+import {
+  addGmailThreadToTicket,
+  ensureTicketGmailThreadsSchema,
+  getGmailThreadLinkedAt,
+  getLinkedGmailThreadIds,
+  getPrimaryGmailThreadLink,
+  getTicketRowIdForLinkedGmailThread,
+  isGmailThreadLinkedToTicket,
+  listTicketGmailThreads,
+  migrateTicketGmailThreadsFromOverlay,
+  syncPrimaryThreadToOverlay,
+  ticketHasAnyGmailThreadLink,
+} from "./ticket-gmail-threads";
+import {
+  COVER_SHEETS_STORE_ID,
+  normalizeCoverSheetEntries,
+  resolveSheetConfigForTicket,
+} from "./cover-sheets";
 
 const DB_PATH = process.env.OVERLAY_DB_PATH || path.join(process.cwd(), "data", "overlay.db");
 
@@ -60,6 +82,68 @@ let db: Database.Database | null = null;
 
 export function getOverlayDb(): Database.Database {
   return getDb();
+}
+
+function workspaceBusinessHours(): BusinessHoursConfig {
+  const config = businessHoursFromSheetConfig(loadSheetConfig("default"));
+  const holidays = loadWorkspaceHolidayDatesFromCache();
+  if (!holidays.size) return config;
+  return { ...config, holidayDates: holidays };
+}
+
+const WORKSPACE_HOLIDAY_CALENDAR_ID = "en.usa#holiday@group.v.calendar.google.com";
+
+export function loadWorkspaceHolidayDatesFromCache(
+  calendarId = WORKSPACE_HOLIDAY_CALENDAR_ID
+): ReadonlySet<string> {
+  const database = getDb();
+  const rows = database
+    .prepare(
+      `SELECT date_key FROM holiday_calendar_cache WHERE calendar_id = ? ORDER BY date_key`
+    )
+    .all(calendarId) as Array<{ date_key: string }>;
+  return new Set(rows.map((row) => row.date_key));
+}
+
+export function saveWorkspaceHolidayDatesToCache(
+  dates: Iterable<string>,
+  calendarId = WORKSPACE_HOLIDAY_CALENDAR_ID
+): void {
+  const database = getDb();
+  const unique = [...new Set(dates)].sort();
+  const tx = database.transaction(() => {
+    database
+      .prepare(`DELETE FROM holiday_calendar_cache WHERE calendar_id = ?`)
+      .run(calendarId);
+    const insert = database.prepare(
+      `INSERT INTO holiday_calendar_cache (calendar_id, date_key) VALUES (?, ?)`
+    );
+    for (const dateKey of unique) {
+      insert.run(calendarId, dateKey);
+    }
+    database
+      .prepare(
+        `INSERT INTO holiday_calendar_meta (calendar_id, fetched_at)
+         VALUES (?, ?)
+         ON CONFLICT(calendar_id) DO UPDATE SET fetched_at = excluded.fetched_at`
+      )
+      .run(calendarId, new Date().toISOString());
+  });
+  tx();
+}
+
+export function workspaceHolidayCacheIsFresh(
+  calendarId = WORKSPACE_HOLIDAY_CALENDAR_ID,
+  ttlMs = 7 * 24 * 60 * 60 * 1000
+): boolean {
+  const database = getDb();
+  const row = database
+    .prepare(`SELECT fetched_at FROM holiday_calendar_meta WHERE calendar_id = ?`)
+    .get(calendarId) as { fetched_at: string } | undefined;
+  if (!row?.fetched_at) return false;
+  const fetchedAt = new Date(row.fetched_at).getTime();
+  if (!Number.isFinite(fetchedAt)) return false;
+  return Date.now() - fetchedAt < ttlMs;
 }
 
 function getDb(): Database.Database {
@@ -238,6 +322,13 @@ function getDb(): Database.Database {
   } catch {
     /* column exists */
   }
+  try {
+    db.exec(
+      `ALTER TABLE ticket_overlay ADD COLUMN resolved_closed INTEGER NOT NULL DEFAULT 0`
+    );
+  } catch {
+    /* column exists */
+  }
 
   ensureCrmTicketEventsTable();
   try {
@@ -247,6 +338,13 @@ function getDb(): Database.Database {
   }
   try {
     db.exec(`ALTER TABLE ticket_overlay ADD COLUMN bg_gmail_sync_last_at TEXT`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    db.exec(
+      `ALTER TABLE ticket_overlay ADD COLUMN force_new_gmail_thread_on_send INTEGER NOT NULL DEFAULT 0`
+    );
   } catch {
     /* column exists */
   }
@@ -273,7 +371,22 @@ function getDb(): Database.Database {
       original_direction TEXT NOT NULL,
       PRIMARY KEY (ticket_row_id, gmail_message_id)
     );
+    CREATE TABLE IF NOT EXISTS holiday_calendar_cache (
+      calendar_id TEXT NOT NULL,
+      date_key TEXT NOT NULL,
+      PRIMARY KEY (calendar_id, date_key)
+    );
+    CREATE TABLE IF NOT EXISTS holiday_calendar_meta (
+      calendar_id TEXT PRIMARY KEY,
+      fetched_at TEXT NOT NULL
+    );
   `);
+
+  ensureTicketGmailThreadsSchema(db);
+  if (!isOverlayMigrationApplied("ticket_gmail_threads_v1")) {
+    migrateTicketGmailThreadsFromOverlay(db);
+    markOverlayMigrationApplied("ticket_gmail_threads_v1");
+  }
 
   return db;
 }
@@ -293,19 +406,69 @@ export function loadSheetConfig(id = "default"): SheetConfig | null {
   if (!row) return null;
 
   const config = JSON.parse(row.config_json) as SheetConfig;
+  const storedBusinessHours = config.businessHours;
   const prepared = prepareSheetConfig(config);
   const columnsChanged =
     JSON.stringify(prepared.columns) !== JSON.stringify(config.columns);
   if (columnsChanged) {
-    saveSheetConfig({ ...prepared, manuallyMapped: config.manuallyMapped ?? true });
+    saveSheetConfig({
+      ...prepared,
+      businessHours: prepared.businessHours ?? storedBusinessHours,
+      manuallyMapped: config.manuallyMapped ?? true,
+    });
   }
-  if (prepared.manuallyMapped) return prepared;
+  if (prepared.manuallyMapped) {
+    return {
+      ...prepared,
+      businessHours: prepared.businessHours ?? storedBusinessHours,
+    };
+  }
 
   const normalized = normalizeSheetConfig(prepared);
   if (JSON.stringify(normalized.columns) !== JSON.stringify(prepared.columns)) {
-    saveSheetConfig(normalized);
+    saveSheetConfig({
+      ...normalized,
+      businessHours: normalized.businessHours ?? storedBusinessHours,
+    });
   }
+  return {
+    ...normalized,
+    businessHours: normalized.businessHours ?? storedBusinessHours,
+  };
+}
+
+export function loadCoverSheets(): CoverSheetEntry[] {
+  const row = getDb()
+    .prepare("SELECT config_json FROM sheet_config WHERE id = ?")
+    .get(COVER_SHEETS_STORE_ID) as { config_json: string } | undefined;
+  if (!row) return normalizeCoverSheetEntries(null);
+  try {
+    const parsed = JSON.parse(row.config_json) as { entries?: CoverSheetEntry[] };
+    return normalizeCoverSheetEntries(parsed.entries);
+  } catch {
+    return normalizeCoverSheetEntries(null);
+  }
+}
+
+export function saveCoverSheets(entries: CoverSheetEntry[]): CoverSheetEntry[] {
+  const normalized = normalizeCoverSheetEntries(entries);
+  const d = getDb();
+  d.prepare(
+    `INSERT INTO sheet_config (id, config_json, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at`
+  ).run(
+    COVER_SHEETS_STORE_ID,
+    JSON.stringify({ entries: normalized }),
+    new Date().toISOString()
+  );
   return normalized;
+}
+
+export function resolveSheetConfigForRowId(
+  rowId: string,
+  defaultConfig: SheetConfig | null = loadSheetConfig("default")
+): SheetConfig | null {
+  return resolveSheetConfigForTicket(rowId, defaultConfig, loadCoverSheets());
 }
 
 export interface TicketOverlay {
@@ -320,8 +483,10 @@ export interface TicketOverlay {
   contactReason: string | null;
   contactReasonSource: "sheet" | "crm";
   statusChangedAt: string | null;
-  /** Calendar hours until auto-reopen when set via Set to Pending (no email). */
+  /** Weekday hours until auto-reopen when set via Set to Pending (no email). */
   pendingReopenHours: number | null;
+  /** True when resolved via Resolve & Close — blocks auto-reopen and background Gmail polling. */
+  resolvedClosed: boolean;
   slaHours: number;
   slaDueAt: string | null;
   crmAirbnbUserId: string | null;
@@ -334,7 +499,7 @@ export interface TicketOverlay {
 function readOverlayRow(rowId: string): TicketOverlay {
   const row = getDb()
     .prepare(
-      "SELECT status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, gmail_thread_open_url, contact_reason, contact_reason_source, status_changed_at, pending_reopen_hours, sla_hours, sla_due_at, crm_airbnb_user_id, airbnb_user_id_source, initial_response_sla_cleared, linked_case_1, linked_case_2, linked_case_3 FROM ticket_overlay WHERE row_id = ?"
+      "SELECT status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, gmail_thread_open_url, contact_reason, contact_reason_source, status_changed_at, pending_reopen_hours, resolved_closed, sla_hours, sla_due_at, crm_airbnb_user_id, airbnb_user_id_source, initial_response_sla_cleared, linked_case_1, linked_case_2, linked_case_3 FROM ticket_overlay WHERE row_id = ?"
     )
     .get(rowId) as
     | {
@@ -351,6 +516,7 @@ function readOverlayRow(rowId: string): TicketOverlay {
         contact_reason_source: string;
         status_changed_at: string | null;
         pending_reopen_hours: number | null;
+        resolved_closed: number;
         sla_hours: number;
         sla_due_at: string | null;
         crm_airbnb_user_id: string | null;
@@ -376,6 +542,7 @@ function readOverlayRow(rowId: string): TicketOverlay {
       contactReasonSource: "sheet",
       statusChangedAt: null,
       pendingReopenHours: null,
+      resolvedClosed: false,
       slaHours: DEFAULT_TIMER_SETTINGS.defaultSlaHours,
       slaDueAt: null,
       crmAirbnbUserId: null,
@@ -404,6 +571,7 @@ function readOverlayRow(rowId: string): TicketOverlay {
     contactReasonSource: row.contact_reason_source === "crm" ? "crm" : "sheet",
     statusChangedAt: row.status_changed_at,
     pendingReopenHours: row.pending_reopen_hours,
+    resolvedClosed: row.resolved_closed === 1,
     slaHours: row.sla_hours,
     slaDueAt: row.sla_due_at,
     crmAirbnbUserId: row.crm_airbnb_user_id,
@@ -542,6 +710,14 @@ function setOverlayPendingReopenHours(rowId: string, hours: number | null): void
     .run(hours, new Date().toISOString(), rowId);
 }
 
+function setOverlayResolvedClosed(rowId: string, closed: boolean): void {
+  getDb()
+    .prepare(
+      `UPDATE ticket_overlay SET resolved_closed = ?, updated_at = ? WHERE row_id = ?`
+    )
+    .run(closed ? 1 : 0, new Date().toISOString(), rowId);
+}
+
 /** Start background Gmail polling when a ticket is newly marked pending or resolved. */
 export function enableBackgroundGmailSync(rowId: string): void {
   const now = new Date().toISOString();
@@ -600,22 +776,35 @@ export function getBackgroundGmailSyncSchedule(
   };
 }
 
+function syncBackgroundGmailSyncForTicket(
+  rowId: string,
+  status: string,
+  resolvedClosed: boolean
+): void {
+  const next = normalizeStatusId(status);
+  if (next === "pending") {
+    enableBackgroundGmailSync(rowId);
+    return;
+  }
+  if (next === "resolved" && !resolvedClosed) {
+    if (ticketGmailLinkIsArchived(rowId)) return;
+    if (!ticketHasExplicitGmailLink(rowId)) return;
+    enableBackgroundGmailSync(rowId);
+    return;
+  }
+  disableBackgroundGmailSync(rowId);
+}
+
 function applyBackgroundGmailSyncEligibility(
   rowId: string,
   previousStatus: string,
-  nextStatus: string
+  nextStatus: string,
+  resolvedClosed: boolean
 ): void {
   const prev = normalizeStatusId(previousStatus);
   const next = normalizeStatusId(nextStatus);
-  if (prev === next) return;
-
-  if (next === "pending" || next === "resolved") {
-    if (next === "resolved" && ticketGmailLinkIsArchived(rowId)) return;
-    if (next === "resolved" && !ticketHasExplicitGmailLink(rowId)) return;
-    enableBackgroundGmailSync(rowId);
-  } else {
-    disableBackgroundGmailSync(rowId);
-  }
+  if (prev === next && next !== "resolved") return;
+  syncBackgroundGmailSyncForTicket(rowId, nextStatus, resolvedClosed);
 }
 
 export function updateTicketStatus(
@@ -623,7 +812,7 @@ export function updateTicketStatus(
   status: string,
   timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS,
   intakeTimestamp?: string,
-  options?: { pendingReopenHours?: number | null }
+  options?: { pendingReopenHours?: number | null; skipEventLog?: boolean; resolvedClosed?: boolean }
 ): { statusChangedAt: string | null; slaDueAt: string | null } {
   const existing = readOverlayRow(rowId);
   const normalizedStatus = normalizeStatusId(status);
@@ -631,6 +820,19 @@ export function updateTicketStatus(
   let statusChangedAt = existing.statusChangedAt;
   let slaDueAt = existing.slaDueAt;
   let nextPendingReopenHours: number | null = existing.pendingReopenHours;
+  let nextResolvedClosed = existing.resolvedClosed;
+
+  if (normalizedStatus === "resolved" || normalizedStatus === "solved") {
+    if (options?.resolvedClosed === true) {
+      nextResolvedClosed = true;
+    } else if (options?.resolvedClosed === false) {
+      nextResolvedClosed = false;
+    } else if (normalizeStatusId(existing.status) !== "resolved") {
+      nextResolvedClosed = false;
+    }
+  } else {
+    nextResolvedClosed = false;
+  }
 
   if (normalizedStatus === "pending" || normalizedStatus === "longterm_hold") {
     statusChangedAt = now;
@@ -653,6 +855,7 @@ export function updateTicketStatus(
     normalizedStatus === "solved" ||
     normalizedStatus === "do_not_action"
   ) {
+    statusChangedAt = null;
     slaDueAt = null;
     nextPendingReopenHours = null;
   }
@@ -666,6 +869,7 @@ export function updateTicketStatus(
     slaDueAt,
   });
   setOverlayPendingReopenHours(rowId, nextPendingReopenHours);
+  setOverlayResolvedClosed(rowId, nextResolvedClosed);
 
   if (intakeTimestamp && isResponseSlaEligibleStatus(normalizedStatus)) {
     slaDueAt = refreshResponseSlaDueAt(rowId, intakeTimestamp, timerSettings);
@@ -682,35 +886,84 @@ export function updateTicketStatus(
     ) {
       clearTicketResolvedAt(rowId);
     }
-    applyBackgroundGmailSyncEligibility(rowId, existing.status, normalizedStatus);
+    applyBackgroundGmailSyncEligibility(
+      rowId,
+      existing.status,
+      normalizedStatus,
+      nextResolvedClosed
+    );
     const detail: Record<string, unknown> = {
       from: existing.status,
       to: normalizedStatus,
     };
     if (normalizedStatus === "pending") {
       detail.pendingReopenHours = nextPendingReopenHours;
-      detail.timer = describePendingReopenTimer(nextPendingReopenHours, timerSettings);
+      detail.timer = describePendingReopenTimer(
+        nextPendingReopenHours,
+        timerSettings,
+        workspaceBusinessHours()
+      );
       if (statusChangedAt) detail.statusChangedAt = statusChangedAt;
     }
-    logCrmTicketEvent({
-      ticketRowId: rowId,
-      kind: normalizedStatus === "pending" ? "pending_timer" : "status_change",
-      summary:
-        normalizedStatus === "pending"
-          ? `Set to Pending (${describePendingReopenTimer(nextPendingReopenHours, timerSettings)})`
-          : `Status changed to ${crmStatusLabel(normalizedStatus)}`,
-      detail,
-    });
+    if (!options?.skipEventLog) {
+      logCrmTicketEvent({
+        ticketRowId: rowId,
+        kind: normalizedStatus === "pending" ? "pending_timer" : "status_change",
+        summary:
+          normalizedStatus === "pending"
+            ? `Set to Pending (${describePendingReopenTimer(nextPendingReopenHours, timerSettings, workspaceBusinessHours())})`
+            : `Status changed to ${crmStatusLabel(normalizedStatus)}`,
+        detail,
+      });
+    }
+  } else if (
+    nextResolvedClosed !== existing.resolvedClosed &&
+    normalizeStatusId(normalizedStatus) === "resolved"
+  ) {
+    syncBackgroundGmailSyncForTicket(rowId, normalizedStatus, nextResolvedClosed);
   }
 
   return { statusChangedAt, slaDueAt };
 }
 
+/** Resolve a teammate cover ticket in CRM only — never writes to their sheet. */
+export function ignoreCoverTicket(
+  rowId: string,
+  timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS
+): { status: string; statusChangedAt: string | null; slaDueAt: string | null } {
+  const existing = readOverlayRow(rowId);
+  if (normalizeStatusId(existing.status) === "resolved") {
+    return {
+      status: "resolved",
+      statusChangedAt: existing.statusChangedAt,
+      slaDueAt: existing.slaDueAt,
+    };
+  }
+  const { statusChangedAt, slaDueAt } = updateTicketStatus(rowId, "resolved", timerSettings, undefined, {
+    skipEventLog: true,
+    resolvedClosed: true,
+  });
+  logCrmTicketEvent({
+    ticketRowId: rowId,
+    kind: "cover_ignore",
+    summary: "Ignored cover ticket (CRM resolved, sheet unchanged)",
+    detail: { status: "resolved" },
+  });
+  return { status: "resolved", statusChangedAt, slaDueAt };
+}
+
 export function updateTicketAirbnbUserId(rowId: string, userId: string): void {
   const existing = readOverlayRow(rowId);
   const trimmed = userId.trim();
+  if (!trimmed) {
+    upsertOverlayRow(rowId, overlayFields(existing), {
+      crmAirbnbUserId: null,
+      airbnbUserIdSource: "sheet",
+    });
+    return;
+  }
   upsertOverlayRow(rowId, overlayFields(existing), {
-    crmAirbnbUserId: trimmed || null,
+    crmAirbnbUserId: trimmed,
     airbnbUserIdSource: "crm",
   });
 }
@@ -745,6 +998,30 @@ export function appendAdminNoteToOverlay(rowId: string, noteText: string): strin
     sheetCaseSummary: updated,
   });
   return updated;
+}
+
+/** Record a manually added admin note in the conversation timeline. */
+export function addAdminNoteThreadMessage(
+  rowId: string,
+  noteText: string,
+  author?: string
+): ThreadMessage {
+  const sentAt = new Date();
+  const message: ThreadMessage = {
+    id: uuidv4(),
+    ticketRowId: rowId,
+    direction: "admin_note",
+    from: author?.trim() || "Admin",
+    to: "",
+    cc: null,
+    subject: "Admin note",
+    body: noteText.trim(),
+    gmailMessageId: null,
+    gmailThreadId: null,
+    sentAt: sentAt.toISOString(),
+  };
+  addThreadMessage(message);
+  return message;
 }
 
 export function updateTicketSubject(rowId: string, subject: string): void {
@@ -894,13 +1171,17 @@ export function getGmailThreadOpenUrl(ticketRowId: string): string | null {
 }
 
 export function getTicketRowIdForGmailThread(threadId: string): string | null {
+  const trimmed = threadId.trim();
+  if (!trimmed) return null;
+  const fromJunction = getTicketRowIdForLinkedGmailThread(getDb(), trimmed);
+  if (fromJunction) return fromJunction;
   const row = getDb()
     .prepare("SELECT row_id FROM ticket_overlay WHERE gmail_thread_id = ?")
-    .get(threadId) as { row_id: string } | undefined;
+    .get(trimmed) as { row_id: string } | undefined;
   return row?.row_id ?? null;
 }
 
-/** Bind one Gmail thread to one ticket. Returns false if thread belongs to another ticket. */
+/** Bind one Gmail thread to one ticket (primary). Returns false if thread belongs to another ticket. */
 export function claimGmailThreadForTicket(
   ticketRowId: string,
   threadId: string,
@@ -912,36 +1193,192 @@ export function claimGmailThreadForTicket(
   const owner = getTicketRowIdForGmailThread(trimmed);
   if (owner && owner !== ticketRowId) return false;
 
-  const existing = readOverlayRow(ticketRowId);
-  if (existing.gmailThreadId && existing.gmailThreadId !== trimmed) {
-    const hasValidApiThreadId =
-      Boolean(existing.gmailThreadId && isGmailApiThreadId(existing.gmailThreadId));
+  const db = getDb();
+  const primary = getPrimaryGmailThreadLink(db, ticketRowId);
+  if (primary && primary.gmailThreadId !== trimmed) {
+    const hasValidApiThreadId = Boolean(
+      primary.gmailThreadId && isGmailApiThreadId(primary.gmailThreadId)
+    );
     if (!options?.replace && hasValidApiThreadId && getGmailThreadOpenUrl(ticketRowId)) {
       return false;
     }
   }
 
-  try {
-    upsertOverlayRow(ticketRowId, overlayFields(existing), { gmailThreadId: trimmed });
-    return true;
-  } catch {
-    return false;
-  }
+  const result = addGmailThreadToTicket(db, {
+    ticketRowId,
+    threadId: trimmed,
+    openUrl: buildGmailConversationUrl(trimmed),
+    isPrimary: true,
+  });
+  return result.ok;
 }
 
 export function getGmailThreadImportCutoff(ticketRowId: string): string | null {
+  const primary = getPrimaryGmailThreadLink(getDb(), ticketRowId);
+  if (primary) return primary.linkedAt;
   const row = getDb()
     .prepare("SELECT gmail_thread_linked_at FROM ticket_overlay WHERE row_id = ?")
     .get(ticketRowId) as { gmail_thread_linked_at: string | null } | undefined;
   return row?.gmail_thread_linked_at ?? null;
 }
 
+export function getGmailThreadImportCutoffForThread(
+  ticketRowId: string,
+  threadId: string
+): string | null {
+  return (
+    getGmailThreadLinkedAt(getDb(), ticketRowId, threadId) ??
+    getGmailThreadImportCutoff(ticketRowId)
+  );
+}
+
+export function getLinkedGmailThreadsForTicket(ticketRowId: string) {
+  return listTicketGmailThreads(getDb(), ticketRowId);
+}
+
+export function getLinkedGmailThreadIdsForTicket(ticketRowId: string): string[] {
+  return getLinkedGmailThreadIds(getDb(), ticketRowId);
+}
+
 /** True when this ticket has a Gmail link stored in overlay (manual link or CRM send claim). */
 export function ticketHasExplicitGmailLink(ticketRowId: string): boolean {
+  if (ticketForceNewGmailThreadOnSend(ticketRowId)) return false;
+  if (ticketHasAnyGmailThreadLink(getDb(), ticketRowId)) return true;
+
   const overlay = readOverlayRow(ticketRowId);
   return Boolean(
     overlay.gmailThreadId || getGmailThreadOpenUrl(ticketRowId) || getGmailThreadImportCutoff(ticketRowId)
   );
+}
+
+export function ticketForceNewGmailThreadOnSend(ticketRowId: string): boolean {
+  const row = getDb()
+    .prepare(`SELECT force_new_gmail_thread_on_send FROM ticket_overlay WHERE row_id = ?`)
+    .get(ticketRowId) as { force_new_gmail_thread_on_send: number } | undefined;
+  return row?.force_new_gmail_thread_on_send === 1;
+}
+
+export function setForceNewGmailThreadOnSend(ticketRowId: string, enabled: boolean): void {
+  const existing = readOverlayRow(ticketRowId);
+  if (!existing.exists) {
+    upsertOverlayRow(ticketRowId, overlayFields(existing), {});
+  }
+  getDb()
+    .prepare(
+      `UPDATE ticket_overlay
+       SET force_new_gmail_thread_on_send = ?, updated_at = ?
+       WHERE row_id = ?`
+    )
+    .run(enabled ? 1 : 0, new Date().toISOString(), ticketRowId);
+}
+
+export function clearForceNewGmailThreadOnSend(ticketRowId: string): void {
+  setForceNewGmailThreadOnSend(ticketRowId, false);
+}
+
+function clearImportedGmailMessagesForTicket(ticketRowId: string): number {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, gmail_message_id, direction, sent_at
+       FROM thread_messages
+       WHERE ticket_row_id = ?
+         AND direction IN ('inbound', 'outbound')
+         AND (gmail_message_id IS NOT NULL OR gmail_thread_id IS NOT NULL)`
+    )
+    .all(ticketRowId) as Array<{
+    id: string;
+    gmail_message_id: string | null;
+    direction: string;
+    sent_at: string;
+  }>;
+
+  if (rows.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  const blockStmt = getDb().prepare(
+    `INSERT INTO blocked_gmail_messages (
+       ticket_row_id, gmail_message_id, redacted_at, original_sent_at, original_direction
+     ) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(ticket_row_id, gmail_message_id) DO UPDATE SET
+       redacted_at = excluded.redacted_at,
+       original_sent_at = excluded.original_sent_at,
+       original_direction = excluded.original_direction`
+  );
+
+  const transaction = getDb().transaction((messageRows: typeof rows) => {
+    for (const row of messageRows) {
+      const gmailMessageId = row.gmail_message_id?.trim();
+      if (gmailMessageId) {
+        blockStmt.run(ticketRowId, gmailMessageId, now, row.sent_at, row.direction);
+      }
+      deleteThreadMessageAndAttachments(row.id);
+    }
+  });
+  transaction(rows);
+  return rows.length;
+}
+
+/**
+ * Clear a mistaken Gmail link, remove imported thread messages, and require the next
+ * outbound send to start a fresh Gmail thread (no auto-link until then).
+ */
+export function resetGmailThreadForNewOutbound(
+  ticketRowId: string
+): { ok: true; removedMessageCount: number } | { ok: false; error: string } {
+  const existing = readOverlayRow(ticketRowId);
+  const existingOpenUrl = getGmailThreadOpenUrl(ticketRowId);
+  const hadLink = Boolean(existing.gmailThreadId || existingOpenUrl);
+  const removedMessageCount = clearImportedGmailMessagesForTicket(ticketRowId);
+
+  if (!hadLink && removedMessageCount === 0 && !ticketForceNewGmailThreadOnSend(ticketRowId)) {
+    return { ok: false, error: "No Gmail thread is linked to this ticket" };
+  }
+
+  if (!existing.exists) {
+    upsertOverlayRow(ticketRowId, overlayFields(existing), {});
+  }
+
+  const now = new Date().toISOString();
+  getDb().prepare(`DELETE FROM ticket_gmail_threads WHERE ticket_row_id = ?`).run(ticketRowId);
+  getDb()
+    .prepare(
+      `UPDATE ticket_overlay
+       SET gmail_thread_id = NULL,
+           gmail_thread_open_url = NULL,
+           gmail_thread_linked_at = NULL,
+           force_new_gmail_thread_on_send = 1,
+           updated_at = ?
+       WHERE row_id = ?`
+    )
+    .run(now, ticketRowId);
+
+  clearGmailLinkArchivedAt(ticketRowId);
+
+  updateTicketSubject(ticketRowId, "");
+
+  const resetAt = new Date();
+  addThreadMessage({
+    id: uuidv4(),
+    ticketRowId,
+    direction: "system",
+    from: "SheetsCRM",
+    to: "",
+    cc: null,
+    subject: "Gmail link cleared for new thread",
+    body: buildGmailResetForNewThreadBody(resetAt),
+    gmailMessageId: null,
+    gmailThreadId: null,
+    sentAt: resetAt.toISOString(),
+  });
+
+  logCrmTicketEvent({
+    ticketRowId,
+    kind: "gmail_thread_reset",
+    summary: "Gmail link cleared — next send starts a new thread",
+    detail: { removedMessageCount },
+  });
+
+  return { ok: true, removedMessageCount };
 }
 
 export function unlinkGmailThread(
@@ -954,6 +1391,7 @@ export function unlinkGmailThread(
   }
 
   const now = new Date().toISOString();
+  getDb().prepare(`DELETE FROM ticket_gmail_threads WHERE ticket_row_id = ?`).run(ticketRowId);
   getDb()
     .prepare(
       `UPDATE ticket_overlay
@@ -970,61 +1408,123 @@ export function unlinkGmailThread(
 
 export function linkExistingGmailThread(
   ticketRowId: string,
-  params: { threadId: string; openUrl: string; replace?: boolean }
+  params: { threadId: string; openUrl: string; replace?: boolean; append?: boolean }
 ):
-  | { ok: true; message: ThreadMessage | null; openUrl: string }
+  | { ok: true; message: ThreadMessage | null; openUrl: string; appended?: boolean }
   | { ok: false; error: string; linkedTicketRowId?: string } {
   const trimmed = params.threadId.trim();
   const openUrl = params.openUrl.trim();
   if (!trimmed) return { ok: false, error: "Gmail thread ID is required" };
   if (!openUrl) return { ok: false, error: "Gmail open URL is required" };
 
+  const db = getDb();
   const existing = readOverlayRow(ticketRowId);
   const existingOpenUrl = getGmailThreadOpenUrl(ticketRowId);
-  const hasExistingLink = Boolean(existing.gmailThreadId || existingOpenUrl);
-  const replacing = Boolean(params.replace && hasExistingLink);
+  const hasExistingLink =
+    ticketHasAnyGmailThreadLink(db, ticketRowId) ||
+    Boolean(existing.gmailThreadId || existingOpenUrl);
+  const appending = Boolean(params.append && hasExistingLink);
+  const replacing = Boolean(params.replace && hasExistingLink && !appending);
 
-  if (
-    existing.gmailThreadId === trimmed &&
-    (existingOpenUrl === openUrl || !existingOpenUrl || !openUrl)
-  ) {
+  if (isGmailThreadLinkedToTicket(db, ticketRowId, trimmed)) {
     return {
       ok: true,
       message: null,
-      openUrl: existingOpenUrl || openUrl,
-    };
-  }
-  if (hasExistingLink && !replacing) {
-    return {
-      ok: false,
-      error: "This ticket is already linked — use Change link to update it",
+      openUrl: resolveTicketGmailOpenUrl(ticketRowId) ?? existingOpenUrl ?? openUrl,
     };
   }
 
-  if (!claimGmailThreadForTicket(ticketRowId, trimmed, { replace: replacing })) {
-    const owner = getTicketRowIdForGmailThread(trimmed);
-    if (owner && owner !== ticketRowId) {
-      return {
-        ok: false,
-        error: "This Gmail thread is already linked to another ticket",
-        linkedTicketRowId: owner,
-      };
-    }
-    return { ok: false, error: "Could not link Gmail thread" };
+  if (hasExistingLink && !replacing && !appending) {
+    return {
+      ok: false,
+      error:
+        "This ticket is already linked — use Append to add another thread or Change link to replace the primary thread",
+    };
   }
 
   const linkedAt = new Date();
   const linkedAtIso = linkedAt.toISOString();
-  getDb()
-    .prepare(
-      `UPDATE ticket_overlay
-       SET gmail_thread_linked_at = ?, gmail_thread_open_url = ?, updated_at = ?
-       WHERE row_id = ?`
-    )
-    .run(linkedAtIso, openUrl, linkedAtIso, ticketRowId);
+
+  if (replacing) {
+    const oldPrimary = getPrimaryGmailThreadLink(db, ticketRowId);
+    if (oldPrimary) {
+      db.prepare(`DELETE FROM ticket_gmail_threads WHERE id = ?`).run(oldPrimary.id);
+    }
+  }
+
+  if (appending) {
+    const added = addGmailThreadToTicket(db, {
+      ticketRowId,
+      threadId: trimmed,
+      openUrl,
+      isPrimary: false,
+      linkedAt: linkedAtIso,
+    });
+    if (!added.ok) {
+      if (added.linkedTicketRowId) {
+        return {
+          ok: false,
+          error: added.error,
+          linkedTicketRowId: added.linkedTicketRowId,
+        };
+      }
+      return { ok: false, error: added.error };
+    }
+
+    clearGmailLinkArchivedAt(ticketRowId);
+    if (normalizeStatusId(existing.status) === "resolved" && !existing.resolvedClosed) {
+      enableBackgroundGmailSync(ticketRowId);
+    }
+
+    const message: ThreadMessage = {
+      id: uuidv4(),
+      ticketRowId,
+      direction: "system",
+      from: "SheetsCRM",
+      to: "",
+      cc: null,
+      subject: "Additional Gmail thread linked",
+      body: buildThreadAppendNoticeBody(linkedAt),
+      gmailMessageId: null,
+      gmailThreadId: null,
+      sentAt: linkedAtIso,
+    };
+    addThreadMessage(message);
+
+    return {
+      ok: true,
+      message,
+      openUrl: resolveTicketGmailOpenUrl(ticketRowId) ?? existingOpenUrl ?? openUrl,
+      appended: true,
+    };
+  }
+
+  const added = addGmailThreadToTicket(db, {
+    ticketRowId,
+    threadId: trimmed,
+    openUrl,
+    isPrimary: true,
+    linkedAt: linkedAtIso,
+  });
+  if (!added.ok) {
+    if (added.linkedTicketRowId) {
+      return {
+        ok: false,
+        error: added.error,
+        linkedTicketRowId: added.linkedTicketRowId,
+      };
+    }
+    return { ok: false, error: added.error };
+  }
+
+  db.prepare(
+    `UPDATE ticket_overlay
+     SET gmail_thread_linked_at = ?, gmail_thread_open_url = ?, updated_at = ?
+     WHERE row_id = ?`
+  ).run(linkedAtIso, openUrl, linkedAtIso, ticketRowId);
 
   clearGmailLinkArchivedAt(ticketRowId);
-  if (normalizeStatusId(existing.status) === "resolved") {
+  if (normalizeStatusId(existing.status) === "resolved" && !existing.resolvedClosed) {
     enableBackgroundGmailSync(ticketRowId);
   }
 
@@ -1044,7 +1544,7 @@ export function linkExistingGmailThread(
       sentAt: linkedAtIso,
     };
     addThreadMessage(message);
-  } else if (existing.gmailThreadId !== trimmed || existingOpenUrl !== openUrl) {
+  } else {
     message = {
       id: uuidv4(),
       ticketRowId,
@@ -1061,7 +1561,11 @@ export function linkExistingGmailThread(
     addThreadMessage(message);
   }
 
-  return { ok: true, message, openUrl };
+  return {
+    ok: true,
+    message,
+    openUrl: resolveTicketGmailOpenUrl(ticketRowId) ?? openUrl,
+  };
 }
 
 export interface MessageAttachmentInput {
@@ -1309,7 +1813,7 @@ function ensurePendingTimerAnchor(
       source: anchor.source,
       statusChangedAt: anchor.statusChangedAt,
       pendingReopenHours: anchor.pendingReopenHours,
-      timer: describePendingReopenTimer(anchor.pendingReopenHours, timerSettings),
+      timer: describePendingReopenTimer(anchor.pendingReopenHours, timerSettings, workspaceBusinessHours()),
     },
     createdAt: anchor.statusChangedAt,
   });
@@ -1351,6 +1855,7 @@ function queueAutoReopenSheetSync(rowId: string, status: string): void {
 /** Move pending → open when the customer sent the latest email. */
 export function reopenPendingOnCustomerReply(ticketRowId: string): boolean {
   const overlay = readOverlayRow(ticketRowId);
+  if (blocksTicketAutoReopen(overlay.status, overlay.resolvedClosed)) return false;
   const latest = getLatestConversationActivity(ticketRowId);
   const reopen = getReopenOnCustomerReplyStatus(
     overlay.status,
@@ -1374,10 +1879,24 @@ export function reopenPendingOnCustomerReply(ticketRowId: string): boolean {
     slaDueAt,
   });
   setOverlayPendingReopenHours(ticketRowId, null);
-  applyBackgroundGmailSyncEligibility(ticketRowId, previousStatus, reopen);
+  applyBackgroundGmailSyncEligibility(ticketRowId, previousStatus, reopen, false);
   logAutomatedReopen(ticketRowId, previousStatus, "customer_reply");
   queueAutoReopenSheetSync(ticketRowId, reopen);
   return true;
+}
+
+/** Earliest imported inbound message per ticket (batch). */
+export function getFirstInboundAtMap(): Map<string, string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT ticket_row_id, MIN(sent_at) AS first_inbound
+       FROM thread_messages
+       WHERE direction = 'inbound'
+       GROUP BY ticket_row_id`
+    )
+    .all() as Array<{ ticket_row_id: string; first_inbound: string }>;
+
+  return new Map(rows.map((r) => [r.ticket_row_id, r.first_inbound]));
 }
 
 /** Latest thread message time per ticket (batch). */
@@ -1393,8 +1912,13 @@ export function getLastThreadResponseMap(): Map<string, string> {
   return new Map(rows.map((r) => [r.ticket_row_id, r.last_sent]));
 }
 
-/** Resolve the Gmail thread bound to this ticket (overlay, or latest synced message). */
+/** Resolve the primary Gmail thread for outbound replies. */
 export function resolveTicketGmailThreadId(ticketRowId: string): string | null {
+  if (ticketForceNewGmailThreadOnSend(ticketRowId)) return null;
+
+  const primary = getPrimaryGmailThreadLink(getDb(), ticketRowId);
+  if (primary) return primary.gmailThreadId;
+
   const claimed = getTicketGmailThreadId(ticketRowId);
   if (claimed) return claimed;
 
@@ -1413,24 +1937,70 @@ export function resolveTicketGmailThreadId(ticketRowId: string): string | null {
 }
 
 export function pruneMismatchedThreadMessages(ticketRowId: string): void {
+  const linked = getLinkedGmailThreadIds(getDb(), ticketRowId);
   const claimed = getTicketGmailThreadId(ticketRowId);
-  if (!claimed) return;
+  const allowed = linked.length > 0 ? linked : claimed ? [claimed] : [];
+  if (allowed.length === 0) return;
 
+  const placeholders = allowed.map(() => "?").join(",");
   getDb()
     .prepare(
       `DELETE FROM thread_messages
-       WHERE ticket_row_id = ? AND gmail_thread_id IS NOT NULL AND gmail_thread_id != ?`
+       WHERE ticket_row_id = ? AND gmail_thread_id IS NOT NULL AND gmail_thread_id NOT IN (${placeholders})`
     )
-    .run(ticketRowId, claimed);
+    .run(ticketRowId, ...allowed);
+}
+
+export function getThreadMessageById(messageId: string): ThreadMessage | null {
+  const row = getDb()
+    .prepare("SELECT * FROM thread_messages WHERE id = ?")
+    .get(messageId) as
+    | {
+        id: string;
+        ticket_row_id: string;
+        direction: string;
+        from_addr: string;
+        to_addr: string;
+        cc_addr: string | null;
+        subject: string;
+        body: string;
+        gmail_message_id: string | null;
+        gmail_thread_id: string | null;
+        sent_at: string;
+      }
+    | undefined;
+
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    ticketRowId: row.ticket_row_id,
+    direction: row.direction as ThreadMessage["direction"],
+    from: row.from_addr,
+    to: row.to_addr,
+    cc: row.cc_addr,
+    subject: row.subject,
+    body: row.body,
+    gmailMessageId: row.gmail_message_id,
+    gmailThreadId: row.gmail_thread_id,
+    sentAt: row.sent_at,
+  };
+}
+
+export function updateThreadMessageBody(messageId: string, body: string): void {
+  getDb().prepare(`UPDATE thread_messages SET body = ? WHERE id = ?`).run(body, messageId);
 }
 
 export function getThreadMessages(ticketRowId: string): ThreadMessage[] {
+  const linked = getLinkedGmailThreadIds(getDb(), ticketRowId);
   const claimed = resolveTicketGmailThreadId(ticketRowId);
+  const allowed = new Set(linked.length > 0 ? linked : claimed ? [claimed] : []);
   const messages = getAllThreadMessagesRaw(ticketRowId);
 
-  const filtered = !claimed
-    ? messages.filter((m) => !m.gmailThreadId)
-    : messages.filter((m) => !m.gmailThreadId || m.gmailThreadId === claimed);
+  const filtered =
+    allowed.size === 0
+      ? messages.filter((m) => !m.gmailThreadId)
+      : messages.filter((m) => !m.gmailThreadId || allowed.has(m.gmailThreadId));
 
   return loadAttachmentsForMessages(filtered);
 }
@@ -1675,6 +2245,7 @@ function resolveTicketAutomatedReopen(
   sheetCaseSummary: string,
   timerSettings: TimerSettings
 ): "open" | null {
+  if (blocksTicketAutoReopen(overlay.status, overlay.resolvedClosed)) return null;
   const anchored = ensurePendingTimerAnchor(rowId, overlay, sheetCaseSummary, timerSettings);
   const latest = getLatestConversationActivity(rowId);
   const latestOutboundSentAt = getLastOutboundSentAt(rowId);
@@ -1686,7 +2257,9 @@ function resolveTicketAutomatedReopen(
     new Date(),
     timerSettings,
     anchored.pendingReopenHours,
-    latestOutboundSentAt
+    latestOutboundSentAt,
+    workspaceBusinessHours(),
+    anchored.resolvedClosed
   );
 }
 
@@ -1716,6 +2289,74 @@ export function applyStatusAutomations(
 
     return { ...ticket, status: reopen };
   });
+}
+
+/** Reset CRM overrides on a cover ticket and re-apply current sheet row values. */
+export function resyncCoverTicketOverlayFromSheet(
+  freshTicket: Ticket,
+  timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS
+): Ticket {
+  const existing = readOverlayRow(freshTicket.rowId);
+  const mappedStatus = mapSheetStatusToCrmId(freshTicket.sheetStatus);
+  const normalizedStatus = normalizeStatusId(mappedStatus);
+  const sheetStatusValue = freshTicket.sheetStatus.trim() || null;
+  const sheetCaseSummaryValue = freshTicket.sheetCaseSummary.trim() || null;
+  const sheetContactReason = freshTicket.contactReason.trim() || null;
+  const now = new Date().toISOString();
+  const statusChangedAt =
+    normalizedStatus === "pending" || normalizedStatus === "longterm_hold" ? now : null;
+
+  upsertOverlayRow(freshTicket.rowId, overlayFields(existing), {
+    status: normalizedStatus,
+    statusSource: "sheet",
+    sheetStatus: sheetStatusValue,
+    crmSubject: null,
+    adminNotes: sheetCaseSummaryValue,
+    adminNotesSource: "sheet",
+    sheetCaseSummary: sheetCaseSummaryValue,
+    contactReason: sheetContactReason,
+    contactReasonSource: "sheet",
+    statusChangedAt,
+    crmAirbnbUserId: null,
+    airbnbUserIdSource: "sheet",
+  });
+  setOverlayPendingReopenHours(freshTicket.rowId, null);
+  setOverlayResolvedClosed(freshTicket.rowId, false);
+
+  if (existing.exists) {
+    const previousStatus = normalizeStatusId(existing.status);
+    applyBackgroundGmailSyncEligibility(
+      freshTicket.rowId,
+      previousStatus,
+      normalizedStatus,
+      false
+    );
+    if (
+      (normalizedStatus === "resolved" || normalizedStatus === "do_not_action") &&
+      previousStatus !== normalizedStatus
+    ) {
+      markTicketResolvedNow(freshTicket.rowId);
+    } else if (
+      (previousStatus === "resolved" || previousStatus === "do_not_action") &&
+      normalizedStatus !== previousStatus &&
+      normalizedStatus !== "resolved" &&
+      normalizedStatus !== "do_not_action"
+    ) {
+      clearTicketResolvedAt(freshTicket.rowId);
+    }
+  }
+
+  logCrmTicketEvent({
+    ticketRowId: freshTicket.rowId,
+    kind: "sheet_resync",
+    summary: "Resynced ticket from teammate sheet",
+    detail: {
+      status: normalizedStatus,
+      sheetStatus: sheetStatusValue,
+    },
+  });
+
+  return mergeOverlayOntoTicket(freshTicket, freshTicket.airbnbUserId, timerSettings);
 }
 
 export function mergeOverlayOntoTicket(
@@ -1761,7 +2402,7 @@ export function mergeOverlayOntoTicket(
       initialResponseSlaCleared: false,
     });
     if (mappedFromSheet === "pending" || mappedFromSheet === "resolved") {
-      enableBackgroundGmailSync(ticket.rowId);
+      syncBackgroundGmailSyncForTicket(ticket.rowId, mappedFromSheet, false);
     }
   } else {
     if (contactReasonSource === "sheet" && sheetContactReason !== overlay.contactReason) {
@@ -1814,7 +2455,12 @@ export function mergeOverlayOntoTicket(
         if (nextStatus === "pending" && previousStatus !== "pending") {
           setOverlayPendingReopenHours(ticket.rowId, null);
         }
-        applyBackgroundGmailSyncEligibility(ticket.rowId, previousStatus, nextStatus);
+        applyBackgroundGmailSyncEligibility(
+          ticket.rowId,
+          previousStatus,
+          nextStatus,
+          overlay.resolvedClosed
+        );
       } else if (sheetCaseSummaryValue !== overlay.sheetCaseSummary) {
         upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
           sheetCaseSummary: sheetCaseSummaryValue,
@@ -1849,7 +2495,7 @@ export function mergeOverlayOntoTicket(
       statusChangedAt: null,
     });
     setOverlayPendingReopenHours(ticket.rowId, null);
-    applyBackgroundGmailSyncEligibility(ticket.rowId, refreshed.status, reopen);
+    applyBackgroundGmailSyncEligibility(ticket.rowId, previousStatus, reopen, false);
     logAutomatedReopen(ticket.rowId, previousStatus, "pending_timer");
     queueAutoReopenSheetSync(ticket.rowId, reopen);
     status = reopen;
@@ -1863,10 +2509,13 @@ export function mergeOverlayOntoTicket(
     ensureBackgroundGmailSyncEnabled(ticket.rowId);
   } else if (
     finalStatus === "resolved" &&
+    !refreshed.resolvedClosed &&
     ticketHasExplicitGmailLink(ticket.rowId) &&
     !ticketGmailLinkIsArchived(ticket.rowId)
   ) {
     ensureBackgroundGmailSyncEnabled(ticket.rowId);
+  } else if (finalStatus === "resolved" && refreshed.resolvedClosed) {
+    disableBackgroundGmailSync(ticket.rowId);
   }
 
   if (refreshed.contactReasonSource === "crm" && refreshed.contactReason) {
@@ -1883,7 +2532,12 @@ export function mergeOverlayOntoTicket(
   const crmSubject = refreshed.crmSubject?.trim() || null;
   const subject = crmSubject || ticket.subject;
   const crmSubjectLabel = crmSubjectLabelFromStored(crmSubject);
-  const airbnbUserId = resolveTicketAirbnbUserId(sheetAd, ticket.columnD, refreshed);
+  const airbnbUserId = resolveTicketAirbnbUserId(
+    sheetAd,
+    ticket.columnD,
+    ticket.headerField,
+    refreshed
+  );
 
   return {
     ...ticket,
@@ -1892,6 +2546,7 @@ export function mergeOverlayOntoTicket(
     contactReason,
     status,
     airbnbUserId,
+    crmAirbnbUserId: manualAirbnbUserIdFromOverlay(refreshed),
     adminNotes: ticket.sheetCaseSummary.trim(),
     sheetStatus:
       refreshed.statusSource === "crm"
@@ -1902,8 +2557,10 @@ export function mergeOverlayOntoTicket(
     slaBreached,
     statusChangedAt: refreshed.statusChangedAt,
     pendingReopenHours: refreshed.pendingReopenHours,
+    resolvedClosed: refreshed.resolvedClosed,
     gmailOpenUrl: resolveTicketGmailOpenUrl(ticket.rowId),
     gmailLinkArchivedAt: getTicketGmailLinkArchivedAt(ticket.rowId),
+    forceNewGmailThreadOnSend: ticketForceNewGmailThreadOnSend(ticket.rowId),
     linkedCases: refreshed.linkedCases,
     needsInitialResponse: false,
   };

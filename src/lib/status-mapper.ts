@@ -72,6 +72,17 @@ export function normalizeStatusId(statusId: string): string {
   return trimmed;
 }
 
+/** Do not action — always excluded from auto-reopen automation. */
+export function isTerminalTicketStatus(statusId: string): boolean {
+  return normalizeStatusId(statusId) === "do_not_action";
+}
+
+/** Resolved via Resolve & Close — no auto-reopen or background Gmail polling. */
+export function blocksTicketAutoReopen(statusId: string, resolvedClosed: boolean): boolean {
+  if (isTerminalTicketStatus(statusId)) return true;
+  return normalizeStatusId(statusId) === "resolved" && resolvedClosed;
+}
+
 /** Map a Column N value to a CRM status id. Unknown values become a slug id for display. */
 export function mapSheetStatusToCrmId(sheetStatus: string): string {
   const trimmed = sheetStatus.trim();

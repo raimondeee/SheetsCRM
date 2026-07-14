@@ -1,6 +1,14 @@
 {
-  "updatedAt": "2026-06-15T22:13:32.486Z",
+  "updatedAt": "2026-06-30T18:34:34.436Z",
   "managers": [
+    {
+      "name": "Adam Price",
+      "email": "adam.price@airbnb.com"
+    },
+    {
+      "name": "Aissata Sow",
+      "email": "aissata.sow@airbnb.com"
+    },
     {
       "name": "Alejandro Antonucci",
       "email": "alejandro.antonucci@ext.airbnb.com"
@@ -10,8 +18,16 @@
       "email": "alesia.georgiou@ext.airbnb.com"
     },
     {
+      "name": "Alex Nunes",
+      "email": "alex.nunes@airbnb.com"
+    },
+    {
       "name": "Alex Payette",
       "email": "alex.payette@airbnb.com"
+    },
+    {
+      "name": "Alexandra Paschalides",
+      "email": "alexandra.paschalides@airbnb.com"
     },
     {
       "name": "Amar Koul",
@@ -38,8 +54,20 @@
       "email": "antonio.gomez@airbnb.com"
     },
     {
+      "name": "Ariana Rios",
+      "email": "ariana.rios@airbnb.com"
+    },
+    {
+      "name": "Bella Shea",
+      "email": "bella.shea@airbnb.com"
+    },
+    {
       "name": "Benson Leng",
       "email": "benson.leng@ext.airbnb.com"
+    },
+    {
+      "name": "Blake Horowitz",
+      "email": "blake.horowitz@airbnb.com"
     },
     {
       "name": "Bonnie Stevenson",
@@ -58,6 +86,10 @@
       "email": "caroline.ludwig@airbnb.com"
     },
     {
+      "name": "Casey Rice",
+      "email": "casey.rice@airbnb.com"
+    },
+    {
       "name": "Chris Valente",
       "email": "chris.valente@airbnb.com"
     },
@@ -66,12 +98,20 @@
       "email": "christian.robinson@airbnb.com"
     },
     {
+      "name": "Christine Steck",
+      "email": "christine.steck@airbnb.com"
+    },
+    {
       "name": "Christophe Handous",
       "email": "christophe.handous@airbnb.com"
     },
     {
       "name": "Cody Perrault",
       "email": "cody.perrault@airbnb.com"
+    },
+    {
+      "name": "Corrie Pfeiffer",
+      "email": "corrie.pfeiffer@airbnb.com"
     },
     {
       "name": "Daniela Girardi",
@@ -90,7 +130,15 @@
       "email": "dario.cirella@airbnb.com"
     },
     {
+      "name": "DeBrandon J",
+      "email": "debrandon.jews@airbnb.com"
+    },
+    {
       "name": "Delmarshae (aka, Shae)",
+      "email": "delmarshae.walker@airbnb.com"
+    },
+    {
+      "name": "Delmarshae (Shae)",
       "email": "delmarshae.walker@airbnb.com"
     },
     {
@@ -108,6 +156,10 @@
     {
       "name": "Emily Gale",
       "email": "emily.gale@ext.airbnb.com"
+    },
+    {
+      "name": "Emily Marucci",
+      "email": "emily.marucci@airbnb.com"
     },
     {
       "name": "Emma Rosenberg",
@@ -146,12 +198,24 @@
       "email": "haley.freedman@airbnb.com"
     },
     {
+      "name": "Hillary Marchman",
+      "email": "hillary.marchman@airbnb.com"
+    },
+    {
       "name": "Irine Bochorishvili",
       "email": "irine.bochorishvili@airbnb.com"
     },
     {
+      "name": "J.LaPlante",
+      "email": "jennifer.laplante@airbnb.com"
+    },
+    {
       "name": "Jen Gillette",
       "email": "jen.gillette@airbnb.com"
+    },
+    {
+      "name": "Joe Gillin",
+      "email": "joseph.gillin@airbnb.com"
     },
     {
       "name": "Joe Rudy",
@@ -160,6 +224,10 @@
     {
       "name": "Joe Yeadon",
       "email": "joe.yeadon@airbnb.com"
+    },
+    {
+      "name": "Joey Notowich",
+      "email": "joseph.notowich@airbnb.com"
     },
     {
       "name": "Josh Tillipman",
@@ -172,6 +240,10 @@
     {
       "name": "Julie Carbone",
       "email": "julie.carbone@airbnb.com"
+    },
+    {
+      "name": "Julz Furneaux",
+      "email": "julz.furneaux@airbnb.com"
     },
     {
       "name": "Kaiting Yap",
@@ -210,6 +282,10 @@
       "email": "krista.slocum@ext.airbnb.com"
     },
     {
+      "name": "Kristina Pena",
+      "email": "kristina.pena@airbnb.com"
+    },
+    {
       "name": "Kristina Prusnek",
       "email": "kristina.prusnek@airbnb.com"
     },
@@ -226,16 +302,36 @@
       "email": "leavictoria.gottwald@airbnb.com"
     },
     {
+      "name": "Lily Nguyen",
+      "email": "lily.nguyen@airbnb.com"
+    },
+    {
       "name": "Lisbet Alvarez",
       "email": "lisbet.alvarez@airbnb.com"
+    },
+    {
+      "name": "Lisbet Alvarez",
+      "email": "lisbet.alvarez@airbnb.com"
+    },
+    {
+      "name": "Livia Relva",
+      "email": "livia.relva@airbnb.com"
     },
     {
       "name": "Luis Pincay",
       "email": "l.pincay@airbnb.com"
     },
     {
+      "name": "Luna House",
+      "email": "luna.house@airbnb.com"
+    },
+    {
       "name": "Maddie Beck",
       "email": "maddie.beck@airbnb.com"
+    },
+    {
+      "name": "Malia Taito",
+      "email": "malia.taito@airbnb.com"
     },
     {
       "name": "Malika Singh",
@@ -248,6 +344,10 @@
     {
       "name": "Marina Reasoner",
       "email": "marina.reasoner@airbnb.com"
+    },
+    {
+      "name": "Matt Gall",
+      "email": "matt.gall@airbnb.com"
     },
     {
       "name": "Michael Rollins",
@@ -272,6 +372,10 @@
     {
       "name": "Quentin Poyet",
       "email": "quentin.poyet@ext.airbnb.com"
+    },
+    {
+      "name": "Ricardo Gonzalez",
+      "email": "ricardo.gonzalez@airbnb.com"
     },
     {
       "name": "Rina Riku",
@@ -300,6 +404,10 @@
     {
       "name": "Sajuto Tio",
       "email": "sajuto.tio@airbnb.com"
+    },
+    {
+      "name": "Samantha Kumer",
+      "email": "samantha.kumer@airbnb.com"
     },
     {
       "name": "Sara Beach",
@@ -346,15 +454,27 @@
       "email": "silvia.franco@airbnb.com"
     },
     {
+      "name": "Sojeila Payne",
+      "email": "sojeila.payne@airbnb.com"
+    },
+    {
       "name": "Sooyeon Kim",
       "email": "sooyeon.kim@ext.airbnb.com"
+    },
+    {
+      "name": "Sou T",
+      "email": "sou.tangkhapanya@airbnb.com"
+    },
+    {
+      "name": "Sou Tangkhapanya",
+      "email": "sou.tangkhapanya@airbnb.com"
     },
     {
       "name": "Stella Xu",
       "email": "stella.xu@airbnb.com"
     },
     {
-      "name": "Stephan Hamel",
+      "name": "Stephan",
       "email": "stephan.hamel@airbnb.com"
     },
     {
@@ -362,8 +482,16 @@
       "email": "stephanie.kerr@airbnb.com"
     },
     {
+      "name": "Sydney Frauen",
+      "email": "sydney.frauen@airbnb.com"
+    },
+    {
       "name": "Takako Araki",
       "email": "takako.araki@airbnb.com"
+    },
+    {
+      "name": "Tara Minogue",
+      "email": "tara.minogue@airbnb.com"
     },
     {
       "name": "Taylor Knight",
@@ -386,8 +514,16 @@
       "email": "tracy.powers@airbnb.com"
     },
     {
-      "name": "Varun Vij",
+      "name": "Tyler McColm",
+      "email": "tyler.mccolm@airbnb.com"
+    },
+    {
+      "name": "Varun",
       "email": "varun.vij@airbnb.com"
+    },
+    {
+      "name": "Vicki Fleites",
+      "email": "vicki.fleites@airbnb.com"
     },
     {
       "name": "Victoria Savarese",

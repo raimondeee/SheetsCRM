@@ -186,7 +186,7 @@ function ArchiveRow({ entry }: { entry: SendArchiveEntry }) {
             </ul>
           )}
           <div
-            className="max-h-32 overflow-y-auto rounded border border-zendesk-border bg-gray-50 p-2 text-[10px] leading-relaxed"
+            className="reply-draft-editor max-h-32 overflow-y-auto rounded border border-zendesk-border bg-gray-50 p-2 text-[10px] leading-relaxed"
             dangerouslySetInnerHTML={{ __html: entry.message || "<p><em>(empty)</em></p>" }}
           />
         </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadSheetConfig, redactThreadMessage } from "@/lib/overlay-db";
+import { redactThreadMessage, resolveSheetConfigForRowId } from "@/lib/overlay-db";
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
 import { writeCaseSummaryOnSheet } from "@/lib/sheets";
@@ -27,7 +27,7 @@ export async function POST(
 
     let sheetSyncQueued = false;
     if (process.env.USE_MOCK_DATA !== "true") {
-      const config = loadSheetConfig("default") as SheetConfig | null;
+      const config = resolveSheetConfigForRowId(ticketRowId) as SheetConfig | null;
       const parsed = parseTicketRowId(ticketRowId);
       if (config && parsed) {
         sheetSyncQueued = true;

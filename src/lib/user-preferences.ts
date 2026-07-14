@@ -17,6 +17,12 @@ export interface UserPreferences extends TimerSettings {
   sortOrder: SortOrder;
   dashboardPeriod: DashboardPeriod;
   errorLoggingEnabled: boolean;
+  /** When true, upcoming events show a full-screen reminder instead of a corner toast. */
+  calendarReminderFullscreen: boolean;
+  /** Show "Bind to selected" in the Gmail unread inbox modal. */
+  unreadInboxBindToSelectedEnabled: boolean;
+  /** Show "Append to selected" in the Gmail unread inbox modal. */
+  unreadInboxAppendToSelectedEnabled: boolean;
   externalTools: ExternalToolLink[];
 }
 
@@ -26,6 +32,9 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   sortOrder: "desc",
   dashboardPeriod: "3m",
   errorLoggingEnabled: false,
+  calendarReminderFullscreen: false,
+  unreadInboxBindToSelectedEnabled: false,
+  unreadInboxAppendToSelectedEnabled: true,
   externalTools: defaultExternalTools(),
   ...DEFAULT_TIMER_SETTINGS,
 };
@@ -59,6 +68,18 @@ export function readLegacyUserPreferences(): UserPreferences | null {
         typeof parsed.errorLoggingEnabled === "boolean"
           ? parsed.errorLoggingEnabled
           : DEFAULT_USER_PREFERENCES.errorLoggingEnabled,
+      calendarReminderFullscreen:
+        typeof parsed.calendarReminderFullscreen === "boolean"
+          ? parsed.calendarReminderFullscreen
+          : DEFAULT_USER_PREFERENCES.calendarReminderFullscreen,
+      unreadInboxBindToSelectedEnabled:
+        typeof parsed.unreadInboxBindToSelectedEnabled === "boolean"
+          ? parsed.unreadInboxBindToSelectedEnabled
+          : DEFAULT_USER_PREFERENCES.unreadInboxBindToSelectedEnabled,
+      unreadInboxAppendToSelectedEnabled:
+        typeof parsed.unreadInboxAppendToSelectedEnabled === "boolean"
+          ? parsed.unreadInboxAppendToSelectedEnabled
+          : DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
       ...normalizeTimerSettings(parsed),
     };

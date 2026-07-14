@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildDefaultSheetConfig } from "@/lib/default-sheet-config";
-import { loadSheetConfig, saveSheetConfig } from "@/lib/overlay-db";
+import { refreshWorkspaceHolidayCache } from "@/lib/business-holidays";
+import { loadSheetConfig, saveSheetConfig, loadCoverSheets } from "@/lib/overlay-db";
 import { fetchTicketsFromSheet, hasGoogleCredentials } from "@/lib/sheets";
 import { getMockTickets } from "@/lib/mock-data";
 import { migrateLegacyInitialResponseSla } from "@/lib/legacy-initial-sla-migration";
@@ -11,6 +12,11 @@ import { archiveStaleGmailLinksForTickets } from "@/lib/gmail-link-archive";
 import { mergeOverlayOntoTicket } from "@/lib/overlay-db";
 import { enrichTicketsWithLastResponse } from "@/lib/tickets-enrich";
 import { recordOpsAppEvent } from "@/lib/ops-metrics";
+import {
+  coverSourceLabelForEntry,
+  listEnabledCoverSheetEntries,
+} from "@/lib/cover-sheets";
+import { prepareSheetConfig } from "@/lib/ui-field-slots";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,11 +38,30 @@ export async function GET() {
     const useMock = process.env.USE_MOCK_DATA === "true" || !hasAuth;
     const { email } = await getSignedInUser();
     const timerSettings = loadTimerSettings(email);
+    const coverSheets = loadCoverSheets();
+    await refreshWorkspaceHolidayCache();
     let tickets = useMock
       ? getMockTickets(timerSettings)
       : await fetchTicketsFromSheet(config, timerSettings);
     if (!useMock) {
-      const archivedCount = archiveStaleGmailLinksForTickets(tickets);
+      const enabledCoverSheets = listEnabledCoverSheetEntries(coverSheets);
+      if (enabledCoverSheets.length > 0) {
+        const ownRowIds = new Set(tickets.map((ticket) => ticket.rowId));
+        for (const entry of enabledCoverSheets) {
+          if (!entry.config) continue;
+          const coverConfig = prepareSheetConfig(entry.config);
+          const coverTickets = await fetchTicketsFromSheet(coverConfig, timerSettings);
+          const label = coverSourceLabelForEntry(entry);
+          for (const ticket of coverTickets) {
+            if (ownRowIds.has(ticket.rowId)) continue;
+            tickets.push({ ...ticket, coverSourceLabel: label });
+          }
+        }
+      }
+      const archivedCount = archiveStaleGmailLinksForTickets(
+        tickets,
+        timerSettings.resolvedGmailLinkArchiveDays
+      );
       if (archivedCount > 0) {
         tickets = tickets.map((ticket) =>
           mergeOverlayOntoTicket(ticket, undefined, timerSettings)
@@ -58,6 +83,7 @@ export async function GET() {
       {
         tickets,
         config,
+        coverSheets,
         source: useMock ? "mock" : "sheets",
         hasCredentials: hasAuth,
         syncedAt: new Date().toISOString(),

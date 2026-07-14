@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import {
   getThreadMessages,
   getTicketOverlay,
-  loadSheetConfig,
+  resolveSheetConfigForRowId,
   reopenPendingOnCustomerReply,
   resolveTicketGmailOpenUrl,
+  ticketForceNewGmailThreadOnSend,
   updateTicketStatus,
 } from "@/lib/overlay-db";
 import { hasAirbnbUserIdForResolve } from "@/lib/ticket-action-validation";
@@ -65,7 +66,12 @@ export async function GET(
 
     const gmailOpenUrl = resolveTicketGmailOpenUrl(decoded);
 
-    return NextResponse.json({ messages, statusReopened, gmailOpenUrl });
+    return NextResponse.json({
+      messages,
+      statusReopened,
+      gmailOpenUrl,
+      forceNewGmailThreadOnSend: ticketForceNewGmailThreadOnSend(decoded),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Thread sync failed";
 
@@ -73,6 +79,7 @@ export async function GET(
       messages: getThreadMessages(decoded),
       warning: message,
       gmailOpenUrl: resolveTicketGmailOpenUrl(decoded),
+      forceNewGmailThreadOnSend: ticketForceNewGmailThreadOnSend(decoded),
     });
   }
 }
@@ -140,7 +147,7 @@ export async function POST(
 
     let sheetSyncQueued = false;
     if (process.env.USE_MOCK_DATA !== "true") {
-      const config = loadSheetConfig("default") as SheetConfig | null;
+      const config = resolveSheetConfigForRowId(decoded) as SheetConfig | null;
       const parsed = parseTicketRowId(decoded);
       if (config && parsed) {
         sheetSyncQueued = true;

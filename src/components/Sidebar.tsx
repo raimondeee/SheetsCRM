@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight, LayoutDashboard, Mail, Ticket } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutDashboard, Mail, Ticket, Users } from "lucide-react";
 import { DEFAULT_STATUSES } from "@/lib/types";
 import { panelTextSizes } from "@/lib/panel-density";
 import { SidebarCalendarPanel } from "./SidebarCalendarPanel";
 
-export type AppView = "tickets" | "dashboard";
+export type AppView = "tickets" | "dashboard" | "team-dashboard";
 
 interface SidebarProps {
   activeView: AppView;
@@ -53,7 +53,8 @@ export function Sidebar({
   onOpenUnreadInbox,
 }: SidebarProps) {
   const text = panelTextSizes(fontScale);
-  const inboxShortcutFromDashboard = activeView === "dashboard";
+  const inboxShortcutFromDashboard =
+    activeView === "dashboard" || activeView === "team-dashboard";
   const inboxLabel = inboxShortcutFromDashboard ? "Inbox" : "All tickets";
   const inboxStatusId = inboxShortcutFromDashboard ? "new" : "all";
   const inboxCount = counts[inboxStatusId] ?? 0;
@@ -84,6 +85,14 @@ export function Sidebar({
             className={`${sidebarIconButtonClass(activeView === "dashboard")} h-9 w-9`}
           >
             <LayoutDashboard className="h-4 w-4 text-zendesk-teal" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewChange("team-dashboard")}
+            title="Team dashboard (beta)"
+            className={`${sidebarIconButtonClass(activeView === "team-dashboard")} h-9 w-9`}
+          >
+            <Users className="h-4 w-4 text-zendesk-teal" />
           </button>
           <button
             type="button"
@@ -155,6 +164,16 @@ export function Sidebar({
           <span className="flex min-w-0 items-center gap-1.5">
             <LayoutDashboard className={`${text.icon} shrink-0 text-zendesk-teal`} />
             <span className="truncate">Dashboard</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onViewChange("team-dashboard")}
+          className={sidebarNavItemClass(activeView === "team-dashboard", text)}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Users className={`${text.icon} shrink-0 text-zendesk-teal`} />
+            <span className="truncate">Team (beta)</span>
           </span>
         </button>
         <button

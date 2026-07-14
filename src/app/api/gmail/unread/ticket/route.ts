@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { getGoogleAuthClient } from "@/lib/google-auth";
+import { importGmailThreadMessagesForTicket } from "@/lib/gmail";
+import { extractEmailFromField } from "@/lib/email-utils";
 import { loadSheetConfig, linkExistingGmailThread } from "@/lib/overlay-db";
 import { getColumnByRole } from "@/lib/column-mapper";
 import { buildGmailThreadUrl } from "@/lib/gmail-urls";
@@ -101,6 +103,17 @@ export async function POST(request: Request) {
         },
         { status: 409 }
       );
+    }
+
+    const requesterEmail =
+      fromEmail?.trim() || extractEmailFromField(from ?? "")?.trim() || "";
+    if (requesterEmail) {
+      await importGmailThreadMessagesForTicket({
+        ticketRowId: rowId,
+        threadId: trimmedThreadId,
+        requesterEmail,
+        importFullHistory: true,
+      });
     }
 
     return NextResponse.json({ ok: true, rowId, rowNumber, linked: true });

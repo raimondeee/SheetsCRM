@@ -14,26 +14,27 @@ import type { Ticket } from "./types";
 /** Pending tickets: check Gmail for customer replies every 10 minutes. */
 export const BACKGROUND_GMAIL_SYNC_PENDING_MS = 10 * 60 * 1000;
 
-/** Resolved tickets: check Gmail every 24 hours. */
+/** Resolved tickets (not closed): check Gmail every 24 hours. */
 export const BACKGROUND_GMAIL_SYNC_RESOLVED_MS = 24 * 60 * 60 * 1000;
 
 const MAX_CONCURRENT_SYNCS = 4;
 
-function syncIntervalMs(status: string): number | null {
-  const normalized = normalizeStatusId(status);
+function syncIntervalMs(ticket: Ticket): number | null {
+  const normalized = normalizeStatusId(ticket.status);
   if (normalized === "pending") return BACKGROUND_GMAIL_SYNC_PENDING_MS;
-  if (normalized === "resolved") return BACKGROUND_GMAIL_SYNC_RESOLVED_MS;
+  if (normalized === "resolved") {
+    if (ticket.resolvedClosed) return null;
+    if (!ticketHasExplicitGmailLink(ticket.rowId)) return null;
+    return BACKGROUND_GMAIL_SYNC_RESOLVED_MS;
+  }
   return null;
 }
 
 export function isTicketDueForBackgroundGmailSync(ticket: Ticket, now = Date.now()): boolean {
-  const interval = syncIntervalMs(ticket.status);
+  const interval = syncIntervalMs(ticket);
   if (!interval) return false;
   if (!ticket.requesterEmail?.trim()) return false;
   if (ticketGmailLinkIsArchived(ticket.rowId)) return false;
-  if (normalizeStatusId(ticket.status) === "resolved" && !ticketHasExplicitGmailLink(ticket.rowId)) {
-    return false;
-  }
 
   let schedule = getBackgroundGmailSyncSchedule(ticket.rowId);
   if (!schedule) {

@@ -169,11 +169,66 @@ export function buildThreadLinkNoticeBody(linkedAt: Date): string {
   );
 }
 
+export function buildThreadAppendNoticeBody(linkedAt: Date): string {
+  const dateLabel = formatLinkDateLabel(linkedAt);
+  return (
+    `Additional Gmail thread linked on ${dateLabel}. ` +
+    "Outbound replies still go to the original primary thread. " +
+    "Messages sent before this date on the new thread are not shown here — view the full history in Gmail."
+  );
+}
+
 export function buildThreadLinkUpdatedBody(linkedAt: Date): string {
   const dateLabel = formatLinkDateLabel(linkedAt);
   return (
     `Gmail thread link updated on ${dateLabel}. ` +
     "Earlier messages in this CRM thread are unchanged — view the full history in Gmail."
+  );
+}
+
+export function buildGmailResetForNewThreadBody(resetAt: Date): string {
+  const dateLabel = formatLinkDateLabel(resetAt);
+  return (
+    `Gmail link cleared on ${dateLabel} so the next outbound send starts a new email thread. ` +
+    "Imported messages from the previous thread were removed from this ticket. " +
+    "The email subject was cleared so you can enter a new one. Your reply draft body is unchanged."
+  );
+}
+
+export const GMAIL_THREAD_LINK_NOTICE_SUBJECT = "Gmail thread linked";
+export const GMAIL_THREAD_APPEND_NOTICE_SUBJECT = "Additional Gmail thread linked";
+
+const BACKFILL_NOTICE_MARKER = "Messages sent before";
+
+export function threadLinkNoticeNeedsBackfill(subject: string, body: string): boolean {
+  if (
+    subject !== GMAIL_THREAD_LINK_NOTICE_SUBJECT &&
+    subject !== GMAIL_THREAD_APPEND_NOTICE_SUBJECT
+  ) {
+    return false;
+  }
+  return body.includes(BACKFILL_NOTICE_MARKER);
+}
+
+export function buildBackfilledLinkNoticeBody(
+  subject: string,
+  linkedAtIso: string,
+  backfilledAt = new Date()
+): string {
+  const linkedLabel = formatLinkDateLabel(new Date(linkedAtIso));
+  const backfillLabel = formatLinkDateLabel(backfilledAt);
+
+  if (subject === GMAIL_THREAD_APPEND_NOTICE_SUBJECT) {
+    return (
+      `Additional Gmail thread linked on ${linkedLabel}. ` +
+      `Full history for this thread was imported on ${backfillLabel}. ` +
+      "Outbound replies still go to the original primary thread."
+    );
+  }
+
+  return (
+    `Gmail thread linked on ${linkedLabel}. ` +
+    `Full thread history was imported on ${backfillLabel}.`
   );
 }
 

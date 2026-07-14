@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -26,6 +26,7 @@ import {
 import {
   buildDashboardStats,
   chartColor,
+  DASHBOARD_CHART_INFO,
   formatHostContactReasonBreakdown,
   formatHostsByMarketManagerReport,
   formatHostsByMarketManagerReportHtml,
@@ -37,7 +38,23 @@ import {
   type WeekSeriesPoint,
 } from "@/lib/dashboard-stats";
 import type { DashboardFilter } from "@/lib/dashboard-filter";
+import type {
+  QualityAppealMetricsSnapshot,
+  ReviewEscalationMetricsSnapshot,
+} from "@/lib/dispute-appeal-stats";
+import {
+  formatAgentDashboardCsv,
+  formatAgentDashboardReportHtml,
+  formatAgentDashboardReportPlain,
+} from "@/lib/dashboard-report-export";
+import type { ServiceMetricsSnapshot } from "@/lib/service-metrics";
+import { waitForDashboardExportReady } from "@/lib/dashboard-section-pdf";
 import { IntegrationsHealthPanel } from "./IntegrationsHealthPanel";
+import { ServiceMetricsSection } from "./ServiceMetricsSection";
+import { ReviewEscalationsSection } from "./ReviewEscalationsSection";
+import { QualityAppealsSection } from "./QualityAppealsSection";
+import { ChartInfoTooltip } from "./ChartInfoTooltip";
+import { DashboardReportMenu } from "./DashboardReportMenu";
 
 interface DashboardViewProps {
   tickets: Ticket[];
@@ -48,6 +65,8 @@ interface DashboardViewProps {
   onRollingPeriodChange: (period: RollingDashboardPeriod) => void;
   onCalendarMonthChange: (monthKey: string) => void;
   onFilter?: (filter: DashboardFilter) => void;
+  userEmail?: string | null;
+  canSendEmail?: boolean;
 }
 
 export function DashboardView({
@@ -59,9 +78,17 @@ export function DashboardView({
   onRollingPeriodChange,
   onCalendarMonthChange,
   onFilter,
+  userEmail,
+  canSendEmail = false,
 }: DashboardViewProps) {
   const [marketManagerFilter, setMarketManagerFilter] = useState<string>("all");
+  const [reviewTeamFilter, setReviewTeamFilter] = useState<string>("all");
+  const [qualityAgentFilter, setQualityAgentFilter] = useState<string>("all");
+  const [serviceMetrics, setServiceMetrics] = useState<ServiceMetricsSnapshot | null>(null);
+  const [reviewMetrics, setReviewMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(null);
+  const [qualityMetrics, setQualityMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const dashboardExportRef = useRef<HTMLDivElement>(null);
 
   const stats = useMemo(
     () => buildDashboardStats(tickets, period, marketManagerFilter),
@@ -83,6 +110,65 @@ export function DashboardView({
     }
   }, [marketManagerFilter, marketManagerOptions]);
 
+  useEffect(() => {
+    setReviewTeamFilter("all");
+    setQualityAgentFilter("all");
+  }, [period, marketManagerFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const serviceParams = new URLSearchParams({ period });
+    if (marketManagerFilter !== "all") serviceParams.set("marketManager", marketManagerFilter);
+
+    const reviewParams = new URLSearchParams({ period });
+    if (marketManagerFilter !== "all") reviewParams.set("marketManager", marketManagerFilter);
+    if (reviewTeamFilter !== "all") reviewParams.set("team", reviewTeamFilter);
+
+    const qualityParams = new URLSearchParams({ period });
+    if (qualityAgentFilter !== "all") qualityParams.set("agent", qualityAgentFilter);
+
+    Promise.all([
+      fetch(`/api/dashboard/service-metrics?${serviceParams}`, { cache: "no-store" }).then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load service metrics");
+        return data as ServiceMetricsSnapshot;
+      }),
+      fetch(`/api/dashboard/review-escalation-metrics?${reviewParams}`, { cache: "no-store" }).then(
+        async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to load review escalations");
+          return data as ReviewEscalationMetricsSnapshot;
+        }
+      ),
+      fetch(`/api/dashboard/quality-appeal-metrics?${qualityParams}`, { cache: "no-store" }).then(
+        async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to load quality appeals");
+          return data as QualityAppealMetricsSnapshot;
+        }
+      ),
+    ])
+      .then(([service, review, quality]) => {
+        if (!cancelled) {
+          setServiceMetrics(service);
+          setReviewMetrics(review);
+          setQualityMetrics(quality);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setServiceMetrics(null);
+          setReviewMetrics(null);
+          setQualityMetrics(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [period, marketManagerFilter, reviewTeamFilter, qualityAgentFilter]);
+
   const dashFilter = useCallback(
     (fields: Omit<DashboardFilter, "period"> = {}) => {
       const mm =
@@ -96,6 +182,41 @@ export function DashboardView({
     },
     [period, marketManagerFilter]
   );
+
+  const reportFilters = useMemo(
+    () => ({
+      periodLabel: periodNote,
+      marketManager: marketManagerFilter,
+    }),
+    [periodNote, marketManagerFilter]
+  );
+
+  const exportSections = useMemo(
+    () => ({
+      service: serviceMetrics,
+      review: reviewMetrics,
+      quality: qualityMetrics,
+    }),
+    [serviceMetrics, reviewMetrics, qualityMetrics]
+  );
+
+  const csvFilename = useMemo(
+    () => `agent-dashboard-${period}.csv`.replace(/[^a-z0-9._-]+/gi, "-"),
+    [period]
+  );
+
+  const pdfFilename = useMemo(
+    () => `agent-dashboard-${period}.pdf`.replace(/[^a-z0-9._-]+/gi, "-"),
+    [period]
+  );
+
+  const preparePdfExport = useCallback(async () => {
+    await waitForDashboardExportReady(dashboardExportRef.current);
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }, []);
 
   async function copyHostsReport() {
     const reportParams = {
@@ -190,6 +311,22 @@ export function DashboardView({
               ))}
             </select>
           </label>
+          <DashboardReportMenu
+            csvFilename={csvFilename}
+            pdfFilename={pdfFilename}
+            pdfTargetRef={dashboardExportRef}
+            preparePdfExport={preparePdfExport}
+            buildCsv={() => formatAgentDashboardCsv(stats, reportFilters, exportSections)}
+            buildPlainReport={() =>
+              formatAgentDashboardReportPlain(stats, reportFilters, exportSections)
+            }
+            buildHtmlReport={() =>
+              formatAgentDashboardReportHtml(stats, reportFilters, exportSections)
+            }
+            sendReportParams={{ dashboard: "main", period, marketManager: marketManagerFilter }}
+            userEmail={userEmail}
+            canSendEmail={canSendEmail}
+          />
           <p className="text-xs text-zendesk-muted">
             {stats.periodTicketCount.toLocaleString()} in period
             {marketManagerFilter !== "all" ? ` · ${marketManagerFilter}` : ""} ·{" "}
@@ -198,15 +335,24 @@ export function DashboardView({
         </div>
       </div>
 
+      <div ref={dashboardExportRef} className="w-full min-w-0 space-y-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <ChartCard title="Contact Reason" subtitle={`${periodNote} · click to filter`}>
+        <ChartCard
+          title="Contact Reason"
+          subtitle={`${periodNote} · click to filter`}
+          info={DASHBOARD_CHART_INFO.contactReason}
+        >
           <PieChartBlock
             data={stats.contactReasonBreakdown.slice(0, 10)}
             onSliceClick={(name) => onFilter?.(dashFilter({ contactReason: name }))}
           />
         </ChartCard>
 
-        <ChartCard title="Contacts by MM" subtitle={`${periodNote} · click to filter`}>
+        <ChartCard
+          title="Contacts by MM"
+          subtitle={`${periodNote} · click to filter`}
+          info={DASHBOARD_CHART_INFO.marketManager}
+        >
           {singleMarketManagerView ? (
             <ChangeMmFilterPlaceholder />
           ) : (
@@ -217,7 +363,11 @@ export function DashboardView({
           )}
         </ChartCard>
 
-        <ChartCard title="Contact Reason by Week" subtitle={`${periodNote} · click a week`}>
+        <ChartCard
+          title="Contact Reason by Week"
+          subtitle={`${periodNote} · click a week`}
+          info={DASHBOARD_CHART_INFO.contactReasonByWeek}
+        >
           <StackedWeekChart
             data={stats.contactReasonByWeek}
             keys={stats.contactReasonWeekKeys}
@@ -234,7 +384,11 @@ export function DashboardView({
           />
         </ChartCard>
 
-        <ChartCard title="Contact Reason by MM" subtitle={`${periodNote} · click an MM`}>
+        <ChartCard
+          title="Contact Reason by MM"
+          subtitle={`${periodNote} · click an MM`}
+          info={DASHBOARD_CHART_INFO.contactReasonByMm}
+        >
           {singleMarketManagerView ? (
             <ChangeMmFilterPlaceholder />
           ) : (
@@ -245,7 +399,11 @@ export function DashboardView({
           )}
         </ChartCard>
 
-        <ChartCard title="Cases by Week" subtitle={`${periodNote} · click a point`}>
+        <ChartCard
+          title="Cases by Week"
+          subtitle={`${periodNote} · click a point`}
+          info={DASHBOARD_CHART_INFO.casesByWeek}
+        >
           <ResponsiveContainer width="100%" height={220}>
             <LineChart
               data={stats.casesByWeek}
@@ -263,7 +421,11 @@ export function DashboardView({
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Cases by Month" subtitle={`${periodNote} · click a month`}>
+        <ChartCard
+          title="Cases by Month"
+          subtitle={`${periodNote} · click a month`}
+          info={DASHBOARD_CHART_INFO.casesByMonth}
+        >
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
               data={stats.casesByMonth}
@@ -285,7 +447,11 @@ export function DashboardView({
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Status by Week" subtitle={`${periodNote} · click a bar`}>
+        <ChartCard
+          title="Status by Week"
+          subtitle={`${periodNote} · click a bar`}
+          info={DASHBOARD_CHART_INFO.statusByWeek}
+        >
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
               data={stats.statusByWeek}
@@ -311,7 +477,11 @@ export function DashboardView({
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Top Host Contacts" subtitle={`${periodNote} · click a host`}>
+        <ChartCard
+          title="Top Host Contacts"
+          subtitle={`${periodNote} · click a host`}
+          info={DASHBOARD_CHART_INFO.topHosts}
+        >
           <HorizontalBarChart
             data={stats.topRegionalHosts}
             onBarClick={(name) => {
@@ -327,6 +497,7 @@ export function DashboardView({
           subtitle={periodNote}
           className="flex cursor-pointer flex-col justify-center"
           onClick={() => onFilter?.(dashFilter())}
+          info={DASHBOARD_CHART_INFO.ticketsInPeriod}
         >
           <p className="text-center text-5xl font-bold tracking-tight text-zendesk-navy">
             {stats.periodTicketCount.toLocaleString()}
@@ -337,61 +508,70 @@ export function DashboardView({
         </ChartCard>
 
         <section className="rounded-lg border border-zendesk-border bg-white p-4 shadow-sm xl:col-span-2">
-          <header className="mb-3 flex items-start justify-between gap-3 border-b border-zendesk-border/60 pb-2">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-zendesk-navy">
-                Top hosts by Market Manager
-              </h2>
-              <p className="text-xs text-zendesk-muted">
-                {periodNote}
-                {marketManagerFilter === "all"
-                  ? " · all market managers in period"
-                  : ` · ${marketManagerFilter}`}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void copyHostsReport()}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50"
-              title="Copy report for email or Slack"
-            >
-              <Copy className="h-3.5 w-3.5" />
-              {copyState === "copied"
-                ? "Copied"
-                : copyState === "error"
-                  ? "Copy failed"
-                  : "Copy"}
-            </button>
-          </header>
-          <HostsByMMReport
-            data={stats.topHostsByMarketManager}
-            onHostClick={(mm, host) => {
-              const emailMatch = host.match(/\(([^)]+)\)$/);
-              onFilter?.(
-                dashFilter({
-                  marketManager: mm,
-                  ...(emailMatch ? { requesterEmail: emailMatch[1] } : { requesterName: host }),
-                })
-              );
-            }}
-          />
-        </section>
+            <header className="mb-3 flex items-start justify-between gap-3 border-b border-zendesk-border/60 pb-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-zendesk-navy">
+                    Top hosts by Market Manager
+                  </h2>
+                  <ChartInfoTooltip title="Top hosts by Market Manager">
+                    {DASHBOARD_CHART_INFO.topHostsByMm}
+                  </ChartInfoTooltip>
+                </div>
+                <p className="text-xs text-zendesk-muted">
+                  {periodNote}
+                  {singleMarketManagerView
+                    ? ` · ${marketManagerFilter}`
+                    : " · all market managers in period"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void copyHostsReport()}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50"
+                title="Copy report for email or Slack"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {copyState === "copied"
+                  ? "Copied"
+                  : copyState === "error"
+                    ? "Copy failed"
+                    : "Copy"}
+              </button>
+            </header>
+            <HostsByMMReport
+              data={stats.topHostsByMarketManager}
+              onHostClick={(mm, host) => {
+                const emailMatch = host.match(/\(([^)]+)\)$/);
+                onFilter?.(
+                  dashFilter({
+                    marketManager: mm,
+                    ...(emailMatch ? { requesterEmail: emailMatch[1] } : { requesterName: host }),
+                  })
+                );
+              }}
+            />
+          </section>
+      </div>
 
-        <ChartCard title="Overturn Rate" subtitle={`by agent · ${periodNote}`}>
-          {stats.overturnByAgent.length > 0 ? (
-            <GroupedYesNoChart data={stats.overturnByAgent} />
-          ) : (
-            <EmptyAppealHint detected={stats.appealFieldsDetected} label="overturn" />
-          )}
-        </ChartCard>
+      <div className="space-y-4">
+        <ServiceMetricsSection period={period} marketManager={marketManagerFilter} />
 
-        <ChartCard title="Appeal Approval Rate CS vs Policy" subtitle={periodNote} className="xl:col-span-2">
-          {stats.appealCsVsPolicy.length > 0 ? (
-            <GroupedYesNoChart data={stats.appealCsVsPolicy} layout="pair" />
-          ) : (
-            <EmptyAppealHint detected={stats.appealFieldsDetected} label="CS / Policy" />
-          )}
-        </ChartCard>
+        <ReviewEscalationsSection
+          period={period}
+          marketManager={marketManagerFilter}
+          teamFilter={reviewTeamFilter}
+          onTeamFilterChange={setReviewTeamFilter}
+          showSectionExport={false}
+        />
+
+        <QualityAppealsSection
+          period={period}
+          agentFilter={qualityAgentFilter}
+          onAgentFilterChange={setQualityAgentFilter}
+          showSectionExport={false}
+        />
+      </div>
       </div>
 
       <div className="mt-4">
@@ -467,21 +647,29 @@ function ChartCard({
   children,
   className = "",
   onClick,
+  info,
+  exportExclude = false,
 }: {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  info?: string;
+  exportExclude?: boolean;
 }) {
   return (
     <section
       onClick={onClick}
+      data-export-exclude={exportExclude ? "true" : undefined}
       className={`rounded-lg border border-zendesk-border bg-white p-4 shadow-sm ${className}`}
     >
-      <header className="mb-3 border-b border-zendesk-border/60 pb-2">
-        <h2 className="text-sm font-semibold text-zendesk-navy">{title}</h2>
-        {subtitle && <p className="text-xs text-zendesk-muted">{subtitle}</p>}
+      <header className="mb-3 flex items-start justify-between gap-2 border-b border-zendesk-border/60 pb-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-zendesk-navy">{title}</h2>
+          {subtitle && <p className="text-xs text-zendesk-muted">{subtitle}</p>}
+        </div>
+        {info ? <ChartInfoTooltip title={title}>{info}</ChartInfoTooltip> : null}
       </header>
       {children}
     </section>
@@ -652,58 +840,5 @@ function HorizontalBarChart({
         <Bar dataKey="value" fill="#17494d" radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
-  );
-}
-
-function GroupedYesNoChart({
-  data,
-  layout = "wide",
-}: {
-  data: StackedGroup[];
-  layout?: "wide" | "pair";
-}) {
-  const chartData = data.map((g) => ({
-    name: g.key,
-    Yes: g.segments.find((s) => s.name === "Yes")?.value ?? 0,
-    No: g.segments.find((s) => s.name === "No")?.value ?? 0,
-  }));
-
-  const height = layout === "pair" ? 220 : 260;
-
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={chartData} margin={{ bottom: layout === "wide" ? 60 : 20 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-        <XAxis
-          dataKey="name"
-          tick={{ fontSize: 9 }}
-          interval={0}
-          angle={layout === "wide" ? -35 : 0}
-          textAnchor={layout === "wide" ? "end" : "middle"}
-          height={layout === "wide" ? 70 : 30}
-        />
-        <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-        <Tooltip />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
-        <Bar dataKey="No" fill="#c7243a" />
-        <Bar dataKey="Yes" fill="#1f73b7" />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-function EmptyAppealHint({
-  detected,
-  label = "appeal",
-}: {
-  detected: boolean;
-  label?: string;
-}) {
-  return (
-    <p className="py-10 text-center text-sm text-zendesk-muted">
-      {detected
-        ? `No ${label} breakdown in this period — check column headers match SA / overturn / CS fields.`
-        : `No ${label} columns detected. Map appeal-related columns in Setup or add headers like SA, Overturn, Appeal Decision.`}
-    </p>
   );
 }

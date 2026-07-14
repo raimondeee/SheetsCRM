@@ -77,10 +77,6 @@ export interface DashboardStats {
   statusByWeek: WeekSeriesPoint[];
   topRegionalHosts: CountItem[];
   topHostsByMarketManager: HostsByMarketManagerGroup[];
-  appealsBySA: StackedGroup[];
-  overturnByAgent: StackedGroup[];
-  appealCsVsPolicy: StackedGroup[];
-  appealFieldsDetected: boolean;
 }
 
 export function filterTicketsByPeriod(
@@ -99,6 +95,29 @@ export function filterTicketsByMarketManager(
     (ticket) => shortMarketManagerLabel(ticket.marketManager) === marketManager
   );
 }
+
+export const DASHBOARD_CHART_INFO = {
+  contactReason:
+    "Shows why hosts contacted you in the selected period. Each slice is a contact reason from the intake sheet. Click a slice to filter the ticket list.",
+  marketManager:
+    "Shows how many tickets each Market Manager is associated with in this period. Click a slice to filter by that person.",
+  contactReasonByWeek:
+    "Stacked bars of contact reasons per week. Tickets are grouped by sheet submission date. Click a segment to filter that week and reason.",
+  contactReasonByMm:
+    "Share of contact reasons within each Market Manager (100% stacked). Click a bar to filter by that Market Manager.",
+  casesByWeek:
+    "How many new intakes arrived each week, based on the sheet submission date in the selected period.",
+  casesByMonth:
+    "Monthly intake volume from the sheet submission date. Click a bar to filter that month.",
+  statusByWeek:
+    "Of tickets submitted each week, how many are marked resolved vs still pending/open on the sheet. This reads sheet status text, not CRM overlay status.",
+  topHosts:
+    "Hosts (requesters) with the most tickets in the period. Click a bar to filter the list to that host.",
+  ticketsInPeriod:
+    "Total tickets whose sheet submission date falls in the selected period, compared to all tickets ever loaded.",
+  topHostsByMm:
+    "Top hosts per Market Manager with a breakdown of their contact reasons. Copy exports a formatted report.",
+} as const;
 
 export function buildDashboardStats(
   tickets: Ticket[],
@@ -148,9 +167,6 @@ export function buildDashboardStats(
     hostsMarketManagers,
     HOSTS_PER_MARKET_MANAGER
   );
-  const appealsBySA = buildAppealStacks(inPeriod, "sa");
-  const overturnByAgent = buildAppealStacks(inPeriod, "overturn");
-  const appealCsVsPolicy = buildAppealStacks(inPeriod, "csPolicy");
 
   return {
     period,
@@ -167,11 +183,6 @@ export function buildDashboardStats(
     statusByWeek,
     topRegionalHosts,
     topHostsByMarketManager,
-    appealsBySA: appealsBySA.groups,
-    overturnByAgent: overturnByAgent.groups,
-    appealCsVsPolicy: appealCsVsPolicy.groups,
-    appealFieldsDetected:
-      appealsBySA.detected || overturnByAgent.detected || appealCsVsPolicy.detected,
   };
 }
 
@@ -524,112 +535,6 @@ function buildGroupedStack(
     const total = segments.reduce((sum, s) => sum + s.value, 0);
     return { key, segments, total };
   });
-}
-
-function getRawField(ticket: Ticket, headerPatterns: RegExp[]): string {
-  for (const [header, value] of Object.entries(ticket.raw)) {
-    if (!value?.trim()) continue;
-    if (headerPatterns.some((p) => p.test(header))) return value.trim();
-  }
-  return "";
-}
-
-function parseYesNo(value: string): "yes" | "no" | null {
-  const v = value.trim().toLowerCase();
-  if (!v) return null;
-  if (/^(yes|y|approved|approve|true|1)$/i.test(v) || /approved/i.test(v)) return "yes";
-  if (/^(no|n|denied|deny|false|0)$/i.test(v) || /denied/i.test(v)) return "no";
-  return null;
-}
-
-function buildAppealStacks(
-  tickets: Ticket[],
-  kind: "sa" | "overturn" | "csPolicy"
-): { groups: StackedGroup[]; detected: boolean } {
-  const map = new Map<string, { yes: number; no: number }>();
-  let detected = false;
-
-  for (const ticket of tickets) {
-    let groupKey = "";
-    let outcomeRaw = "";
-
-    if (kind === "sa") {
-      groupKey = getRawField(ticket, [/^sa$/i, /specialist/i, /appeals?\s*sa/i]);
-      outcomeRaw = getRawField(ticket, [
-        /appeal.*(decision|status|outcome)/i,
-        /^approved$/i,
-        /approval/i,
-      ]);
-      if (!outcomeRaw) {
-        outcomeRaw = getRawField(ticket, [/approved/i, /denied/i]);
-      }
-    } else if (kind === "overturn") {
-      groupKey = getRawField(ticket, [/agent/i, /handled by/i, /assigned to/i, /owner/i]);
-      if (!groupKey) groupKey = normalizeLabel(ticket.requesterName, "");
-      outcomeRaw = getRawField(ticket, [/overturn/i]);
-    } else {
-      groupKey = getRawField(ticket, [/cs.*policy/i, /appeal.*type/i, /team type/i, /category/i]);
-      outcomeRaw = getRawField(ticket, [
-        /appeal.*(decision|status|outcome)/i,
-        /approval/i,
-        /approved/i,
-      ]);
-    }
-
-    if (!groupKey) continue;
-    detected = true;
-
-    let outcome = parseYesNo(outcomeRaw);
-    if (!outcome && kind === "sa") {
-      if (/approved/i.test(outcomeRaw)) outcome = "yes";
-      else if (/denied/i.test(outcomeRaw)) outcome = "no";
-    }
-    if (!outcome) continue;
-
-    if (!map.has(groupKey)) map.set(groupKey, { yes: 0, no: 0 });
-    const bucket = map.get(groupKey)!;
-    if (outcome === "yes") bucket.yes += 1;
-    else bucket.no += 1;
-  }
-
-  const groups = [...map.entries()]
-    .map(([key, counts]) => ({
-      key,
-      segments: [
-        { name: kind === "sa" ? "Approved" : "Yes", value: counts.yes },
-        { name: kind === "sa" ? "Denied" : "No", value: counts.no },
-      ],
-      total: counts.yes + counts.no,
-    }))
-    .filter((g) => g.total > 0)
-    .sort((a, b) => b.total - a.total);
-
-  if (kind === "overturn") {
-    return { groups: groups.slice(0, 15), detected };
-  }
-  if (kind === "csPolicy") {
-    const normalized = new Map<string, { yes: number; no: number }>();
-    for (const g of groups) {
-      const cat = /policy/i.test(g.key) ? "Policy" : /cs/i.test(g.key) ? "CS" : g.key;
-      if (!normalized.has(cat)) normalized.set(cat, { yes: 0, no: 0 });
-      const bucket = normalized.get(cat)!;
-      bucket.yes += g.segments.find((s) => s.name === "Yes")?.value ?? 0;
-      bucket.no += g.segments.find((s) => s.name === "No")?.value ?? 0;
-    }
-    return {
-      groups: [...normalized.entries()].map(([key, counts]) => ({
-        key,
-        segments: [
-          { name: "Yes", value: counts.yes },
-          { name: "No", value: counts.no },
-        ],
-        total: counts.yes + counts.no,
-      })),
-      detected,
-    };
-  }
-
-  return { groups, detected };
 }
 
 export function chartColor(index: number): string {

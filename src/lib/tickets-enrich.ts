@@ -1,8 +1,11 @@
+import { loadWorkspaceBusinessHours } from "./business-hours-loader";
+import { loadPauseIntervalsMap } from "./business-time-pauses";
 import { DEFAULT_TIMER_SETTINGS, type TimerSettings } from "./timer-settings";
 import type { Ticket } from "./types";
 import { resolveLastResponseAt } from "./ticket-activity";
 import { needsInitialResponse, ticketHasOutboundResponse } from "./ticket-priority";
 import {
+  getFirstInboundAtMap,
   getInitialResponseSlaClearedTicketIds,
   getLastThreadResponseMap,
   getOutboundTicketIds,
@@ -15,6 +18,10 @@ export function enrichTicketsWithLastResponse(
   const threadLast = getLastThreadResponseMap();
   const outboundIds = getOutboundTicketIds();
   const clearedIds = getInitialResponseSlaClearedTicketIds();
+  const businessHours = loadWorkspaceBusinessHours();
+  const now = new Date();
+  const pauseMap = loadPauseIntervalsMap(now);
+  const firstInboundMap = getFirstInboundAtMap();
 
   return tickets.map((ticket) => {
     const withResponse = {
@@ -25,7 +32,13 @@ export function enrichTicketsWithLastResponse(
       needsInitialResponse(
         withResponse,
         outboundIds,
-        timerSettings.initialResponseHours
+        timerSettings.initialResponseHours,
+        {
+          businessHours,
+          pauses: pauseMap.get(ticket.rowId) ?? [],
+          firstInboundAt: firstInboundMap.get(ticket.rowId) ?? null,
+          now,
+        }
       ) && !clearedIds.has(ticket.rowId);
     return {
       ...withResponse,

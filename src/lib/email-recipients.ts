@@ -1,3 +1,4 @@
+import type { MarketManager } from "./market-managers";
 import type { ThreadMessage } from "./types";
 import { extractEmailFromField } from "./email-utils";
 
@@ -103,4 +104,49 @@ export function buildOutboundCc(
 export function buildOutboundBcc(bccDraft: string): string | null {
   const parts = parseRecipientList(bccDraft);
   return parts.length ? joinRecipientList(parts) : null;
+}
+
+/** Recipient token being edited at the text cursor (after the last comma/semicolon). */
+export function currentRecipientFragment(value: string, cursorIndex = value.length): string {
+  const before = value.slice(0, cursorIndex);
+  const match = before.match(/(?:^|[,;]\s*)([^,;]*)$/);
+  return (match?.[1] ?? "").trim();
+}
+
+/** Replace the in-progress recipient token with a chosen email address. */
+export function commitRecipientSuggestion(
+  value: string,
+  cursorIndex: number,
+  email: string
+): string {
+  const trimmedEmail = email.trim();
+  if (!trimmedEmail) return value;
+
+  const before = value.slice(0, cursorIndex);
+  const after = value.slice(cursorIndex);
+  const prefixMatch = before.match(/^(.*?)([,;]\s*)?[^,;]*$/);
+  const base = (prefixMatch?.[1] ?? "").replace(/[,;]\s*$/, "").trim();
+  const trailing = after.replace(/^[^,;]*/, "");
+  const withoutPartial = [base, trailing.replace(/^[,;]\s*/, "")].filter(Boolean).join(", ");
+  return appendRecipient(withoutPartial, trimmedEmail);
+}
+
+export function filterMarketManagerSuggestions(
+  managers: MarketManager[],
+  draft: string,
+  cursorIndex: number,
+  limit = 8
+): MarketManager[] {
+  const fragment = currentRecipientFragment(draft, cursorIndex).toLowerCase();
+  const existing = new Set(parseRecipientList(draft).map((part) => part.toLowerCase()));
+
+  return managers
+    .filter((manager) => {
+      const email = manager.email.trim().toLowerCase();
+      if (!email || existing.has(email)) return false;
+      if (!fragment) return true;
+      const name = manager.name.trim().toLowerCase();
+      return name.includes(fragment) || email.includes(fragment);
+    })
+    .slice(0, limit);
 }

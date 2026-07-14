@@ -9,7 +9,7 @@ export function getSalesforceSearchBaseUrl(): string {
   );
 }
 
-/** Unified search URL — query is typically the value from sheet Column D. */
+/** Unified search URL — manual sidebar User ID, else intake form header field. */
 export function buildSalesforceUnifiedSearchUrl(query: string): string | null {
   const trimmed = query.trim();
   if (!trimmed) return null;

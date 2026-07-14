@@ -8,10 +8,12 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { compactDraftBlockSpacing, isRichTextEmpty } from "@/lib/html-utils";
 import {
+  AlignVerticalSpaceAround,
   Bold,
   ChevronDown,
   IndentDecrease,
@@ -24,17 +26,38 @@ import {
   Underline,
 } from "lucide-react";
 
+/** Gmail-style relative presets (approximate px equivalents). */
 const FONT_SIZES = [
-  { label: "Small", value: "13px" },
+  { label: "Small", value: "10px" },
   { label: "Normal", value: "14px" },
-  { label: "Large", value: "16px" },
-  { label: "X-Large", value: "18px" },
+  { label: "Large", value: "18px" },
+  { label: "Huge", value: "32px" },
 ] as const;
+
+const TEXT_COLORS = [
+  { label: "Black", value: "#000000" },
+  { label: "Blue", value: "#2563eb" },
+  { label: "Red", value: "#dc2626" },
+  { label: "Grey", value: "#6b7280" },
+] as const;
+
+const LINE_SPACINGS = [
+  { label: "Normal", value: "normal" },
+  { label: "1.15", value: "1.15" },
+  { label: "1.5", value: "1.5" },
+  { label: "Double", value: "2" },
+] as const;
+
+const BLOCK_TAGS = new Set(["P", "DIV", "LI", "H1", "H2", "H3", "H4", "H5", "H6"]);
+
+const DEFAULT_TEXT_COLOR = TEXT_COLORS[0].value;
 
 export interface ReplyDraftEditorHandle {
   focus: () => void;
   /** Sync contentEditable DOM into parent state; returns current HTML. */
   flush: () => string;
+  /** Replace the entire editor contents (e.g. applying a Mixmax template). */
+  replaceHtml: (html: string) => void;
   /** Insert HTML at the saved cursor, or at the end if the editor is not focused. */
   insertHtmlAtCursor: (html: string) => void;
 }
@@ -47,6 +70,8 @@ interface ReplyDraftEditorProps {
   placeholder?: string;
   /** Fill space between header and send actions instead of a fixed expanded height. */
   fillAvailable?: boolean;
+  /** When true with fillAvailable, use flex height even when the editor is not focused. */
+  alwaysExpand?: boolean;
   onDraftInGmail?: () => void;
 }
 
@@ -122,6 +147,173 @@ function placeCaretAfter(node: Node) {
   selection.addRange(after);
 }
 
+function wrapRangeInStyledSpan(
+  range: Range,
+  styles: Partial<CSSStyleDeclaration>
+): HTMLSpanElement {
+  const span = document.createElement("span");
+  Object.assign(span.style, styles);
+
+  if (range.collapsed) {
+    span.appendChild(document.createTextNode("\u200B"));
+    range.insertNode(span);
+    const selection = window.getSelection();
+    if (selection) {
+      const caret = document.createRange();
+      caret.selectNodeContents(span);
+      caret.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(caret);
+    }
+    return span;
+  }
+
+  const contents = range.extractContents();
+  span.appendChild(contents);
+  range.insertNode(span);
+  selectNodeContents(span);
+  return span;
+}
+
+function selectNodeContents(node: Node) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const next = document.createRange();
+  next.selectNodeContents(node);
+  selection.removeAllRanges();
+  selection.addRange(next);
+}
+
+function getTextNodesInRange(range: Range): Text[] {
+  const ancestor =
+    range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentNode
+      : range.commonAncestorContainer;
+  if (!ancestor) return [];
+
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT);
+  let current: Node | null;
+  while ((current = walker.nextNode())) {
+    const text = current as Text;
+    if (!text.data) continue;
+    if (!range.intersectsNode(text)) continue;
+    nodes.push(text);
+  }
+  return nodes;
+}
+
+function applyFontSizeToTextNode(textNode: Text, range: Range, size: string) {
+  let start = 0;
+  let end = textNode.length;
+  if (textNode === range.startContainer) start = range.startOffset;
+  if (textNode === range.endContainer) end = range.endOffset;
+  if (start >= end) return;
+
+  const nodeRange = document.createRange();
+  nodeRange.setStart(textNode, start);
+  nodeRange.setEnd(textNode, end);
+
+  const span = document.createElement("span");
+  span.style.fontSize = size;
+  const contents = nodeRange.extractContents();
+  span.appendChild(contents);
+  nodeRange.insertNode(span);
+}
+
+function applyFontSizeToRange(range: Range, size: string) {
+  if (range.collapsed) {
+    wrapRangeInStyledSpan(range, { fontSize: size });
+    return;
+  }
+
+  const textNodes = getTextNodesInRange(range);
+  if (textNodes.length === 0) return;
+
+  if (textNodes.length === 1) {
+    applyFontSizeToTextNode(textNodes[0], range, size);
+    return;
+  }
+
+  for (const textNode of [...textNodes].reverse()) {
+    applyFontSizeToTextNode(textNode, range, size);
+  }
+}
+
+function isBlockElement(node: Node): node is HTMLElement {
+  return node instanceof HTMLElement && BLOCK_TAGS.has(node.tagName);
+}
+
+function getBlockElementsInRange(range: Range, editor: HTMLElement): HTMLElement[] {
+  const candidates: HTMLElement[] = [];
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT);
+
+  let current: Node | null;
+  while ((current = walker.nextNode())) {
+    const element = current as HTMLElement;
+    if (!BLOCK_TAGS.has(element.tagName)) continue;
+    if (range.intersectsNode(element)) candidates.push(element);
+  }
+
+  if (candidates.length === 0) {
+    let node: Node | null = range.commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+    while (node && node !== editor) {
+      if (isBlockElement(node)) {
+        candidates.push(node);
+        break;
+      }
+      node = node.parentNode;
+    }
+  }
+
+  return candidates.filter(
+    (block) => !candidates.some((other) => other !== block && other.contains(block))
+  );
+}
+
+function clearInlineLineHeight(element: HTMLElement) {
+  element.style.lineHeight = "";
+  if (!element.getAttribute("style")?.trim()) {
+    element.removeAttribute("style");
+  }
+}
+
+function stripLineHeightFromTree(root: HTMLElement) {
+  clearInlineLineHeight(root);
+  for (const descendant of root.querySelectorAll("[style]")) {
+    clearInlineLineHeight(descendant as HTMLElement);
+  }
+}
+
+function applyLineHeightToBlock(block: HTMLElement, lineHeight: string) {
+  if (lineHeight === "normal") {
+    stripLineHeightFromTree(block);
+    return;
+  }
+
+  block.style.lineHeight = lineHeight;
+  for (const descendant of block.querySelectorAll("[style*='line-height']")) {
+    clearInlineLineHeight(descendant as HTMLElement);
+  }
+}
+
+function applyLineSpacingToRange(range: Range, editor: HTMLElement, lineHeight: string) {
+  const blocks = getBlockElementsInRange(range, editor);
+  if (blocks.length === 0) {
+    if (lineHeight === "normal") {
+      stripLineHeightFromTree(editor);
+    } else {
+      wrapRangeInStyledSpan(range, { lineHeight });
+    }
+    return;
+  }
+
+  for (const block of blocks) {
+    applyLineHeightToBlock(block, lineHeight);
+  }
+}
+
 function wrapRangeWithLink(range: Range, href: string): HTMLAnchorElement {
   const anchor = document.createElement("a");
   anchor.href = href;
@@ -152,18 +344,34 @@ function linkShortcutLabel(): string {
 
 export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEditorProps>(
   function ReplyDraftEditor(
-    { value, onChange, focused, onFocusChange, placeholder, fillAvailable = false, onDraftInGmail },
+    {
+      value,
+      onChange,
+      focused,
+      onFocusChange,
+      placeholder,
+      fillAvailable = false,
+      alwaysExpand = false,
+      onDraftInGmail,
+    },
     ref
   ) {
     const composerRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<HTMLDivElement>(null);
     const sizeMenuRef = useRef<HTMLDivElement>(null);
+    const colorMenuRef = useRef<HTMLDivElement>(null);
+    const lineSpacingMenuRef = useRef<HTMLDivElement>(null);
     const linkDialogRef = useRef<HTMLDivElement>(null);
     const linkUrlInputRef = useRef<HTMLInputElement>(null);
     const savedSelectionRef = useRef<Range | null>(null);
     const linkDialogOpenRef = useRef(false);
     const lastValueRef = useRef(value);
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
     const [sizeMenuOpen, setSizeMenuOpen] = useState(false);
+    const [colorMenuOpen, setColorMenuOpen] = useState(false);
+    const [lineSpacingMenuOpen, setLineSpacingMenuOpen] = useState(false);
+    const [textColor, setTextColor] = useState(DEFAULT_TEXT_COLOR);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState("");
     const [linkHasSelection, setLinkHasSelection] = useState(false);
@@ -172,38 +380,48 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       const editor = editorRef.current;
       if (!editor) return;
 
+      const normalized = compactDraftBlockSpacing(value);
+
       if (document.activeElement === editor) {
-        // Parent re-rendered during typing (e.g. ticket refresh) — keep live DOM + cursor.
-        lastValueRef.current = editor.innerHTML;
+        const editorEmpty = isRichTextEmpty(editor.innerHTML);
+        const valueEmpty = isRichTextEmpty(normalized);
+        // While typing, the DOM is authoritative — parent re-renders (e.g. sync
+        // countdown ticks) must not clobber innerHTML and reset the caret.
+        if (!valueEmpty || editorEmpty) {
+          return;
+        }
+      } else if (normalized === lastValueRef.current) {
         return;
       }
 
-      if (value === lastValueRef.current) return;
-      const normalized = compactDraftBlockSpacing(value);
       lastValueRef.current = normalized;
       if (editor.innerHTML !== normalized) {
         editor.innerHTML = normalized;
         updateEmptyState(normalized);
       }
       if (normalized !== value) {
-        onChange(normalized);
+        onChangeRef.current(normalized);
       }
-    }, [value, onChange]);
+    }, [value]);
 
     useEffect(() => {
-      if (!sizeMenuOpen && !linkDialogOpen) return;
+      if (!sizeMenuOpen && !colorMenuOpen && !lineSpacingMenuOpen && !linkDialogOpen) return;
 
       function handlePointerDown(event: MouseEvent) {
         const target = event.target as Node;
         if (sizeMenuOpen && sizeMenuRef.current?.contains(target)) return;
+        if (colorMenuOpen && colorMenuRef.current?.contains(target)) return;
+        if (lineSpacingMenuOpen && lineSpacingMenuRef.current?.contains(target)) return;
         if (linkDialogOpen && linkDialogRef.current?.contains(target)) return;
         setSizeMenuOpen(false);
+        setColorMenuOpen(false);
+        setLineSpacingMenuOpen(false);
         setLinkDialogOpen(false);
       }
 
       document.addEventListener("mousedown", handlePointerDown);
       return () => document.removeEventListener("mousedown", handlePointerDown);
-    }, [sizeMenuOpen, linkDialogOpen]);
+    }, [sizeMenuOpen, colorMenuOpen, lineSpacingMenuOpen, linkDialogOpen]);
 
     useEffect(() => {
       linkDialogOpenRef.current = linkDialogOpen;
@@ -264,6 +482,19 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       saveSelection();
     }
 
+    function replaceHtml(html: string) {
+      const normalized = compactDraftBlockSpacing(html);
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      lastValueRef.current = normalized;
+      if (editor.innerHTML !== normalized) {
+        editor.innerHTML = normalized;
+        updateEmptyState(normalized);
+      }
+      onChange(normalized);
+    }
+
     function insertHtmlAtCursor(html: string) {
       const normalized = compactDraftBlockSpacing(html);
       const editor = editorRef.current;
@@ -316,6 +547,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
         syncContent();
         return editorRef.current?.innerHTML ?? "";
       },
+      replaceHtml,
       insertHtmlAtCursor,
     }));
 
@@ -356,6 +588,8 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       setLinkHasSelection(selectedText.trim().length > 0);
       setLinkUrl(existingAnchor?.getAttribute("href") ?? "");
       setSizeMenuOpen(false);
+      setColorMenuOpen(false);
+      setLineSpacingMenuOpen(false);
       setLinkDialogOpen(true);
     }
 
@@ -405,33 +639,77 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       }
     }
 
+    function handleEditorClick(event: ReactMouseEvent<HTMLDivElement>) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!anchor || !editorRef.current?.contains(anchor)) return;
+
+      const href = anchor.getAttribute("href")?.trim();
+      if (!href || href.startsWith("#")) return;
+
+      event.preventDefault();
+      window.open(href, "_blank", "noopener,noreferrer");
+    }
+
+    function getEditorRangeForFormatting(): Range | null {
+      const editor = editorRef.current;
+      if (!editor) return null;
+
+      onFocusChange(true);
+      editor.focus();
+
+      const saved = savedSelectionRef.current;
+      if (saved && isRangeValidInEditor(saved, editor)) {
+        const range = saved.cloneRange();
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        return range;
+      }
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return null;
+      const range = selection.getRangeAt(0);
+      if (!editor.contains(range.commonAncestorContainer)) return null;
+      savedSelectionRef.current = range.cloneRange();
+      return range;
+    }
+
     function applyFontSize(size: string) {
+      const range = getEditorRangeForFormatting();
+      if (!range) return;
+
+      applyFontSizeToRange(range, size);
+      setSizeMenuOpen(false);
+      syncContent();
+    }
+
+    function applyTextColor(color: string) {
       ensureEditorFocus();
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) return;
 
-      const range = selection.getRangeAt(0);
-      if (selection.isCollapsed) {
-        document.execCommand(
-          "insertHTML",
-          false,
-          `<span style="font-size: ${size}">&#8203;</span>`
-        );
-      } else {
-        const span = document.createElement("span");
-        span.style.fontSize = size;
-        try {
-          range.surroundContents(span);
-        } catch {
-          document.execCommand(
-            "insertHTML",
-            false,
-            `<span style="font-size: ${size}">${range.toString()}</span>`
-          );
-        }
+      document.execCommand("styleWithCSS", false, "true");
+      const worked = document.execCommand("foreColor", false, color);
+      if (!worked) {
+        wrapRangeInStyledSpan(selection.getRangeAt(0), { color });
       }
 
-      setSizeMenuOpen(false);
+      setTextColor(color);
+      setColorMenuOpen(false);
+      syncContent();
+    }
+
+    function applyLineSpacing(lineHeight: string) {
+      const editor = editorRef.current;
+      const range = getEditorRangeForFormatting();
+      if (!editor || !range) return;
+
+      applyLineSpacingToRange(range, editor, lineHeight);
+      setLineSpacingMenuOpen(false);
       syncContent();
     }
 
@@ -442,12 +720,14 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       syncContent();
       onFocusChange(false);
       setSizeMenuOpen(false);
+      setColorMenuOpen(false);
+      setLineSpacingMenuOpen(false);
       setLinkDialogOpen(false);
     }
 
     const collapsedHeight = "4.5rem";
     const expandedHeight = "16rem";
-    const useFlexFill = fillAvailable && focused;
+    const useFlexFill = fillAvailable && (alwaysExpand || focused);
 
     return (
       <div
@@ -455,13 +735,13 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
         onFocusCapture={() => onFocusChange(true)}
         onBlurCapture={handleComposerBlur}
         className={`flex w-full flex-col ${
-          fillAvailable ? (focused ? "min-h-0 flex-1" : "mt-auto shrink-0") : "shrink-0"
+          useFlexFill ? "min-h-0 flex-1" : fillAvailable ? "mt-auto shrink-0" : "shrink-0"
         }`}
       >
         <div
-          className={`overflow-hidden transition-[height,flex] duration-200 ease-out ${
-            useFlexFill ? "min-h-[4.5rem] flex-1" : ""
-          }`}
+          className={
+            useFlexFill ? "flex min-h-0 flex-1 flex-col" : "shrink-0"
+          }
           style={
             useFlexFill
               ? undefined
@@ -479,10 +759,13 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
             data-empty="true"
             onInput={syncContent}
             onKeyDown={handleEditorKeyDown}
+            onClick={handleEditorClick}
             onKeyUp={saveSelection}
             onMouseUp={saveSelection}
             onFocus={saveSelection}
-            className={`reply-draft-editor h-full w-full resize-none overflow-y-auto rounded border p-3 text-sm outline-none transition-[background-color,border-color] duration-200 ease-out focus:border-zendesk-green ${
+            className={`reply-draft-editor w-full resize-none overflow-y-auto rounded border p-3 text-sm outline-none transition-[background-color,border-color] duration-200 ease-out focus:border-zendesk-green ${
+              useFlexFill ? "min-h-0 flex-1" : "h-full"
+            } ${
               focused
                 ? "border-sky-300 bg-sky-100"
                 : "border-sky-200/70 bg-sky-100/65"
@@ -566,36 +849,131 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
             )}
           </div>
           <span className="mx-1 h-4 w-px bg-zendesk-border" aria-hidden />
-          <div ref={sizeMenuRef} className="relative">
+          <div ref={sizeMenuRef} className="notranslate relative" translate="no">
             <button
               type="button"
               title="Font size"
               aria-label="Font size"
               aria-expanded={sizeMenuOpen}
+              className="notranslate inline-flex items-center gap-0.5 rounded border border-zendesk-border bg-white px-1.5 py-1 text-[11px] font-medium text-zendesk-navy hover:bg-gray-100"
+              translate="no"
               onMouseDown={(event) => {
                 saveSelection();
                 event.preventDefault();
               }}
-              onClick={() => setSizeMenuOpen((open) => !open)}
-              className="inline-flex items-center gap-0.5 rounded border border-zendesk-border bg-white px-1.5 py-1 text-[11px] font-medium text-zendesk-navy hover:bg-gray-100"
+              onClick={() => {
+                setColorMenuOpen(false);
+                setLineSpacingMenuOpen(false);
+                setSizeMenuOpen((open) => !open);
+              }}
             >
               Size
               <ChevronDown className="h-3 w-3" />
             </button>
             {sizeMenuOpen && (
-              <div className="absolute left-0 top-full z-20 mt-1 min-w-[6.5rem] rounded border border-zendesk-border bg-white py-1 shadow-md">
+              <div
+                className="notranslate absolute bottom-full left-0 z-30 mb-1 min-w-[6.5rem] rounded border border-zendesk-border bg-white py-1 shadow-lg"
+                translate="no"
+              >
                 {FONT_SIZES.map((size) => (
                   <button
                     key={size.value}
+                    type="button"
+                    className="notranslate block w-full px-3 py-1.5 text-left text-[11px] text-zendesk-navy hover:bg-gray-100"
+                    translate="no"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyFontSize(size.value)}
+                  >
+                    {size.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div ref={colorMenuRef} className="relative">
+            <button
+              type="button"
+              title="Text color"
+              aria-label="Text color"
+              aria-expanded={colorMenuOpen}
+              onMouseDown={(event) => {
+                saveSelection();
+                event.preventDefault();
+              }}
+              onClick={() => {
+                setSizeMenuOpen(false);
+                setLineSpacingMenuOpen(false);
+                setColorMenuOpen((open) => !open);
+              }}
+              className="inline-flex items-center gap-0.5 rounded border border-zendesk-border bg-white px-1 py-1 hover:bg-gray-100"
+            >
+              <span
+                className="block h-3.5 w-3.5 rounded-sm border border-zendesk-border/60"
+                style={{ backgroundColor: textColor }}
+              />
+              <ChevronDown className="h-3 w-3 text-zendesk-muted" />
+            </button>
+            {colorMenuOpen && (
+              <div className="absolute bottom-full left-0 z-30 mb-1 min-w-[7rem] rounded border border-zendesk-border bg-white py-1 shadow-lg">
+                {TEXT_COLORS.map((color) => (
+                  <button
+                    key={color.value}
                     type="button"
                     onMouseDown={(event) => {
                       saveSelection();
                       event.preventDefault();
                     }}
-                    onClick={() => applyFontSize(size.value)}
-                    className="block w-full px-3 py-1.5 text-left text-[11px] text-zendesk-navy hover:bg-gray-100"
+                    onClick={() => applyTextColor(color.value)}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-zendesk-navy hover:bg-gray-100 ${
+                      textColor === color.value ? "bg-gray-50" : ""
+                    }`}
                   >
-                    {size.label}
+                    <span
+                      className="block h-3 w-3 shrink-0 rounded-sm border border-zendesk-border/60"
+                      style={{ backgroundColor: color.value }}
+                    />
+                    {color.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div ref={lineSpacingMenuRef} className="notranslate relative" translate="no">
+            <button
+              type="button"
+              title="Line spacing"
+              aria-label="Line spacing"
+              aria-expanded={lineSpacingMenuOpen}
+              className="notranslate inline-flex items-center gap-0.5 rounded border border-zendesk-border bg-white px-1.5 py-1 text-[11px] font-medium text-zendesk-navy hover:bg-gray-100"
+              translate="no"
+              onMouseDown={(event) => {
+                saveSelection();
+                event.preventDefault();
+              }}
+              onClick={() => {
+                setSizeMenuOpen(false);
+                setColorMenuOpen(false);
+                setLineSpacingMenuOpen((open) => !open);
+              }}
+            >
+              <AlignVerticalSpaceAround className="h-3.5 w-3.5" />
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {lineSpacingMenuOpen && (
+              <div
+                className="notranslate absolute bottom-full left-0 z-30 mb-1 min-w-[6.5rem] rounded border border-zendesk-border bg-white py-1 shadow-lg"
+                translate="no"
+              >
+                {LINE_SPACINGS.map((spacing) => (
+                  <button
+                    key={spacing.value}
+                    type="button"
+                    className="notranslate block w-full px-3 py-1.5 text-left text-[11px] text-zendesk-navy hover:bg-gray-100"
+                    translate="no"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyLineSpacing(spacing.value)}
+                  >
+                    {spacing.label}
                   </button>
                 ))}
               </div>

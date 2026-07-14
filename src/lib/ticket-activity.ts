@@ -20,7 +20,30 @@ export function parseSheetTimestamp(value: string): Date | null {
   if (!Number.isNaN(isoAttempt.getTime())) return isoAttempt;
 
   const direct = new Date(trimmed);
-  return Number.isNaN(direct.getTime()) ? null : direct;
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const usDate = trimmed.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i
+  );
+  if (usDate) {
+    let hours = Number.parseInt(usDate[4] ?? "0", 10);
+    const minutes = Number.parseInt(usDate[5] ?? "0", 10);
+    const seconds = Number.parseInt(usDate[6] ?? "0", 10);
+    const meridiem = usDate[7]?.toUpperCase();
+    if (meridiem === "PM" && hours < 12) hours += 12;
+    if (meridiem === "AM" && hours === 12) hours = 0;
+    const parsed = new Date(
+      Number.parseInt(usDate[3], 10),
+      Number.parseInt(usDate[1], 10) - 1,
+      Number.parseInt(usDate[2], 10),
+      hours,
+      minutes,
+      seconds
+    );
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  return null;
 }
 
 /** Sort key from Column A submission time; falls back to sheet row order. */

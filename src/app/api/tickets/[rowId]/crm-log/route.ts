@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { refreshWorkspaceHolidayCache } from "@/lib/business-holidays";
 import { buildCrmTicketLogView } from "@/lib/crm-ticket-log-view";
 import { loadTimerSettings } from "@/lib/crm-preferences-store";
 import { getSignedInUser } from "@/lib/google-auth";
@@ -14,6 +15,7 @@ export async function GET(
     const decoded = decodeURIComponent(rowId);
     const { email } = await getSignedInUser();
     const timerSettings = loadTimerSettings(email);
+    await refreshWorkspaceHolidayCache();
     const view = buildCrmTicketLogView(decoded, timerSettings);
     return NextResponse.json(view, {
       headers: { "Cache-Control": "no-store" },

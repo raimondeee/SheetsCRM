@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  addAdminNoteThreadMessage,
   appendAdminNoteToOverlay,
   clearInitialResponseSla,
   getTicketOverlay,
@@ -9,7 +10,7 @@ import {
   updateTicketAirbnbUserId,
   updateTicketContactReason,
   updateTicketLinkedCase,
-  loadSheetConfig,
+  resolveSheetConfigForRowId,
 } from "@/lib/overlay-db";
 import { hasAirbnbUserIdForResolve } from "@/lib/ticket-action-validation";
 import {
@@ -48,7 +49,7 @@ function sheetContext(rowId: string): {
   if (process.env.USE_MOCK_DATA === "true") {
     return { config: null, rowNumber: null };
   }
-  const config = loadSheetConfig("default");
+  const config = resolveSheetConfigForRowId(rowId);
   const parsed = parseTicketRowId(rowId);
   return {
     config: config ?? null,
@@ -78,6 +79,7 @@ export async function PATCH(request: Request) {
       intakeTimestamp,
       requesterEmail,
       pendingReopenHours,
+      closeTicket,
     } = body as {
       rowId: string;
       status?: string;
@@ -97,6 +99,7 @@ export async function PATCH(request: Request) {
       intakeTimestamp?: string;
       requesterEmail?: string;
       pendingReopenHours?: number | null;
+      closeTicket?: boolean;
     };
 
     let updatedAdminNotes: string | undefined;
@@ -128,14 +131,22 @@ export async function PATCH(request: Request) {
       }
       const { email } = await getSignedInUser();
       const timerSettings = loadTimerSettings(email);
+      const statusOptions: {
+        pendingReopenHours?: number;
+        resolvedClosed?: boolean;
+      } = {};
+      if (typeof pendingReopenHours === "number") {
+        statusOptions.pendingReopenHours = pendingReopenHours;
+      }
+      if (normalizedStatus === "resolved") {
+        statusOptions.resolvedClosed = closeTicket === true;
+      }
       const timerFields = updateTicketStatus(
         rowId,
         normalizedStatus,
         timerSettings,
         intakeTimestamp,
-        typeof pendingReopenHours === "number"
-          ? { pendingReopenHours }
-          : undefined
+        Object.keys(statusOptions).length > 0 ? statusOptions : undefined
       );
       updatedStatus = normalizedStatus;
       updatedStatusChangedAt = timerFields.statusChangedAt;
@@ -180,17 +191,18 @@ export async function PATCH(request: Request) {
     if (typeof subject === "string") updateTicketSubject(rowId, subject);
 
     if (typeof appendAdminNote === "string" && appendAdminNote.trim()) {
-      if (process.env.USE_MOCK_DATA === "true") {
-        return NextResponse.json({ error: "Admin notes sync requires live sheet data" }, { status: 400 });
-      }
-      if (!canSyncSheet) {
+      if (!canSyncSheet && process.env.USE_MOCK_DATA !== "true") {
         return NextResponse.json({ error: "Sheet config or ticket row not found" }, { status: 400 });
       }
       const note = appendAdminNote.trim();
+      const { email } = await getSignedInUser();
       updatedAdminNotes = appendAdminNoteToOverlay(rowId, note);
-      queueSheetSync("adminNote", () =>
-        writeCaseSummaryOnSheet(config!, rowNumber!, updatedAdminNotes!)
-      );
+      addAdminNoteThreadMessage(rowId, note, email ?? undefined);
+      if (canSyncSheet) {
+        queueSheetSync("adminNote", () =>
+          writeCaseSummaryOnSheet(config!, rowNumber!, updatedAdminNotes!)
+        );
+      }
     }
 
     if (typeof airbnbUserId === "string") {

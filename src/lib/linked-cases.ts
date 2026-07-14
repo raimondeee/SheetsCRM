@@ -57,6 +57,19 @@ export function formatLinkedCaseForEdit(stored: string): string {
   return `${parsed.label}\n${parsed.url}`;
 }
 
+/** Serialize separate label and URL fields for overlay storage. */
+export function serializeLinkedCaseFields(label: string, urlText: string): string {
+  const trimmedLabel = label.trim();
+  const trimmedUrl = urlText.trim();
+  if (!trimmedLabel && !trimmedUrl) return "";
+
+  const url = resolveExternalHref(trimmedUrl);
+  if (url) {
+    return trimmedLabel ? `${trimmedLabel}\n${url}` : url;
+  }
+  return trimmedLabel || trimmedUrl;
+}
+
 /** Serialize textarea draft for overlay storage. */
 export function serializeLinkedCaseFromDraft(draft: string): string {
   const lines = draft

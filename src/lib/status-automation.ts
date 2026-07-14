@@ -1,39 +1,27 @@
 import {
+  addWeekdayHours,
+  DEFAULT_BUSINESS_HOURS,
+  type BusinessHoursConfig,
+} from "./business-hours";
+import { blocksTicketAutoReopen, normalizeStatusId } from "./status-mapper";
+import {
   DEFAULT_TIMER_SETTINGS,
   type TimerSettings,
 } from "./timer-settings";
 
-/** Mon–Fri, 9:00–17:00 local time. */
-export function isBusinessHour(date: Date): boolean {
-  const day = date.getDay();
-  if (day === 0 || day === 6) return false;
-  const hour = date.getHours();
-  return hour >= 9 && hour < 17;
-}
-
-export function addBusinessHours(start: Date, hoursToAdd: number): Date {
-  let current = new Date(start);
-  let added = 0;
-  const maxSteps = hoursToAdd * 24 + 48;
-  let steps = 0;
-
-  while (added < hoursToAdd && steps < maxSteps) {
-    current = new Date(current.getTime() + 60 * 60 * 1000);
-    steps += 1;
-    if (isBusinessHour(current)) added += 1;
-  }
-
-  return current;
-}
+export { isBusinessHour } from "./business-hours";
+export { addWeekdayHours } from "./business-hours";
 
 /** Returns `open` when the customer replied after the ticket was marked pending. */
 export function getReopenOnCustomerReplyStatus(
   status: string,
   latestDirection: "inbound" | "outbound" | null | undefined,
   latestMessageAt: string | null | undefined,
-  statusChangedAt: string | null | undefined
+  statusChangedAt: string | null | undefined,
+  resolvedClosed = false
 ): "open" | null {
-  if (status !== "pending") return null;
+  const normalized = normalizeStatusId(status);
+  if (blocksTicketAutoReopen(normalized, resolvedClosed) || normalized !== "pending") return null;
   if (latestDirection !== "inbound") return null;
 
   if (statusChangedAt && latestMessageAt) {
@@ -59,29 +47,34 @@ export function hasAgentReplySincePending(
   return outbound > changed;
 }
 
+function resolvePendingReopenHourCount(
+  settings: TimerSettings,
+  pendingReopenHours: number | null
+): number {
+  if (pendingReopenHours != null && pendingReopenHours > 0) return pendingReopenHours;
+  return settings.pendingReopenBusinessHours;
+}
+
 export function computePendingReopenDueAt(
   statusChangedAt: string,
   settings: TimerSettings = DEFAULT_TIMER_SETTINGS,
-  pendingReopenHours: number | null = null
+  pendingReopenHours: number | null = null,
+  businessHours: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS
 ): Date | null {
   const changed = new Date(statusChangedAt);
   if (Number.isNaN(changed.getTime())) return null;
 
-  if (pendingReopenHours != null && pendingReopenHours > 0) {
-    return new Date(changed.getTime() + pendingReopenHours * 60 * 60 * 1000);
-  }
-
-  return addBusinessHours(changed, settings.pendingReopenBusinessHours);
+  const hours = resolvePendingReopenHourCount(settings, pendingReopenHours);
+  return addWeekdayHours(changed, hours, businessHours);
 }
 
 export function describePendingReopenTimer(
   pendingReopenHours: number | null,
-  settings: TimerSettings = DEFAULT_TIMER_SETTINGS
+  settings: TimerSettings = DEFAULT_TIMER_SETTINGS,
+  _businessHours: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS
 ): string {
-  if (pendingReopenHours != null && pendingReopenHours > 0) {
-    return `${pendingReopenHours} calendar hour${pendingReopenHours === 1 ? "" : "s"}`;
-  }
-  return `${settings.pendingReopenBusinessHours} business hours (Mon–Fri 9:00–17:00)`;
+  const hours = resolvePendingReopenHourCount(settings, pendingReopenHours);
+  return `${hours} weekday hour${hours === 1 ? "" : "s"} (weekends excluded)`;
 }
 
 /** Returns `open` when a timed status should auto-reopen, else null. */
@@ -91,16 +84,26 @@ export function getAutoReopenStatus(
   now = new Date(),
   settings: TimerSettings = DEFAULT_TIMER_SETTINGS,
   pendingReopenHours: number | null = null,
-  latestOutboundSentAt: string | null = null
+  latestOutboundSentAt: string | null = null,
+  businessHours: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS,
+  resolvedClosed = false
 ): "open" | null {
+  if (blocksTicketAutoReopen(status, resolvedClosed)) return null;
   if (!statusChangedAt) return null;
   const changed = new Date(statusChangedAt);
   if (Number.isNaN(changed.getTime())) return null;
 
-  if (status === "pending") {
+  const normalized = normalizeStatusId(status);
+
+  if (normalized === "pending") {
     if (hasAgentReplySincePending(statusChangedAt, latestOutboundSentAt)) return null;
 
-    const reopenAt = computePendingReopenDueAt(statusChangedAt, settings, pendingReopenHours);
+    const reopenAt = computePendingReopenDueAt(
+      statusChangedAt,
+      settings,
+      pendingReopenHours,
+      businessHours
+    );
     if (reopenAt && reopenAt <= now) return "open";
   }
 
@@ -122,13 +125,17 @@ export function resolveAutomatedReopenStatus(
   now = new Date(),
   settings: TimerSettings = DEFAULT_TIMER_SETTINGS,
   pendingReopenHours: number | null = null,
-  latestOutboundSentAt: string | null = null
+  latestOutboundSentAt: string | null = null,
+  businessHours: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS,
+  resolvedClosed = false
 ): "open" | null {
+  if (blocksTicketAutoReopen(status, resolvedClosed)) return null;
   const customerReply = getReopenOnCustomerReplyStatus(
     status,
     latestDirection,
     latestMessageAt,
-    statusChangedAt
+    statusChangedAt,
+    resolvedClosed
   );
   if (customerReply) return customerReply;
   return getAutoReopenStatus(
@@ -137,6 +144,8 @@ export function resolveAutomatedReopenStatus(
     now,
     settings,
     pendingReopenHours,
-    latestOutboundSentAt
+    latestOutboundSentAt,
+    businessHours,
+    resolvedClosed
   );
 }

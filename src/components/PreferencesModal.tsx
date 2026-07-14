@@ -37,7 +37,19 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     preferences.initialResponseHours
   );
   const [defaultSlaHours, setDefaultSlaHours] = useState(preferences.defaultSlaHours);
+  const [resolvedGmailLinkArchiveDays, setResolvedGmailLinkArchiveDays] = useState(
+    preferences.resolvedGmailLinkArchiveDays
+  );
   const [externalTools, setExternalTools] = useState<ExternalToolLink[]>(preferences.externalTools);
+  const [calendarReminderFullscreen, setCalendarReminderFullscreen] = useState(
+    preferences.calendarReminderFullscreen
+  );
+  const [unreadInboxBindToSelectedEnabled, setUnreadInboxBindToSelectedEnabled] = useState(
+    preferences.unreadInboxBindToSelectedEnabled
+  );
+  const [unreadInboxAppendToSelectedEnabled, setUnreadInboxAppendToSelectedEnabled] = useState(
+    preferences.unreadInboxAppendToSelectedEnabled
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +64,11 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       longtermHoldReopenDays,
       initialResponseHours,
       defaultSlaHours,
+      resolvedGmailLinkArchiveDays,
       externalTools,
+      calendarReminderFullscreen,
+      unreadInboxBindToSelectedEnabled,
+      unreadInboxAppendToSelectedEnabled,
     };
     setSaving(true);
     setError(null);
@@ -76,7 +92,11 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     setLongtermHoldReopenDays(DEFAULT_USER_PREFERENCES.longtermHoldReopenDays);
     setInitialResponseHours(DEFAULT_USER_PREFERENCES.initialResponseHours);
     setDefaultSlaHours(DEFAULT_USER_PREFERENCES.defaultSlaHours);
+    setResolvedGmailLinkArchiveDays(DEFAULT_USER_PREFERENCES.resolvedGmailLinkArchiveDays);
     setExternalTools(DEFAULT_USER_PREFERENCES.externalTools);
+    setCalendarReminderFullscreen(DEFAULT_USER_PREFERENCES.calendarReminderFullscreen);
+    setUnreadInboxBindToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxBindToSelectedEnabled);
+    setUnreadInboxAppendToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled);
   }
 
   function updateExternalTool(index: number, field: keyof ExternalToolLink, value: string) {
@@ -117,8 +137,8 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
             <label className="block text-sm">
               <span className="font-medium">Pending → Open</span>
               <p className="mt-0.5 text-xs text-zendesk-muted">
-                Business hours (Mon–Fri 9:00–17:00 local) after marking Pending with no customer
-                reply
+                Weekday hours (Mon–Fri, 24h/day, weekends excluded) after marking Pending with
+                no customer reply
               </p>
               <input
                 type="number"
@@ -148,8 +168,9 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
             <label className="block text-sm">
               <span className="font-medium">Initial response hours</span>
               <p className="mt-0.5 text-xs text-zendesk-muted">
-                Flag tickets with no outbound reply after this many hours since intake (badge only —
-                does not change status)
+                Flag tickets with no outbound reply after this many business hours since intake
+                (Setup schedule — nights, weekends, and US holidays excluded; badge only — does not
+                change status)
               </p>
               <input
                 type="number"
@@ -178,6 +199,22 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">Resolved Gmail link archive</span>
+              <p className="mt-0.5 text-xs text-zendesk-muted">
+                Calendar days after Send/Resolved before the Gmail thread is unlinked and background
+                polling stops (Resolve &amp; Close stops polling immediately)
+              </p>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={resolvedGmailLinkArchiveDays}
+                onChange={(e) => setResolvedGmailLinkArchiveDays(Number(e.target.value))}
+                className="mt-2 w-full rounded border border-zendesk-border px-3 py-2 text-sm"
+              />
             </label>
           </fieldset>
 
@@ -286,6 +323,67 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
                 </li>
               ))}
             </ul>
+          </fieldset>
+
+          <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
+            <legend className="px-1 text-sm font-medium">Calendar reminders</legend>
+            <p className="text-xs text-zendesk-muted">
+              When a Google Calendar event is about to start, SheetsCRM can alert you while this
+              tab is active.
+            </p>
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={calendarReminderFullscreen}
+                onChange={(e) => setCalendarReminderFullscreen(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Full-screen event popup</span>
+                <p className="mt-0.5 text-xs text-zendesk-muted">
+                  Show a full-screen reminder with the event title, start time, and a link to open
+                  the event in Google Calendar. When off, a small toast appears in the top-right
+                  corner instead.
+                </p>
+              </span>
+            </label>
+          </fieldset>
+
+          <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
+            <legend className="px-1 text-sm font-medium">Gmail unread inbox</legend>
+            <p className="text-xs text-zendesk-muted">
+              Control quick-link actions shown when triaging unread Gmail threads.
+            </p>
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={unreadInboxBindToSelectedEnabled}
+                onChange={(e) => setUnreadInboxBindToSelectedEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Bind to selected</span>
+                <p className="mt-0.5 text-xs text-zendesk-muted">
+                  Show a button to set the unread thread as the primary Gmail link on the currently
+                  selected ticket (only when the ticket has no Gmail link yet).
+                </p>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={unreadInboxAppendToSelectedEnabled}
+                onChange={(e) => setUnreadInboxAppendToSelectedEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Append to selected</span>
+                <p className="mt-0.5 text-xs text-zendesk-muted">
+                  Show a button to import the unread thread onto the selected ticket while keeping
+                  outbound replies on the ticket&apos;s primary thread.
+                </p>
+              </span>
+            </label>
           </fieldset>
 
           <label className="flex cursor-pointer items-start gap-3 text-sm">

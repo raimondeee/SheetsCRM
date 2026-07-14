@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Search, Star, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Paperclip,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 import { prepareMixmaxTemplateHtml } from "@/lib/html-utils";
 import {
   loadMixmaxStarredTemplateIds,
@@ -9,6 +17,7 @@ import {
   sortMixmaxTemplatesWithStarred,
 } from "@/lib/mixmax-starred";
 import { resolveMixmaxVariables, type MixmaxTemplateContext } from "@/lib/mixmax-variables";
+import { base64ToFile } from "@/lib/outbound-attachments";
 
 export interface MixmaxTemplate {
   id: string;
@@ -16,11 +25,26 @@ export interface MixmaxTemplate {
   title: string;
   source: string;
   customShortcut?: string;
+  attachments: Array<{
+    name: string;
+    type: string;
+    size: number;
+    key: string;
+    location?: string;
+  }>;
+}
+
+export interface MixmaxTemplateApplyPayload {
+  subject?: string;
+  body?: string;
+  attachmentFiles?: File[];
+  attachmentWarning?: string | null;
+  attachmentsLoading?: boolean;
 }
 
 interface MixmaxTemplatePickerProps {
   templateContext: MixmaxTemplateContext;
-  onApply: (template: { subject: string; body: string }) => void;
+  onApply: (template: MixmaxTemplateApplyPayload) => void;
   onExpandedChange?: (expanded: boolean) => void;
 }
 
@@ -69,6 +93,7 @@ export function MixmaxTemplatePicker({
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
   const [starredIds, setStarredIds] = useState<Set<string>>(() => loadMixmaxStarredTemplateIds());
 
   const sortedTemplates = sortMixmaxTemplatesWithStarred(templates, starredIds);
@@ -133,6 +158,66 @@ export function MixmaxTemplatePicker({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [expanded, onExpandedChange]);
+
+  async function applyTemplate(template: MixmaxTemplate) {
+    setApplyingTemplateId(template.id);
+    setError(null);
+
+    const subject = resolveMixmaxVariables(template.title, templateContext);
+    const body = resolveMixmaxVariables(
+      prepareMixmaxTemplateHtml(template.source),
+      templateContext
+    );
+    const hasAttachments = template.attachments.length > 0;
+
+    onApply({
+      subject,
+      body,
+      attachmentsLoading: hasAttachments,
+    });
+    setExpandedState(false);
+    setApplyingTemplateId(null);
+
+    if (!hasAttachments) return;
+
+    try {
+      const res = await fetch(
+        `/api/mixmax/templates/${encodeURIComponent(template.id)}/attachments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({
+            to: templateContext.email,
+            subject,
+            body,
+          }),
+        }
+      );
+      const data = (await res.json()) as {
+        attachments?: Array<{ filename: string; mimeType: string; data: string }>;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error || "Could not load template attachments");
+      }
+      const attachmentFiles = (data.attachments ?? []).map((attachment) =>
+        base64ToFile(attachment.filename, attachment.mimeType, attachment.data)
+      );
+      onApply({
+        attachmentFiles,
+        attachmentsLoading: false,
+      });
+    } catch (attachmentError) {
+      onApply({
+        attachmentWarning:
+          attachmentError instanceof Error
+            ? attachmentError.message
+            : "Could not import template attachments",
+        attachmentsLoading: false,
+      });
+    }
+  }
 
   const collapsedBarClass =
     "shrink-0 border-t border-zendesk-border bg-zendesk-sidebar p-3";
@@ -253,6 +338,8 @@ export function MixmaxTemplatePicker({
         )}
         {sortedTemplates.map((template) => {
           const starred = starredIds.has(template.id);
+          const applying = applyingTemplateId === template.id;
+          const attachmentCount = template.attachments.length;
           return (
             <li key={template.id} className="flex gap-1">
               <button
@@ -270,17 +357,13 @@ export function MixmaxTemplatePicker({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const subject = resolveMixmaxVariables(template.title, templateContext);
-                  const body = resolveMixmaxVariables(
-                    prepareMixmaxTemplateHtml(template.source),
-                    templateContext
-                  );
-                  onApply({ subject, body });
-                }}
-                className="min-w-0 flex-1 rounded border border-zendesk-border bg-white px-2 py-1.5 text-left text-xs hover:border-zendesk-green hover:bg-green-50"
+                disabled={applyingTemplateId !== null}
+                onClick={() => void applyTemplate(template)}
+                className="min-w-0 flex-1 rounded border border-zendesk-border bg-white px-2 py-1.5 text-left text-xs text-zendesk-text hover:border-zendesk-green hover:bg-green-50 disabled:cursor-wait disabled:opacity-60"
               >
-                <span className="block font-medium leading-tight">{template.name}</span>
+                <span className="block font-medium leading-tight">
+                  {applying ? "Applying…" : template.name}
+                </span>
                 {template.title && template.title !== template.name && (
                   <span className="mt-0.5 block truncate text-[10px] text-zendesk-muted">
                     Subject: {template.title}
@@ -289,6 +372,12 @@ export function MixmaxTemplatePicker({
                 {template.customShortcut && (
                   <span className="mt-0.5 block text-[10px] text-zendesk-muted">
                     /{template.customShortcut}
+                  </span>
+                )}
+                {attachmentCount > 0 && (
+                  <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
+                    <Paperclip className="h-3 w-3 shrink-0" aria-hidden />
+                    {attachmentCount} attachment{attachmentCount === 1 ? "" : "s"}
                   </span>
                 )}
               </button>

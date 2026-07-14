@@ -1,29 +1,121 @@
 import type { ColumnMapping, ColumnRole, SheetConfig } from "./types";
 
+/** Where each mapped role appears in the ticket UI (for Setup reference). */
+export const CRM_ROLE_DESTINATIONS: Partial<Record<ColumnRole, string>> = {
+  rowKey: "Hidden — decides which sheet rows become tickets",
+  timestamp: "Ticket sorting, SLA timers, dashboard dates",
+  email: "Ticket header (requester email)",
+  name: "Ticket header (requester name) · Mixmax templates",
+  ticketHeaderField:
+    "Form value under subject · Salesforce search default (Header field legacy)",
+  subject: "Email subject prefix",
+  description: "Conversation panel → Original request",
+  marketManager: "Ticket header · CC Market Manager on reply",
+  contactReason: "Details → Contact reason dropdown",
+  userEmailed: "Sheet only — set to Yes when CRM sends email",
+  status: "Details → Status · written back to sheet status column",
+  caseSummary: "Admin notes · appended to sheet case summary on send",
+  airbnbUserId:
+    "Manual override in sidebar · written to the mapped sheet column when saved",
+  reservationCode: "Details → Reso · Nova reservation link",
+  listingId: "Details → Listing · Nova listing link",
+  internalToolK: "Legacy sheet column — not shown in CRM",
+  internalToolM: "Legacy sheet column — not shown in CRM",
+  internalToolR: "Legacy sheet column — not shown in CRM",
+};
+
 export const COLUMN_ROLE_OPTIONS: { value: ColumnRole; label: string; hint?: string }[] = [
-  { value: "unknown", label: "— Not mapped —" },
-  { value: "rowKey", label: "Row key", hint: "Rows with an empty value here are skipped" },
-  { value: "timestamp", label: "Timestamp" },
-  { value: "email", label: "Requester email" },
-  { value: "name", label: "Requester name", hint: "Used for Mixmax {{first name}} placeholders" },
+  { value: "unknown", label: "— Not mapped —", hint: "Column ignored by CRM" },
+  {
+    value: "rowKey",
+    label: "Row key",
+    hint: CRM_ROLE_DESTINATIONS.rowKey,
+  },
+  {
+    value: "timestamp",
+    label: "Timestamp → sorting & SLA",
+    hint: CRM_ROLE_DESTINATIONS.timestamp,
+  },
+  {
+    value: "email",
+    label: "Requester email → header",
+    hint: CRM_ROLE_DESTINATIONS.email,
+  },
+  {
+    value: "name",
+    label: "Requester name → header",
+    hint: CRM_ROLE_DESTINATIONS.name,
+  },
   {
     value: "ticketHeaderField",
-    label: "Ticket header field",
-    hint: "Editable under the subject line in ticket view",
+    label: "Header field under subject (form ID)",
+    hint: CRM_ROLE_DESTINATIONS.ticketHeaderField,
   },
-  { value: "subject", label: "Subject" },
-  { value: "description", label: "Description / message" },
-  { value: "marketManager", label: "Market Manager", hint: "Read-only in CRM" },
-  { value: "contactReason", label: "Contact reason" },
-  { value: "userEmailed", label: "User emailed?", hint: "Set to Yes when CRM sends a reply" },
-  { value: "status", label: "Sheet status" },
-  { value: "caseSummary", label: "Case summary / admin notes column" },
-  { value: "airbnbUserId", label: "Airbnb User ID" },
-  { value: "reservationCode", label: "Reservation code (E)", hint: "Read-only in CRM" },
-  { value: "listingId", label: "Listing ID (F)", hint: "Read-only in CRM" },
-  { value: "internalToolK", label: "Internal tool (K)" },
-  { value: "internalToolM", label: "Internal tool (M)" },
-  { value: "internalToolR", label: "Internal tool (R)" },
+  {
+    value: "subject",
+    label: "Subject → email prefix",
+    hint: CRM_ROLE_DESTINATIONS.subject,
+  },
+  {
+    value: "description",
+    label: "Description → Conversation",
+    hint: CRM_ROLE_DESTINATIONS.description,
+  },
+  {
+    value: "marketManager",
+    label: "Market Manager → header",
+    hint: CRM_ROLE_DESTINATIONS.marketManager,
+  },
+  {
+    value: "contactReason",
+    label: "Contact reason → Details",
+    hint: CRM_ROLE_DESTINATIONS.contactReason,
+  },
+  {
+    value: "userEmailed",
+    label: "User emailed? → sheet flag",
+    hint: CRM_ROLE_DESTINATIONS.userEmailed,
+  },
+  {
+    value: "status",
+    label: "Sheet status → Details & sync",
+    hint: CRM_ROLE_DESTINATIONS.status,
+  },
+  {
+    value: "caseSummary",
+    label: "Case summary → admin notes",
+    hint: CRM_ROLE_DESTINATIONS.caseSummary,
+  },
+  {
+    value: "airbnbUserId",
+    label: "Manual User ID → sidebar & sheet column",
+    hint: CRM_ROLE_DESTINATIONS.airbnbUserId,
+  },
+  {
+    value: "reservationCode",
+    label: "Reservation code → Reso",
+    hint: CRM_ROLE_DESTINATIONS.reservationCode,
+  },
+  {
+    value: "listingId",
+    label: "Listing ID → Listing & Nova",
+    hint: CRM_ROLE_DESTINATIONS.listingId,
+  },
+  {
+    value: "internalToolK",
+    label: "Legacy sheet link K (not used in CRM)",
+    hint: CRM_ROLE_DESTINATIONS.internalToolK,
+  },
+  {
+    value: "internalToolM",
+    label: "Legacy sheet link M (not used in CRM)",
+    hint: CRM_ROLE_DESTINATIONS.internalToolM,
+  },
+  {
+    value: "internalToolR",
+    label: "Legacy sheet link R (not used in CRM)",
+    hint: CRM_ROLE_DESTINATIONS.internalToolR,
+  },
 ];
 
 export const RECOMMENDED_ROLES: ColumnRole[] = [
@@ -37,9 +129,6 @@ export const RECOMMENDED_ROLES: ColumnRole[] = [
   "airbnbUserId",
   "reservationCode",
   "listingId",
-  "internalToolK",
-  "internalToolM",
-  "internalToolR",
 ];
 
 export function getMappingSummary(config: SheetConfig): {
@@ -55,6 +144,10 @@ export function getMappingSummary(config: SheetConfig): {
 
 export function roleLabel(role: ColumnRole): string {
   return COLUMN_ROLE_OPTIONS.find((o) => o.value === role)?.label ?? role;
+}
+
+export function roleDestination(role: ColumnRole): string | undefined {
+  return CRM_ROLE_DESTINATIONS[role];
 }
 
 export function highlightMappedRow(col: ColumnMapping): boolean {

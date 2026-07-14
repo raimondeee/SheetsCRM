@@ -14,6 +14,7 @@ export function getMockTickets(
     | "pendingReopenHours"
     | "gmailOpenUrl"
     | "gmailLinkArchivedAt"
+    | "forceNewGmailThreadOnSend"
     | "linkedCases"
     | "slaHours"
     | "slaDueAt"
@@ -119,6 +120,7 @@ export function getMockTickets(
       pendingReopenHours: null,
       gmailOpenUrl: null,
       gmailLinkArchivedAt: null,
+      forceNewGmailThreadOnSend: false,
       linkedCases: ["", "", ""],
       slaHours: timerSettings.defaultSlaHours,
       slaDueAt: null,

@@ -11,7 +11,12 @@ import {
 } from "@/lib/calendar-reminders";
 import { playCalendarReminderSound } from "@/lib/ticket-chime";
 
-export function useCalendarReminders(enabled: boolean) {
+export type CalendarReminderDisplay = "toast" | "fullscreen";
+
+export function useCalendarReminders(
+  enabled: boolean,
+  display: CalendarReminderDisplay = "toast"
+) {
   const [toast, setToast] = useState<CalendarReminderEvent | null>(null);
   const notifiedRef = useRef<Set<string>>(new Set());
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -32,12 +37,15 @@ export function useCalendarReminders(enabled: boolean) {
       playCalendarReminderSound();
 
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-      dismissTimerRef.current = setTimeout(() => {
-        dismissTimerRef.current = null;
-        setToast(null);
-      }, CALENDAR_TOAST_AUTO_DISMISS_MS);
+      dismissTimerRef.current = null;
+      if (display === "toast") {
+        dismissTimerRef.current = setTimeout(() => {
+          dismissTimerRef.current = null;
+          setToast(null);
+        }, CALENDAR_TOAST_AUTO_DISMISS_MS);
+      }
     },
-    []
+    [display]
   );
 
   useEffect(() => {
@@ -91,5 +99,5 @@ export function useCalendarReminders(enabled: boolean) {
     };
   }, [enabled, showToast]);
 
-  return { toast, dismissToast };
+  return { toast, dismissToast, display };
 }

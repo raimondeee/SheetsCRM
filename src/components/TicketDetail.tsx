@@ -15,19 +15,28 @@ import { buildGmailMessageUrl, buildGmailComposeUrl, openGmailComposePopup } fro
 import { buildSalesforceUnifiedSearchUrl } from "@/lib/salesforce";
 import {
   buildNovaListingUrl,
+  buildNovaHostPerformanceUrl,
   buildNovaProfileUrl,
   buildNovaReservationUrl,
 } from "@/lib/nova-urls";
-import { getSheetColumnAirbnbUserId } from "@/lib/airbnb-user-id";
+import {
+  intakeAirbnbUserIdFromTicket,
+  resolveSalesforceSearchQuery,
+} from "@/lib/airbnb-user-id";
 import { ADMIN_LOGOUT_URL, buildBecomeUserUrl, isNumericUserId } from "@/lib/become-user-url";
 import type { MarketManager } from "@/lib/market-managers";
 import { resolveMarketManagerEmail } from "@/lib/market-managers";
 import type { SetupModalTab } from "./SetupModal";
-import { MixmaxTemplatePicker } from "./MixmaxTemplatePicker";
+import { MixmaxTemplatePicker, type MixmaxTemplateApplyPayload } from "./MixmaxTemplatePicker";
+import { ComposeAttachmentList, ThreadAttachmentList } from "./CollapsibleAttachmentList";
 import { SendArchivePanel } from "./SendArchivePanel";
 import { TrustEscalationsModal } from "./TrustEscalationsModal";
 import { RedactMessageConfirmModal } from "./RedactMessageConfirmModal";
+import { ResetGmailLinkConfirmModal } from "./ResetGmailLinkConfirmModal";
+import { LinkedCaseEditModal } from "./LinkedCaseEditModal";
 import { ReplyDraftEditor, type ReplyDraftEditorHandle } from "./ReplyDraftEditor";
+import { ThreadMessageBody } from "./ThreadMessageBody";
+import { EmailRecipientInput } from "./EmailRecipientInput";
 import {
   buildEmailSubject,
   EMAIL_SUBJECT_PREFIX,
@@ -35,7 +44,8 @@ import {
   isEmailSubjectSuffixFilled,
   stripEmailSubjectPrefix,
 } from "@/lib/email-subject";
-import { isRichTextEmpty, normalizeDraftHtml, stripHtmlToText } from "@/lib/html-utils";
+import { isRichTextEmpty, normalizeDraftHtml, plainTextToHtml, stripHtmlToText } from "@/lib/html-utils";
+import { parseFirstName } from "@/lib/mixmax-variables";
 import { shouldShowResponseSla } from "@/lib/sla-display";
 import {
   PENDING_WITHOUT_EMAIL_HOURS_OPTIONS,
@@ -50,7 +60,6 @@ import {
   type TicketActionValidation,
 } from "@/lib/ticket-action-validation";
 import {
-  formatFileSize,
   MAX_OUTBOUND_ATTACHMENTS,
 } from "@/lib/gmail-attachments";
 import {
@@ -59,10 +68,16 @@ import {
 import { activeExternalTools, type ExternalToolLink } from "@/lib/external-tools";
 import { buildSheetCellUrl } from "@/lib/sheet-urls";
 import {
-  formatLinkedCaseForEdit,
   parseLinkedCase,
-  serializeLinkedCaseFromDraft,
 } from "@/lib/linked-cases";
+import { threadLinkNoticeNeedsBackfill } from "@/lib/gmail-thread-link";
+import {
+  formatConversationForClipboard,
+  buildGleanServiceChatUrl,
+  GLEAN_THREAD_SUMMARY_PROMPT,
+  GLEAN_RESPONSE_PROMPT,
+  GLEAN_ESCALATION_PROMPT,
+} from "@/lib/conversation-export";
 import { normalizeStatusId } from "@/lib/status-mapper";
 import {
   formatCrmRowRef,
@@ -92,13 +107,19 @@ import {
   ChevronLeft,
   Copy,
   ExternalLink,
+  Link2Off,
+  LineChart,
+  Loader2,
   LogOut,
   Mail,
+  Maximize2,
+  Minimize2,
   PanelRightClose,
   Pencil,
   CircleCheck,
   Paperclip,
   Send,
+  Sparkles,
   ShieldAlert,
   Undo2,
   UserRound,
@@ -106,12 +127,14 @@ import {
   X,
 } from "lucide-react";
 
+type ComposePanelView = "split" | "draft-full" | "conversation-full";
+
 interface TicketDetailProps {
   ticket: Ticket | null;
   initialResponseHours: number;
   contactReasonOptions: string[];
   onStatusChange: (rowId: string, status: string) => Promise<void>;
-  onSubjectChange: (rowId: string, subject: string) => void;
+  onSubjectChange: (rowId: string, subject: string) => void | Promise<void>;
   onContactReasonChange: (rowId: string, contactReason: string) => void;
   onAppendAdminNote: (rowId: string, note: string) => Promise<void>;
   onAdminNotesChange?: (rowId: string, adminNotes: string) => void;
@@ -120,8 +143,11 @@ interface TicketDetailProps {
   onListingIdChange: (rowId: string, listingId: string) => Promise<void>;
   onSlaChange: (rowId: string, hours: number) => void;
   onClearInitialResponseSla: (rowId: string) => Promise<void>;
+  onResyncFromSheet?: (rowId: string) => Promise<void>;
+  onIgnoreCoverTicket?: (rowId: string) => Promise<void>;
   onThreadUpdate: () => void;
   onGmailLinkChange: (rowId: string, gmailOpenUrl: string | null) => void;
+  onForceNewGmailThreadChange?: (rowId: string, enabled: boolean) => void;
   sendQueueBusy?: boolean;
   isSending?: boolean;
   sendError?: string | null;
@@ -139,7 +165,7 @@ interface TicketDetailProps {
   onSetStatusWithoutEmail: (
     rowId: string,
     status: string,
-    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string }
+    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string; closeTicket?: boolean }
   ) => Promise<void>;
   onLinkedCaseChange: (rowId: string, index: 0 | 1 | 2, url: string) => Promise<void>;
   externalTools?: ExternalToolLink[];
@@ -170,8 +196,11 @@ export function TicketDetail({
   onListingIdChange,
   onSlaChange,
   onClearInitialResponseSla,
+  onResyncFromSheet,
+  onIgnoreCoverTicket,
   onThreadUpdate,
   onGmailLinkChange,
+  onForceNewGmailThreadChange,
   sendQueueBusy = false,
   isSending = false,
   sendError = null,
@@ -203,18 +232,29 @@ export function TicketDetail({
   const [airbnbUserIdDraft, setAirbnbUserIdDraft] = useState("");
   const [uiFieldDrafts, setUiFieldDrafts] = useState<Record<string, string>>({});
   const [emailCopied, setEmailCopied] = useState(false);
+  const [conversationCopied, setConversationCopied] = useState(false);
+  const [gleanOpenedKind, setGleanOpenedKind] = useState<
+    "summary" | "response" | "escalation" | null
+  >(null);
   const [savingUserId, setSavingUserId] = useState(false);
   const replyEditorRef = useRef<ReplyDraftEditorHandle>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [replyAttachments, setReplyAttachments] = useState<Array<{ id: string; file: File }>>(
     []
   );
+  const [attachmentsJustAdded, setAttachmentsJustAdded] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [mixmaxAttachmentsLoading, setMixmaxAttachmentsLoading] = useState(false);
   const [ccMarketManager, setCcMarketManager] = useState(false);
   const [ccDraft, setCcDraft] = useState("");
   const [bccDraft, setBccDraft] = useState("");
+  const [ccFieldOpen, setCcFieldOpen] = useState(false);
+  const [bccFieldOpen, setBccFieldOpen] = useState(false);
+  const ccFieldRef = useRef<HTMLDivElement>(null);
+  const bccFieldRef = useRef<HTMLDivElement>(null);
   const [replyFocused, setReplyFocused] = useState(false);
   const [composeTab, setComposeTab] = useState<"reply" | "admin-notes" | "crm-log">("reply");
+  const [composePanelView, setComposePanelView] = useState<ComposePanelView>("split");
   const [markingStatusOnly, setMarkingStatusOnly] = useState<string | null>(null);
   const [markingPendingHours, setMarkingPendingHours] = useState<number | null>(null);
   const [pendingMenuOpen, setPendingMenuOpen] = useState(false);
@@ -235,14 +275,38 @@ export function TicketDetail({
     false
   );
   const [marketManagers, setMarketManagers] = useState<MarketManager[]>([]);
+  const [marketManagersLoaded, setMarketManagersLoaded] = useState(false);
   const [clearingInitialSla, setClearingInitialSla] = useState(false);
+  const [resyncConfirmOpen, setResyncConfirmOpen] = useState(false);
+  const [resyncingFromSheet, setResyncingFromSheet] = useState(false);
+  const [ignoreConfirmOpen, setIgnoreConfirmOpen] = useState(false);
+  const [ignoringCoverTicket, setIgnoringCoverTicket] = useState(false);
+  const [ignoreCoverError, setIgnoreCoverError] = useState<string | null>(null);
+  const [resyncError, setResyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setResyncConfirmOpen(false);
+    setResyncError(null);
+  }, [ticket?.rowId]);
+
+  useEffect(() => {
+    if (!attachmentsJustAdded) return;
+    const timer = window.setTimeout(() => setAttachmentsJustAdded(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [attachmentsJustAdded, replyAttachments.length]);
+
   const [userIdSaveError, setUserIdSaveError] = useState<string | null>(null);
   const airbnbUserIdFieldRef = useRef<HTMLLIElement>(null);
   const [gmailOpenUrl, setGmailOpenUrl] = useState<string | null>(null);
+  const [forceNewGmailThreadOnSend, setForceNewGmailThreadOnSend] = useState(false);
+  const [resetGmailLinkConfirmOpen, setResetGmailLinkConfirmOpen] = useState(false);
+  const [resettingGmailLink, setResettingGmailLink] = useState(false);
+  const [backfillingLinkNoticeId, setBackfillingLinkNoticeId] = useState<string | null>(null);
   const threadLoadGenerationRef = useRef(0);
   const isMountedRef = useRef(true);
   const onThreadUpdateRef = useRef(onThreadUpdate);
   const onGmailLinkChangeRef = useRef(onGmailLinkChange);
+  const onForceNewGmailThreadChangeRef = useRef(onForceNewGmailThreadChange);
   const replyBodyRef = useRef(replyBody);
   const subjectSuffixRef = useRef(subjectSuffix);
   const ccDraftRef = useRef(ccDraft);
@@ -268,12 +332,25 @@ export function TicketDetail({
   }, [onGmailLinkChange]);
 
   useEffect(() => {
+    onForceNewGmailThreadChangeRef.current = onForceNewGmailThreadChange;
+  }, [onForceNewGmailThreadChange]);
+
+  useEffect(() => {
+    setForceNewGmailThreadOnSend(ticket?.forceNewGmailThreadOnSend ?? false);
+  }, [ticket?.rowId, ticket?.forceNewGmailThreadOnSend]);
+
+  useEffect(() => {
     let cancelled = false;
+    setMarketManagersLoaded(false);
     (async () => {
-      const res = await fetch("/api/market-managers");
-      const data = await res.json();
-      if (!cancelled && !data.error) {
-        setMarketManagers(data.managers ?? []);
+      try {
+        const res = await fetch("/api/market-managers");
+        const data = await res.json();
+        if (!cancelled && !data.error) {
+          setMarketManagers(data.managers ?? []);
+        }
+      } finally {
+        if (!cancelled) setMarketManagersLoaded(true);
       }
     })();
     return () => {
@@ -299,7 +376,7 @@ export function TicketDetail({
   }, [ticket?.rowId]);
 
   const loadThread = useCallback(
-    async (reason: "ticket-open" | "timer") => {
+    async (reason: "ticket-open" | "timer" | "admin-note") => {
       if (!ticket) return;
       const generation = threadLoadGenerationRef.current;
       const ticketRowId = ticket.rowId;
@@ -322,14 +399,22 @@ export function TicketDetail({
         if (generation !== threadLoadGenerationRef.current) return;
 
         const messageCount = Array.isArray(data.messages) ? data.messages.length : 0;
-        const nextUrl =
-          (typeof data.gmailOpenUrl === "string" ? data.gmailOpenUrl : null) ?? storedGmailUrl;
+        const awaitingNewThread =
+          data.forceNewGmailThreadOnSend === true || ticket.forceNewGmailThreadOnSend;
+        const nextUrl = awaitingNewThread
+          ? null
+          : (typeof data.gmailOpenUrl === "string" ? data.gmailOpenUrl : null) ??
+            storedGmailUrl;
         const detailParts = [
           formatCrmRowRef(rowNumber, ticketRowId),
           reason,
           `HTTP ${res.status}`,
           `${messageCount} msgs`,
-          nextUrl ? "Gmail linked" : "no Gmail link",
+          awaitingNewThread
+            ? "awaiting new Gmail thread"
+            : nextUrl
+              ? "Gmail linked"
+              : "no Gmail link",
         ];
         if (typeof data.warning === "string" && data.warning.trim()) {
           detailParts.push(data.warning.trim());
@@ -358,11 +443,16 @@ export function TicketDetail({
           });
           if (threadCc) {
             setCcDraft((prev) => mergeRecipientLists(prev, threadCc));
+            setCcFieldOpen(true);
           }
         }
         setGmailOpenUrl(nextUrl);
+        setForceNewGmailThreadOnSend(awaitingNewThread);
         if (nextUrl && nextUrl !== storedGmailUrl) {
           onGmailLinkChangeRef.current(ticketRowId, nextUrl);
+        }
+        if (awaitingNewThread !== ticket.forceNewGmailThreadOnSend) {
+          onForceNewGmailThreadChangeRef.current?.(ticketRowId, awaitingNewThread);
         }
         if (data.statusReopened) onThreadUpdateRef.current();
       } catch (error) {
@@ -380,7 +470,7 @@ export function TicketDetail({
         }
       }
     },
-    [ticket?.rowId, ticket?.rowNumber, ticket?.requesterEmail, ticket?.subject, ticket?.gmailOpenUrl]
+    [ticket?.rowId, ticket?.rowNumber, ticket?.requesterEmail, ticket?.subject, ticket?.gmailOpenUrl, ticket?.forceNewGmailThreadOnSend]
   );
 
   useLayoutEffect(() => {
@@ -391,7 +481,8 @@ export function TicketDetail({
 
   useEffect(() => {
     setGmailOpenUrl(ticket?.gmailOpenUrl ?? null);
-  }, [ticket?.rowId, ticket?.gmailOpenUrl]);
+    setForceNewGmailThreadOnSend(ticket?.forceNewGmailThreadOnSend ?? false);
+  }, [ticket?.rowId, ticket?.gmailOpenUrl, ticket?.forceNewGmailThreadOnSend]);
 
   useEffect(() => {
     if (!ticket) {
@@ -408,18 +499,24 @@ export function TicketDetail({
       setEmailCopied(false);
       setReplyFocused(false);
       setComposeTab("reply");
+      setComposePanelView("split");
       setReplyAttachments([]);
       setAttachmentError(null);
+      setMixmaxAttachmentsLoading(false);
       setCcDraft("");
       setBccDraft("");
+      setCcFieldOpen(false);
+      setBccFieldOpen(false);
       setCcMarketManager(false);
       return;
     }
 
     setComposeTab("reply");
+    setComposePanelView("split");
     setMixmaxExpanded(false);
     setReplyAttachments([]);
     setAttachmentError(null);
+    setMixmaxAttachmentsLoading(false);
     setAddingNote(false);
     setAdminNoteError(null);
     setSavingUserId(false);
@@ -433,18 +530,24 @@ export function TicketDetail({
     setReplyBody(saved?.body ? normalizeDraftHtml(saved.body) : "");
     setNewAdminNote(loadAdminNoteDraft(ticket.rowId) ?? "");
     setSubjectSuffix(
-      saved?.subject
-        ? emailSubjectSuffixFromStored(saved.subject)
-        : emailSubjectSuffixFromStored(ticket.subject)
+      ticket.forceNewGmailThreadOnSend
+        ? saved?.subject
+          ? emailSubjectSuffixFromStored(saved.subject)
+          : ""
+        : saved?.subject
+          ? emailSubjectSuffixFromStored(saved.subject)
+          : emailSubjectSuffixFromStored(ticket.subject)
     );
     setActionValidation(null);
     setPressedActionButton(null);
     setCcDraft(saved?.cc ?? "");
     setBccDraft(saved?.bcc ?? "");
+    setCcFieldOpen(Boolean(saved?.cc?.trim()));
+    setBccFieldOpen(Boolean(saved?.bcc?.trim()));
     void fetchComposePrefs(ticket.rowId).then((prefs) => {
       setCcMarketManager(prefs.ccMarketManager);
     });
-    setAirbnbUserIdDraft(ticket.airbnbUserId);
+    setAirbnbUserIdDraft(ticket.crmAirbnbUserId ?? "");
     setUiFieldDrafts(ticket.uiFields ?? {});
     setEmailCopied(false);
     setReplyFocused(Boolean(saved?.body && !isRichTextEmpty(saved.body)));
@@ -455,15 +558,18 @@ export function TicketDetail({
     setReplyBody("");
     setReplyAttachments([]);
     setAttachmentError(null);
+    setMixmaxAttachmentsLoading(false);
     setCcDraft("");
     setBccDraft("");
+    setCcFieldOpen(false);
+    setBccFieldOpen(false);
     setSubjectSuffix(emailSubjectSuffixFromStored(ticket.subject));
     setReplyFocused(false);
   }, [composeClearedRowId, ticket?.rowId, ticket?.subject]);
 
   useEffect(() => {
     if (!ticket) return;
-    setAirbnbUserIdDraft(ticket.airbnbUserId);
+    setAirbnbUserIdDraft(ticket.crmAirbnbUserId ?? "");
     setUserIdSaveError(null);
   }, [ticket?.rowId, ticket?.airbnbUserId]);
 
@@ -556,6 +662,16 @@ export function TicketDetail({
   }, [ticket?.rowId, loadThread]);
 
   const gmailThreadUrl = gmailOpenUrl;
+  const awaitingNewGmailThread = forceNewGmailThreadOnSend;
+  const showResetGmailLinkButton = Boolean(
+    gmailThreadUrl ||
+      ticket?.gmailLinkArchivedAt ||
+      messages.some(
+        (m) =>
+          (m.direction === "inbound" || m.direction === "outbound") &&
+          Boolean(m.gmailMessageId || m.gmailThreadId)
+      )
+  );
 
   const marketManagerEmail = useMemo(
     () => (ticket ? resolveMarketManagerEmail(ticket.marketManager, marketManagers) : null),
@@ -568,7 +684,7 @@ export function TicketDetail({
   }, [ticket, sheetUrl]);
 
   const marketManagerMissingFromDirectory = Boolean(
-    ticket?.marketManager.trim() && !marketManagerEmail
+    marketManagersLoaded && ticket?.marketManager.trim() && !marketManagerEmail
   );
 
   const contactReasonSelectOptions = useMemo(() => {
@@ -602,6 +718,7 @@ export function TicketDetail({
       if (ticket?.rowId !== ticketRowId) return;
       clearAdminNoteDraft(ticketRowId);
       setNewAdminNote("");
+      await loadThread("admin-note");
     } catch (error) {
       if (ticket?.rowId !== ticketRowId) return;
       setAdminNoteError(
@@ -614,10 +731,49 @@ export function TicketDetail({
     }
   }
 
+  async function copyConversationToClipboard() {
+    if (!ticket) return;
+    const text = formatConversationForClipboard({ ticket, messages });
+    try {
+      await navigator.clipboard.writeText(text);
+      setConversationCopied(true);
+      window.setTimeout(() => setConversationCopied(false), 2000);
+    } catch {
+      window.alert("Could not copy conversation to clipboard.");
+    }
+  }
+
+  async function openGleanWithPrompt(
+    prompt: string,
+    kind: "summary" | "response" | "escalation"
+  ) {
+    if (!ticket) return;
+    const thread = formatConversationForClipboard({ ticket, messages });
+    const gleanUrl = buildGleanServiceChatUrl(prompt);
+
+    try {
+      await navigator.clipboard.writeText(thread);
+    } catch {
+      window.alert("Could not copy conversation to clipboard.");
+      return;
+    }
+
+    const popup = window.open(gleanUrl, "_blank", "noopener,noreferrer");
+    if (!popup) {
+      window.alert(
+        "Your browser blocked the Glean popup. Allow popups for SheetsCRM and try again."
+      );
+      return;
+    }
+
+    setGleanOpenedKind(kind);
+    window.setTimeout(() => setGleanOpenedKind(null), 2000);
+  }
+
   async function saveAirbnbUserId() {
     if (!ticket) return;
     const trimmed = airbnbUserIdDraft.trim();
-    if (trimmed === getSheetColumnAirbnbUserId(ticket)) return;
+    if (trimmed === (ticket.crmAirbnbUserId ?? "").trim()) return;
     setSavingUserId(true);
     setUserIdSaveError(null);
     try {
@@ -649,6 +805,7 @@ export function TicketDetail({
         file,
       })),
     ]);
+    setAttachmentsJustAdded(true);
     clearActionFieldError("compose");
   }
 
@@ -685,8 +842,15 @@ export function TicketDetail({
     });
   }
 
+  function getManualAirbnbUserId(): string {
+    return airbnbUserIdDraft.trim() || ticket?.crmAirbnbUserId?.trim() || "";
+  }
+
   function getEffectiveAirbnbUserId(): string {
-    return airbnbUserIdDraft.trim() || ticket?.airbnbUserId.trim() || "";
+    if (!ticket) return "";
+    const manual = getManualAirbnbUserId();
+    if (manual) return manual;
+    return intakeAirbnbUserIdFromTicket(ticket);
   }
 
   function collectSendValidation(): TicketActionValidation | null {
@@ -742,7 +906,7 @@ export function TicketDetail({
 
   async function setStatusWithoutEmail(
     status: "pending" | "resolved",
-    options?: { adminNote?: string; pendingHours?: PendingWithoutEmailHours },
+    options?: { adminNote?: string; pendingHours?: PendingWithoutEmailHours; closeTicket?: boolean },
     buttonId?: string
   ) {
     if (buttonId) flashActionPress(buttonId);
@@ -815,7 +979,7 @@ export function TicketDetail({
         ticketRowId: ticket.rowId,
         to: ticket.requesterEmail,
         subject: buildEmailSubject(subjectSuffix),
-        message: replyBody,
+        message: normalizeDraftHtml(replyEditorRef.current?.flush() ?? replyBody),
         cc: buildOutboundCc(ccDraft, {
           extra: ccMarketManager ? marketManagerEmail : null,
         }),
@@ -828,46 +992,556 @@ export function TicketDetail({
     })();
   }
 
-  const salesforceSearchUrl = buildSalesforceUnifiedSearchUrl(ticket.columnD);
+  const salesforceSearchQuery = ticket ? resolveSalesforceSearchQuery(ticket) : "";
+  const salesforceSearchUrl = buildSalesforceUnifiedSearchUrl(salesforceSearchQuery);
+  const intakeAirbnbUserId = ticket ? intakeAirbnbUserIdFromTicket(ticket) : "";
   const configuredExternalTools = activeExternalTools(externalTools);
   const novaReservationUrl = buildNovaReservationUrl(ticket.reservationCode);
   const novaListingUrl = buildNovaListingUrl(ticket.listingId);
-  const becomeUserId = ticket.airbnbUserId || airbnbUserIdDraft;
+  const becomeUserId = getEffectiveAirbnbUserId();
   const becomeUserUrl = buildBecomeUserUrl(becomeUserId);
   const novaProfileUrl = buildNovaProfileUrl(becomeUserId);
+  const novaHostPerformanceUrl = buildNovaHostPerformanceUrl(becomeUserId);
   const becomeUserIdInvalid =
     becomeUserId.trim().length > 0 && !isNumericUserId(becomeUserId);
 
-  function applyTemplate(template: { subject: string; body: string }) {
+  function applyTemplate(template: MixmaxTemplateApplyPayload) {
     if (!ticket) return;
-    if (composeTab !== "reply") {
-      switchComposeTab("reply");
+
+    if (template.attachmentsLoading !== undefined) {
+      setMixmaxAttachmentsLoading(template.attachmentsLoading);
     }
-    if (template.subject.trim()) {
+
+    const applyingContent =
+      template.subject !== undefined || template.body !== undefined;
+    if (applyingContent) {
+      if (composeTab !== "reply") {
+        switchComposeTab("reply");
+      }
+    }
+
+    if (template.subject?.trim()) {
       const suffix = stripEmailSubjectPrefix(template.subject.trim());
       setSubjectSuffix(suffix);
       onSubjectChange(ticket.rowId, buildEmailSubject(suffix));
     }
-    if (template.body.trim()) {
+    if (template.body?.trim()) {
       const body = normalizeDraftHtml(template.body);
       const currentHtml = replyEditorRef.current?.flush() ?? replyBody;
       if (isRichTextEmpty(currentHtml)) {
+        replyEditorRef.current?.replaceHtml(body);
         setReplyBody(body);
       } else {
         replyEditorRef.current?.insertHtmlAtCursor(body);
       }
     }
+    if (template.attachmentFiles?.length) {
+      const existingFiles = replyAttachments.map((entry) => entry.file);
+      const { accepted, error } = validateReplyAttachmentFiles(
+        existingFiles,
+        template.attachmentFiles
+      );
+      if (error) {
+        setAttachmentError(error);
+      } else if (accepted.length > 0) {
+        setAttachmentError(null);
+        setReplyAttachments((prev) => [
+          ...prev,
+          ...accepted.map((file) => ({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            file,
+          })),
+        ]);
+        setAttachmentsJustAdded(true);
+        clearActionFieldError("compose");
+      }
+    }
+    if (template.attachmentWarning) {
+      setAttachmentError(template.attachmentWarning);
+    }
+    if (applyingContent) {
+      setReplyFocused(true);
+      requestAnimationFrame(() => {
+        replyEditorRef.current?.focus();
+      });
+    }
+  }
+
+  function insertGreetingForRequester() {
+    if (!ticket) return;
+    const firstName = parseFirstName(ticket.requesterName);
+    if (!firstName) return;
+
+    const greetingHtml = plainTextToHtml(`Hello ${firstName},`);
+
+    if (composeTab !== "reply") {
+      switchComposeTab("reply");
+    }
+
+    const currentHtml = replyEditorRef.current?.flush() ?? replyBody;
+    if (isRichTextEmpty(currentHtml)) {
+      replyEditorRef.current?.replaceHtml(greetingHtml);
+      setReplyBody(greetingHtml);
+    } else {
+      replyEditorRef.current?.insertHtmlAtCursor(greetingHtml);
+    }
+
     setReplyFocused(true);
+    clearActionFieldError("compose");
     requestAnimationFrame(() => {
       replyEditorRef.current?.focus();
     });
   }
 
+  useEffect(() => {
+    if (composePanelView === "split") return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setComposePanelView("split");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [composePanelView]);
+
+  function openReplyDraftExpanded() {
+    replyEditorRef.current?.flush();
+    if (composeTab !== "reply") {
+      setComposeTab("reply");
+    }
+    setComposePanelView("draft-full");
+    setReplyFocused(true);
+  }
+
+  function closeReplyDraftExpanded() {
+    replyEditorRef.current?.flush();
+    setComposePanelView("split");
+  }
+
+  function openConversationExpanded() {
+    setComposePanelView("conversation-full");
+  }
+
+  function closeConversationExpanded() {
+    setComposePanelView("split");
+  }
+
   function switchComposeTab(tab: "reply" | "admin-notes" | "crm-log") {
     if (tab !== "reply") {
       replyEditorRef.current?.flush();
+      if (composePanelView === "draft-full") {
+        setComposePanelView("split");
+      }
     }
     setComposeTab(tab);
+  }
+
+  function openRecipientField(field: "cc" | "bcc") {
+    if (field === "cc") {
+      setCcFieldOpen(true);
+      requestAnimationFrame(() => {
+        ccFieldRef.current?.querySelector("input")?.focus();
+      });
+      return;
+    }
+    setBccFieldOpen(true);
+    requestAnimationFrame(() => {
+      bccFieldRef.current?.querySelector("input")?.focus();
+    });
+  }
+
+  function toggleReplyDraftExpanded() {
+    if (composePanelView === "draft-full") {
+      closeReplyDraftExpanded();
+      return;
+    }
+    openReplyDraftExpanded();
+  }
+
+  function toggleConversationExpanded() {
+    if (composePanelView === "conversation-full") {
+      closeConversationExpanded();
+      return;
+    }
+    openConversationExpanded();
+  }
+
+  function renderEmailDraftComposePanel() {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="shrink-0 border-b border-zendesk-border bg-white text-xs">
+                    <label className="flex items-center gap-2 border-b border-zendesk-border/60 px-2.5 py-1">
+                      <span className="w-9 shrink-0 text-zendesk-muted">To</span>
+                      <span className="min-w-0 flex-1 truncate text-zendesk-navy">
+                        {ticket.requesterEmail || "—"}
+                      </span>
+                      {(!ccFieldOpen || !bccFieldOpen) && (
+                        <span className="flex shrink-0 items-center gap-1">
+                          {!ccFieldOpen && (
+                            <button
+                              type="button"
+                              onClick={() => openRecipientField("cc")}
+                              disabled={sendQueueBusy}
+                              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                            >
+                              Cc
+                            </button>
+                          )}
+                          {!bccFieldOpen && (
+                            <button
+                              type="button"
+                              onClick={() => openRecipientField("bcc")}
+                              disabled={sendQueueBusy}
+                              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                            >
+                              Bcc
+                            </button>
+                          )}
+                        </span>
+                      )}
+                    </label>
+                    {ccFieldOpen && (
+                      <div ref={ccFieldRef}>
+                        <EmailRecipientInput
+                          label="Cc"
+                          value={ccDraft}
+                          onChange={setCcDraft}
+                          marketManagers={marketManagers}
+                          placeholder="Add Cc recipients…"
+                          disabled={sendQueueBusy}
+                        />
+                      </div>
+                    )}
+                    {bccFieldOpen && (
+                      <div ref={bccFieldRef}>
+                        <EmailRecipientInput
+                          label="Bcc"
+                          value={bccDraft}
+                          onChange={setBccDraft}
+                          marketManagers={marketManagers}
+                          placeholder="Add Bcc recipients…"
+                          disabled={sendQueueBusy}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex min-h-0 flex-1 flex-col px-2.5 pt-2">
+                    <ReplyDraftEditor
+                      key={ticket.rowId}
+                      ref={replyEditorRef}
+                      value={replyBody}
+                      onChange={(html) => {
+                        setReplyBody(html);
+                        if (!isRichTextEmpty(html) || replyAttachments.length > 0) {
+                          clearActionFieldError("compose");
+                        }
+                      }}
+                      focused={replyFocused || composePanelView === "draft-full"}
+                      onFocusChange={setReplyFocused}
+                      fillAvailable
+                      alwaysExpand
+                      placeholder="Draft a reply here, or pick a Mixmax template from the sidebar…"
+                      onDraftInGmail={openDraftInGmail}
+                    />
+                  </div>
+                  <div
+                    className={`shrink-0 space-y-1 border-t px-2.5 pt-1 pb-0.5 transition-colors ${
+                      replyAttachments.length > 0
+                        ? `border-amber-300 bg-amber-50/80 ${
+                            attachmentsJustAdded ? "ring-2 ring-inset ring-amber-400" : ""
+                          }`
+                        : "border-zendesk-border/60"
+                    }`}
+                  >
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.txt,.csv"
+                      className="hidden"
+                      onChange={handleAttachmentPick}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {replyAttachments.length > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900">
+                          <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          {replyAttachments.length} attachment
+                          {replyAttachments.length === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => attachmentInputRef.current?.click()}
+                        disabled={
+                          sendQueueBusy ||
+                          replyAttachments.length >= MAX_OUTBOUND_ATTACHMENTS
+                        }
+                        className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium disabled:opacity-50 ${
+                          replyAttachments.length > 0
+                            ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200"
+                            : "border-zendesk-border bg-white text-zendesk-navy hover:bg-gray-100"
+                        }`}
+                      >
+                        <Paperclip className="h-3.5 w-3.5" />
+                        {replyAttachments.length > 0 ? "Add more" : "Attach files"}
+                      </button>
+                      <span className="text-[10px] leading-none text-zendesk-muted">
+                        Up to {MAX_OUTBOUND_ATTACHMENTS} files, 20MB each
+                      </span>
+                    </div>
+                    {replyAttachments.length > 0 && (
+                      <ComposeAttachmentList
+                        items={replyAttachments.map((entry) => ({
+                          id: entry.id,
+                          name: entry.file.name,
+                          sizeBytes: entry.file.size,
+                        }))}
+                        onRemove={removeReplyAttachment}
+                        disabled={sendQueueBusy}
+                      />
+                    )}
+                    {mixmaxAttachmentsLoading && (
+                      <p className="inline-flex items-center gap-1.5 text-xs text-zendesk-muted">
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                        Importing Mixmax template attachments…
+                      </p>
+                    )}
+                    {attachmentError && (
+                      <p className="text-xs leading-snug text-red-600">{attachmentError}</p>
+                    )}
+                    <div>
+                      <label className="flex items-center gap-2 text-xs leading-tight">
+                        <input
+                          type="checkbox"
+                          checked={ccMarketManager}
+                          onChange={(e) => handleCcMarketManagerChange(e.target.checked)}
+                          disabled={!marketManagerEmail}
+                          className="rounded border-zendesk-border"
+                        />
+                        <span>
+                          CC Market Manager
+                          {ticket.marketManager && (
+                            <span className="text-zendesk-muted"> ({ticket.marketManager})</span>
+                          )}
+                        </span>
+                      </label>
+                      {marketManagerMissingFromDirectory && (
+                        <p className="pl-6 text-[11px] leading-snug text-amber-800">
+                          Market manager{" "}
+                          <span className="font-medium">{ticket.marketManager.trim()}</span> is not
+                          in the directory.{" "}
+                          {onOpenSetup ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenSetup("managers")}
+                              className="font-medium text-amber-950 underline underline-offset-2 hover:text-amber-900"
+                            >
+                              Open Settings
+                            </button>
+                          ) : (
+                            "Open Settings"
+                          )}{" "}
+                          to add them under Market managers.
+                        </p>
+                      )}
+                    </div>
+                    <div className="relative space-y-1">
+                      {actionValidation && (
+                        <p className="text-center text-[10px] font-medium text-red-600">
+                          {actionValidation.message}
+                        </p>
+                      )}
+                      {pendingSendUndo?.active && (
+                        <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-end">
+                          <div className="pointer-events-auto m-0 flex max-w-xs flex-col items-end gap-1 rounded-lg border border-amber-500 bg-amber-300 px-3 py-2 shadow-lg shadow-amber-900/25">
+                            <button
+                              type="button"
+                              onClick={pendingSendUndo.onUndo}
+                              className="flex items-center gap-2 rounded border border-amber-700 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-50"
+                            >
+                              <Undo2 className="h-3.5 w-3.5" />
+                              Undo ({pendingSendUndo.secondsLeft}s)
+                            </button>
+                            <p className="text-right text-[10px] font-medium leading-snug text-amber-950">
+                              {pendingSendUndo.label ?? "Ticket"} →{" "}
+                              {pendingSendUndo.status === "resolved" ? "Resolved" : "Pending"}
+                              {pendingSendUndo.attachmentCount > 0 && (
+                                <span>
+                                  {" "}
+                                  · {pendingSendUndo.attachmentCount} attachment
+                                  {pendingSendUndo.attachmentCount === 1 ? "" : "s"}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex w-full flex-wrap items-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => queueSend("pending", "send-pending")}
+                        disabled={sendQueueBusy || isSending}
+                        className={actionButtonClass(
+                          "send-pending",
+                          "flex items-center gap-1 rounded bg-zendesk-green px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
+                        )}
+                      >
+                        <Send className="h-4 w-4" />
+                        {isSending ? "Sending..." : "Send/Pending"}
+                      </button>
+                      <div ref={pendingMenuRef} className="relative inline-flex">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            flashActionPress("set-pending");
+                            setPendingMenuOpen((open) => !open);
+                          }}
+                          disabled={
+                            markingStatusOnly !== null ||
+                            markingPendingHours !== null ||
+                            sendQueueBusy
+                          }
+                          title="Set status to Pending without sending an email"
+                          className={actionButtonClass(
+                            "set-pending",
+                            "flex items-center gap-1 rounded-l border border-zendesk-border bg-white px-2.5 py-1 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                          )}
+                        >
+                          <CircleCheck className="h-4 w-4" />
+                          {markingPendingHours !== null ? "Setting…" : "Set to Pending"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            flashActionPress("set-pending-menu");
+                            setPendingMenuOpen((open) => !open);
+                          }}
+                          disabled={
+                            markingStatusOnly !== null ||
+                            markingPendingHours !== null ||
+                            sendQueueBusy
+                          }
+                          aria-expanded={pendingMenuOpen}
+                          aria-label="Choose pending duration"
+                          className={actionButtonClass(
+                            "set-pending-menu",
+                            "rounded-r border border-l-0 border-zendesk-border bg-white px-1 py-1 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                          )}
+                        >
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 transition-transform ${pendingMenuOpen ? "rotate-180" : ""}`}
+                          />
+                        </button>
+                        {pendingMenuOpen && (
+                          <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[10rem] rounded border border-zendesk-border bg-white py-1 shadow-md">
+                            {PENDING_WITHOUT_EMAIL_HOURS_OPTIONS.map((hours) => (
+                              <button
+                                key={hours}
+                                type="button"
+                                onClick={() =>
+                                  void setStatusWithoutEmail(
+                                    "pending",
+                                    {
+                                      pendingHours: hours,
+                                      adminNote: pendingWithoutEmailAdminNote(hours),
+                                    },
+                                    `set-pending-${hours}h`
+                                  )
+                                }
+                                className="block w-full px-3 py-1.5 text-left text-xs text-zendesk-navy hover:bg-gray-100"
+                              >
+                                Pending {hours}h
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => queueSend("resolved", "send-resolved")}
+                        disabled={sendQueueBusy || isSending}
+                        className={actionButtonClass(
+                          "send-resolved",
+                          "flex items-center gap-1 rounded border border-zendesk-green bg-white px-2.5 py-1 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
+                        )}
+                      >
+                        <Send className="h-4 w-4" />
+                        {isSending ? "Sending..." : "Send/Resolved"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void setStatusWithoutEmail(
+                            "resolved",
+                            {
+                              adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
+                              closeTicket: true,
+                            },
+                            "set-resolved"
+                          )
+                        }
+                        disabled={
+                          markingStatusOnly !== null ||
+                          markingPendingHours !== null ||
+                          sendQueueBusy ||
+                          (ticket.status === "resolved" && ticket.resolvedClosed)
+                        }
+                        title="Resolve and close without sending an email — thank-you replies will not reopen"
+                        className={actionButtonClass(
+                          "set-resolved",
+                          "flex items-center gap-1 rounded border border-zendesk-border bg-white px-2.5 py-1 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
+                        )}
+                      >
+                        <CircleCheck className="h-4 w-4" />
+                        {markingStatusOnly === "resolved" ? "Closing…" : "Resolve & Close"}
+                      </button>
+                      <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
+                        {showResetGmailLinkButton && !awaitingNewGmailThread && (
+                          <button
+                            type="button"
+                            onClick={() => setResetGmailLinkConfirmOpen(true)}
+                            disabled={resettingGmailLink || sendQueueBusy || isSending}
+                            title="Remove the Gmail link and send the next reply as a new email thread"
+                            className="flex items-center gap-1 rounded border border-violet-300 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                          >
+                            <Link2Off className="h-4 w-4" />
+                            {resettingGmailLink ? "Resetting…" : "Unlink & new thread"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={openInGmail}
+                          disabled={!gmailThreadUrl}
+                          title={
+                            gmailThreadUrl
+                              ? "Open this email thread in Gmail"
+                              : ticket.gmailLinkArchivedAt
+                                ? "Gmail link was archived — re-link from Unread Gmail if the customer replies"
+                                : awaitingNewGmailThread
+                                  ? "Send your reply to create a new Gmail thread"
+                                  : "No linked Gmail thread for this ticket"
+                          }
+                          className="flex items-center gap-1 rounded border border-zendesk-border bg-white px-2.5 py-1 text-xs font-medium text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
+                        >
+                          <Mail className="h-4 w-4" />
+                          Open in Gmail
+                        </button>
+                        {ticket.gmailLinkArchivedAt && (
+                          <p className="max-w-xs text-right text-[10px] leading-snug text-zendesk-muted">
+                            Gmail link archived{" "}
+                            {new Date(ticket.gmailLinkArchivedAt).toLocaleDateString()}. Thread
+                            history is kept locally; bind again if the customer replies on the old
+                            thread.
+                          </p>
+                        )}
+                      </div>
+                      </div>
+                      {statusOnlyError && (
+                        <p className="text-xs text-red-600">{statusOnlyError}</p>
+                      )}
+                      {sendError && <p className="text-xs text-red-600">{sendError}</p>}
+                    </div>
+                  </div>
+      </div>
+    );
   }
 
   function composeTabButton(
@@ -893,6 +1567,73 @@ export function TicketDetail({
   function openInGmail() {
     if (!ticket || !gmailThreadUrl) return;
     window.open(gmailThreadUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function performBackfillLinkHistory(msg: ThreadMessage) {
+    if (!ticket || backfillingLinkNoticeId) return;
+    if (!ticket.requesterEmail.trim()) {
+      window.alert("Add a requester email on this ticket before importing Gmail history.");
+      return;
+    }
+
+    setBackfillingLinkNoticeId(msg.id);
+    try {
+      const res = await fetch(
+        `/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/backfill`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messageId: msg.id,
+            requesterEmail: ticket.requesterEmail,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error ?? "Failed to import thread history");
+      }
+      setMessages((data.messages as ThreadMessage[]) ?? []);
+      onThreadUpdate();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to import thread history");
+    } finally {
+      setBackfillingLinkNoticeId(null);
+    }
+  }
+
+  async function performResetGmailLink() {
+    if (!ticket || resettingGmailLink) return;
+    setResettingGmailLink(true);
+    try {
+      const res = await fetch(
+        `/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/reset-gmail`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error ?? "Failed to reset Gmail link");
+      }
+      setMessages((data.messages as ThreadMessage[]) ?? []);
+      setGmailOpenUrl(null);
+      setForceNewGmailThreadOnSend(true);
+      setSubjectSuffix("");
+      saveReplyDraft(ticket.rowId, {
+        body: replyBodyRef.current,
+        subject: "",
+        cc: ccDraftRef.current,
+        bcc: bccDraftRef.current,
+      });
+      onGmailLinkChange(ticket.rowId, null);
+      onForceNewGmailThreadChange?.(ticket.rowId, true);
+      await onSubjectChange(ticket.rowId, "");
+      setResetGmailLinkConfirmOpen(false);
+      onThreadUpdate();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to reset Gmail link");
+    } finally {
+      setResettingGmailLink(false);
+    }
   }
 
   function openDraftInGmail() {
@@ -1002,9 +1743,19 @@ export function TicketDetail({
               <p className="mt-0.5 text-[10px] text-red-600">Add subject details before sending.</p>
             )}
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className="text-sm font-semibold text-zendesk-navy">
-                {ticket.requesterName || "—"}
-              </span>
+              {ticket.requesterName ? (
+                <button
+                  type="button"
+                  onClick={insertGreetingForRequester}
+                  className="text-sm font-semibold text-zendesk-navy hover:underline"
+                  title={`Insert "Hello ${parseFirstName(ticket.requesterName)}," in email draft`}
+                  aria-label={`Insert greeting for ${parseFirstName(ticket.requesterName)} in email draft`}
+                >
+                  {ticket.requesterName}
+                </button>
+              ) : (
+                <span className="text-sm font-semibold text-zendesk-navy">—</span>
+              )}
               <span className="text-zendesk-muted" aria-hidden>
                 ·
               </span>
@@ -1070,6 +1821,14 @@ export function TicketDetail({
                 ·
               </span>
               <span className="text-xs text-zendesk-muted">
+                {ticket.coverSourceLabel ? (
+                  <span
+                    className="mr-1.5 rounded bg-violet-100 px-1.5 py-px text-[10px] font-semibold text-violet-800 ring-1 ring-violet-200"
+                    title="Teammate cover sheet"
+                  >
+                    {ticket.coverSourceLabel}
+                  </span>
+                ) : null}
                 {sheetRowUrl ? (
                   <a
                     href={sheetRowUrl}
@@ -1093,21 +1852,226 @@ export function TicketDetail({
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setHeaderDetailsOpen((open) => !open)}
-            className="mt-0.5 flex shrink-0 items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100"
-            aria-expanded={headerDetailsOpen}
-          >
-            Details
-            <ChevronDown
-              className={`h-3 w-3 transition-transform ${headerDetailsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={() => setHeaderDetailsOpen((open) => !open)}
+              className="mt-0.5 flex items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100"
+              aria-expanded={headerDetailsOpen}
+            >
+              Details
+              <ChevronDown
+                className={`h-3 w-3 transition-transform ${headerDetailsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => void openGleanWithPrompt(GLEAN_THREAD_SUMMARY_PROMPT, "summary")}
+                className="inline-flex items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+                title={
+                  gleanOpenedKind === "summary"
+                    ? "Opened Glean — paste the copied thread into chat"
+                    : "Copy thread to clipboard and open Glean with summary prompt"
+                }
+                aria-label={
+                  gleanOpenedKind === "summary"
+                    ? "Opened Glean — paste the copied thread into chat"
+                    : "Copy thread to clipboard and open Glean with summary prompt"
+                }
+              >
+                <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+                {gleanOpenedKind === "summary" ? "Opened" : "Glean Summary"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void openGleanWithPrompt(GLEAN_RESPONSE_PROMPT, "response")}
+                className="inline-flex items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+                title={
+                  gleanOpenedKind === "response"
+                    ? "Opened Glean — paste the copied thread into chat"
+                    : "Copy thread to clipboard and open Glean with response prompt"
+                }
+                aria-label={
+                  gleanOpenedKind === "response"
+                    ? "Opened Glean — paste the copied thread into chat"
+                    : "Copy thread to clipboard and open Glean with response prompt"
+                }
+              >
+                <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+                {gleanOpenedKind === "response" ? "Opened" : "Glean Response"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void openGleanWithPrompt(GLEAN_ESCALATION_PROMPT, "escalation")}
+                className="inline-flex items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+                title={
+                  gleanOpenedKind === "escalation"
+                    ? "Opened Glean — paste the copied thread into chat"
+                    : "Copy thread to clipboard and open Glean with escalation prompt"
+                }
+                aria-label={
+                  gleanOpenedKind === "escalation"
+                    ? "Opened Glean — paste the copied thread into chat"
+                    : "Copy thread to clipboard and open Glean with escalation prompt"
+                }
+              >
+                <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+                {gleanOpenedKind === "escalation" ? "Opened" : "Glean Escalation"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyConversationToClipboard()}
+                className="inline-flex items-center gap-0.5 rounded border border-zendesk-border px-2 py-1 text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+                title={
+                  conversationCopied
+                    ? "Copied full conversation"
+                    : "Copy full conversation to clipboard"
+                }
+                aria-label={
+                  conversationCopied
+                    ? "Copied full conversation"
+                    : "Copy full conversation to clipboard"
+                }
+              >
+                <Copy className="h-3 w-3 shrink-0" aria-hidden />
+                {conversationCopied ? "Copied" : "Copy thread"}
+              </button>
+            </div>
+          </div>
         </div>
         {headerDetailsOpen && (
           <div className="mt-1.5 space-y-1.5 border-t border-zendesk-border/60 pt-1.5">
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
+              {ticket.coverSourceLabel && onResyncFromSheet ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {!resyncConfirmOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResyncError(null);
+                        setResyncConfirmOpen(true);
+                      }}
+                      className="rounded border border-violet-200 px-1.5 py-px font-semibold text-violet-800 hover:bg-violet-50"
+                    >
+                      Resync from sheet
+                    </button>
+                  ) : (
+                    <>
+                      <span className="text-zendesk-muted">
+                        Reload sheet values and discard CRM overrides for this cover ticket?
+                      </span>
+                      <button
+                        type="button"
+                        disabled={resyncingFromSheet}
+                        onClick={async () => {
+                          const ticketRowId = ticket.rowId;
+                          setResyncingFromSheet(true);
+                          setResyncError(null);
+                          try {
+                            await onResyncFromSheet(ticketRowId);
+                            if (ticket?.rowId !== ticketRowId) return;
+                            setResyncConfirmOpen(false);
+                          } catch (error) {
+                            if (ticket?.rowId !== ticketRowId) return;
+                            setResyncError(
+                              error instanceof Error
+                                ? error.message
+                                : "Failed to resync from sheet"
+                            );
+                          } finally {
+                            if (ticket?.rowId === ticketRowId) {
+                              setResyncingFromSheet(false);
+                            }
+                          }
+                        }}
+                        className="rounded border border-violet-300 bg-violet-100 px-1.5 py-px font-semibold text-violet-900 hover:bg-violet-200 disabled:opacity-50"
+                      >
+                        {resyncingFromSheet ? "Resyncing…" : "Confirm resync"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={resyncingFromSheet}
+                        onClick={() => {
+                          setResyncConfirmOpen(false);
+                          setResyncError(null);
+                        }}
+                        className="rounded border border-zendesk-border px-1.5 py-px text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                  {resyncError ? (
+                    <span className="text-red-600">{resyncError}</span>
+                  ) : null}
+                  {onIgnoreCoverTicket &&
+                  normalizeStatusId(ticket.status) !== "resolved" ? (
+                    <>
+                      {!ignoreConfirmOpen ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIgnoreCoverError(null);
+                            setIgnoreConfirmOpen(true);
+                          }}
+                          className="rounded border border-violet-200 px-1.5 py-px font-semibold text-violet-800 hover:bg-violet-50"
+                        >
+                          Ignore ticket
+                        </button>
+                      ) : (
+                        <>
+                          <span className="text-zendesk-muted">
+                            Mark resolved in your inbox only? Their sheet will not be updated.
+                          </span>
+                          <button
+                            type="button"
+                            disabled={ignoringCoverTicket}
+                            onClick={async () => {
+                              const ticketRowId = ticket.rowId;
+                              setIgnoringCoverTicket(true);
+                              setIgnoreCoverError(null);
+                              try {
+                                await onIgnoreCoverTicket(ticketRowId);
+                                if (ticket?.rowId !== ticketRowId) return;
+                                setIgnoreConfirmOpen(false);
+                              } catch (error) {
+                                if (ticket?.rowId !== ticketRowId) return;
+                                setIgnoreCoverError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Failed to ignore ticket"
+                                );
+                              } finally {
+                                if (ticket?.rowId === ticketRowId) {
+                                  setIgnoringCoverTicket(false);
+                                }
+                              }
+                            }}
+                            className="rounded border border-violet-300 bg-violet-100 px-1.5 py-px font-semibold text-violet-900 hover:bg-violet-200 disabled:opacity-50"
+                          >
+                            {ignoringCoverTicket ? "Ignoring…" : "Confirm ignore"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={ignoringCoverTicket}
+                            onClick={() => {
+                              setIgnoreConfirmOpen(false);
+                              setIgnoreCoverError(null);
+                            }}
+                            className="rounded border border-zendesk-border px-1.5 py-px text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                      {ignoreCoverError ? (
+                        <span className="text-red-600">{ignoreCoverError}</span>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               {ticket.needsInitialResponse && (
                 <button
                   type="button"
@@ -1122,7 +2086,7 @@ export function TicketDetail({
                   disabled={clearingInitialSla}
                   className="rounded border border-red-200 px-1.5 py-px font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
                 >
-                  {clearingInitialSla ? "Clearing…" : `Clear ${initialResponseHours}h SLA`}
+                  {clearingInitialSla ? "Clearing…" : `Clear ${initialResponseHours}h business SLA`}
                 </button>
               )}
             </div>
@@ -1208,11 +2172,55 @@ export function TicketDetail({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-zendesk-border">
-          <div className="shrink-0 border-b border-zendesk-border bg-gray-50 px-3 py-1 text-[10px] font-semibold uppercase text-zendesk-muted">
-            Conversation
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r border-zendesk-border">
+          <div
+            className={
+              composePanelView === "conversation-full"
+                ? "absolute inset-0 z-40 flex min-h-0 flex-col overflow-hidden border border-zendesk-border bg-white shadow-[0_8px_24px_rgba(23,73,77,0.12)]"
+                : composePanelView === "draft-full"
+                  ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                  : "flex min-h-0 flex-1 flex-col"
+            }
+          >
+            <div className="flex shrink-0 items-center border-b border-zendesk-border bg-gray-50 px-2.5 py-1">
+              <span className="text-[10px] font-semibold uppercase text-zendesk-muted">
+                Conversation
+              </span>
+              <button
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  toggleConversationExpanded();
+                }}
+                title={
+                  composePanelView === "conversation-full"
+                    ? "Show email draft"
+                    : "Expand conversation"
+                }
+                aria-label={
+                  composePanelView === "conversation-full"
+                    ? "Show email draft"
+                    : "Expand conversation"
+                }
+                className="ml-auto rounded p-1 text-zendesk-muted hover:bg-white/80 hover:text-zendesk-navy"
+              >
+                {composePanelView === "conversation-full" ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+            {awaitingNewGmailThread && (
+              <div className="mb-2 rounded border border-violet-300 bg-violet-50 px-3 py-2 text-xs text-violet-950">
+                <p className="font-medium">Next send starts a new Gmail thread</p>
+                <p className="mt-1 text-violet-900/90">
+                  The wrong Gmail link and subject were cleared. Send your reply when ready — it
+                  will not reply to the old thread, and your draft body is unchanged.
+                </p>
+              </div>
+            )}
             <div className="mb-2 rounded border border-zendesk-border bg-white p-2.5">
               <p className="text-xs font-semibold text-zendesk-muted">Original request</p>
               <p className="mt-2 whitespace-pre-wrap text-sm">{ticket.description}</p>
@@ -1251,6 +2259,21 @@ export function TicketDetail({
                 );
               }
 
+              if (msg.direction === "admin_note") {
+                return (
+                  <div
+                    key={msg.id}
+                    className="mb-2 rounded border border-amber-200 bg-amber-50 p-2.5"
+                  >
+                    <div className="flex justify-between gap-2 text-xs font-semibold text-amber-900">
+                      <span>Admin note · {msg.from}</span>
+                      <span>{new Date(msg.sentAt).toLocaleString()}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-amber-950">{msg.body}</p>
+                  </div>
+                );
+              }
+
               if (msg.direction === "system") {
                 return (
                   <div
@@ -1262,17 +2285,31 @@ export function TicketDetail({
                       <span>{new Date(msg.sentAt).toLocaleString()}</span>
                     </div>
                     <p className="mt-2 text-sm">{msg.body}</p>
-                    {gmailThreadUrl && (
-                      <a
-                        href={gmailThreadUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
-                      >
-                        View full history in Gmail
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {threadLinkNoticeNeedsBackfill(msg.subject, msg.body) && (
+                        <button
+                          type="button"
+                          onClick={() => void performBackfillLinkHistory(msg)}
+                          disabled={Boolean(backfillingLinkNoticeId) || sendQueueBusy}
+                          className="inline-flex items-center gap-1 rounded border border-violet-300 bg-white px-2 py-1 text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                        >
+                          {backfillingLinkNoticeId === msg.id
+                            ? "Importing…"
+                            : "Import full thread history"}
+                        </button>
+                      )}
+                      {gmailThreadUrl && (
+                        <a
+                          href={gmailThreadUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                        >
+                          View full history in Gmail
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
                 );
               }
@@ -1298,26 +2335,17 @@ export function TicketDetail({
                     <p className="mt-1 text-xs text-zendesk-muted">CC: {msg.cc}</p>
                   )}
                   {(msg.body !== "(attachment only)" || !msg.attachments?.length) && (
-                    <p className="mt-2 whitespace-pre-wrap text-sm">{msg.body}</p>
+                    <ThreadMessageBody body={msg.body} />
                   )}
                   {msg.attachments && msg.attachments.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {msg.attachments.map((att) => (
-                        <li key={att.id}>
-                          <a
-                            href={`/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/attachments/${encodeURIComponent(att.id)}`}
-                            download={att.filename}
-                            className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-1 text-xs font-medium text-blue-600 hover:bg-green-50"
-                          >
-                            <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{att.filename}</span>
-                            <span className="text-zendesk-muted">
-                              ({formatFileSize(att.sizeBytes)})
-                            </span>
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
+                    <ThreadAttachmentList
+                      items={msg.attachments.map((att) => ({
+                        id: att.id,
+                        filename: att.filename,
+                        sizeBytes: att.sizeBytes,
+                        downloadHref: `/api/tickets/${encodeURIComponent(ticket.rowId)}/thread/attachments/${encodeURIComponent(att.id)}`,
+                      }))}
+                    />
                   )}
                   {msg.gmailMessageId && (
                     <a
@@ -1345,342 +2373,52 @@ export function TicketDetail({
                 </div>
               );
             })}
+            </div>
           </div>
+          {composePanelView !== "conversation-full" && (
           <div
-            className={`-mt-[10px] flex min-h-0 flex-col overflow-hidden border bg-white shadow-[0_-6px_16px_rgba(23,73,77,0.08)] pb-3 transition-[flex-basis,border-color,background-color] duration-200 ease-out ${
-              composeFieldError
-                ? "crm-field-required-missing border-red-300"
-                : "border-zendesk-border"
-            } border-b-0 ${
-              composeTab === "reply" && replyFocused
-                ? "flex-[0_0_calc(58%+25px)]"
-                : "flex-[0_0_calc(42%+25px)]"
-            }`}
+            className={
+              composePanelView === "draft-full"
+                ? "absolute inset-0 z-40 flex min-h-0 flex-col overflow-hidden border border-zendesk-border bg-white shadow-[0_-8px_24px_rgba(23,73,77,0.12)]"
+                : `flex min-h-0 flex-1 flex-col overflow-hidden border-t bg-white ${
+                    composeFieldError
+                      ? "crm-field-required-missing border-red-300"
+                      : "border-zendesk-border"
+                  }`
+            }
           >
-            <div className="relative z-10 flex shrink-0 border-b border-zendesk-border bg-slate-100 px-2.5">
+            <div className="relative z-10 flex shrink-0 items-center border-b border-zendesk-border bg-slate-100 px-2.5">
               {composeTabButton("reply", "Email draft")}
               {composeTabButton("admin-notes", "Admin notes")}
               {composeTabButton("crm-log", "CRM log")}
+              <button
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  toggleReplyDraftExpanded();
+                }}
+                title={composePanelView === "draft-full" ? "Minimize email draft" : "Expand email draft"}
+                aria-label={
+                  composePanelView === "draft-full" ? "Minimize email draft" : "Expand email draft"
+                }
+                className="ml-auto rounded p-1.5 text-zendesk-muted hover:bg-white/80 hover:text-zendesk-navy"
+              >
+                {composePanelView === "draft-full" ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
             <div className="relative min-h-0 flex-1 overflow-hidden">
               <div
-                className={`absolute inset-0 flex flex-col overflow-hidden ${
-                  composeTab === "reply" ? "" : "pointer-events-none invisible"
+                className={`absolute inset-0 flex flex-col ${
+                  composeTab === "reply" ? "z-10" : "pointer-events-none invisible z-0"
                 }`}
                 aria-hidden={composeTab !== "reply"}
               >
-                <div className="shrink-0 border-b border-zendesk-border bg-white px-2.5 text-xs">
-                  <label className="flex items-center gap-2 border-b border-zendesk-border/60 px-2 py-1">
-                    <span className="w-9 shrink-0 text-zendesk-muted">To</span>
-                    <span className="min-w-0 truncate text-zendesk-navy">
-                      {ticket.requesterEmail || "—"}
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 px-2 py-1">
-                    <span className="w-9 shrink-0 text-zendesk-muted">Cc</span>
-                    <input
-                      type="text"
-                      value={ccDraft}
-                      onChange={(e) => setCcDraft(e.target.value)}
-                      placeholder="Add Cc recipients…"
-                      className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-zendesk-muted/70"
-                      aria-label="Cc recipients"
-                    />
-                  </label>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2.5 pt-1">
-                  <ReplyDraftEditor
-                    ref={replyEditorRef}
-                    value={replyBody}
-                    onChange={(html) => {
-                      setReplyBody(html);
-                      if (!isRichTextEmpty(html) || replyAttachments.length > 0) {
-                        clearActionFieldError("compose");
-                      }
-                    }}
-                    focused={replyFocused}
-                    onFocusChange={setReplyFocused}
-                    fillAvailable
-                    placeholder="Draft a reply here, or pick a Mixmax template from the sidebar…"
-                    onDraftInGmail={openDraftInGmail}
-                  />
-                </div>
-                <div className="shrink-0 space-y-2 border-t border-zendesk-border/60 px-2.5 pt-1.5">
-                  <input
-                    ref={attachmentInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf,.txt,.csv"
-                    className="hidden"
-                    onChange={handleAttachmentPick}
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => attachmentInputRef.current?.click()}
-                      disabled={
-                        sendQueueBusy ||
-                        replyAttachments.length >= MAX_OUTBOUND_ATTACHMENTS
-                      }
-                      className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
-                    >
-                      <Paperclip className="h-3.5 w-3.5" />
-                      Attach files
-                    </button>
-                    <span className="text-[10px] text-zendesk-muted">
-                      Up to {MAX_OUTBOUND_ATTACHMENTS} files, 20MB each
-                    </span>
-                  </div>
-                  {replyAttachments.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {replyAttachments.map((entry) => (
-                        <li
-                          key={entry.id}
-                          className="flex items-center gap-2 rounded border border-zendesk-border bg-gray-50 px-2 py-1.5 text-xs"
-                        >
-                          <Paperclip className="h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
-                          <span className="min-w-0 flex-1 truncate" title={entry.file.name}>
-                            {entry.file.name}
-                          </span>
-                          <span className="shrink-0 text-zendesk-muted">
-                            {formatFileSize(entry.file.size)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeReplyAttachment(entry.id)}
-                            disabled={sendQueueBusy}
-                            className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
-                            aria-label={`Remove ${entry.file.name}`}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {attachmentError && (
-                    <p className="mt-1 text-xs text-red-600">{attachmentError}</p>
-                  )}
-                  <div className="space-y-1">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={ccMarketManager}
-                        onChange={(e) => handleCcMarketManagerChange(e.target.checked)}
-                        disabled={!marketManagerEmail}
-                        className="rounded border-zendesk-border"
-                      />
-                      <span>
-                        CC Market Manager
-                        {ticket.marketManager && (
-                          <span className="text-zendesk-muted"> ({ticket.marketManager})</span>
-                        )}
-                      </span>
-                    </label>
-                    {marketManagerMissingFromDirectory && (
-                      <p className="text-xs leading-snug text-amber-800">
-                        Market manager{" "}
-                        <span className="font-medium">{ticket.marketManager.trim()}</span> is not
-                        in the directory.{" "}
-                        {onOpenSetup ? (
-                          <button
-                            type="button"
-                            onClick={() => onOpenSetup("managers")}
-                            className="font-medium text-amber-950 underline underline-offset-2 hover:text-amber-900"
-                          >
-                            Open Settings
-                          </button>
-                        ) : (
-                          "Open Settings"
-                        )}{" "}
-                        to add them under Market managers.
-                      </p>
-                    )}
-                  </div>
-                  <div className="relative space-y-2">
-                    {actionValidation && (
-                      <p className="text-center text-[10px] font-medium text-red-600">
-                        {actionValidation.message}
-                      </p>
-                    )}
-                    {pendingSendUndo?.active && (
-                      <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-end">
-                        <div className="pointer-events-auto m-0 flex max-w-xs flex-col items-end gap-1 rounded-lg border border-amber-500 bg-amber-300 px-3 py-2 shadow-lg shadow-amber-900/25">
-                          <button
-                            type="button"
-                            onClick={pendingSendUndo.onUndo}
-                            className="flex items-center gap-2 rounded border border-amber-700 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-50"
-                          >
-                            <Undo2 className="h-3.5 w-3.5" />
-                            Undo ({pendingSendUndo.secondsLeft}s)
-                          </button>
-                          <p className="text-right text-[10px] font-medium leading-snug text-amber-950">
-                            {pendingSendUndo.label ?? "Ticket"} →{" "}
-                            {pendingSendUndo.status === "resolved" ? "Resolved" : "Pending"}
-                            {pendingSendUndo.attachmentCount > 0 && (
-                              <span>
-                                {" "}
-                                · {pendingSendUndo.attachmentCount} attachment
-                                {pendingSendUndo.attachmentCount === 1 ? "" : "s"}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex w-full flex-wrap items-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => queueSend("pending", "send-pending")}
-                      disabled={sendQueueBusy || isSending}
-                      className={actionButtonClass(
-                        "send-pending",
-                        "flex items-center gap-1.5 rounded bg-zendesk-green px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                      )}
-                    >
-                      <Send className="h-4 w-4" />
-                      {isSending ? "Sending..." : "Send/Pending"}
-                    </button>
-                    <div ref={pendingMenuRef} className="relative inline-flex">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          flashActionPress("set-pending");
-                          setPendingMenuOpen((open) => !open);
-                        }}
-                        disabled={
-                          markingStatusOnly !== null ||
-                          markingPendingHours !== null ||
-                          sendQueueBusy
-                        }
-                        title="Set status to Pending without sending an email"
-                        className={actionButtonClass(
-                          "set-pending",
-                          "flex items-center gap-1.5 rounded-l border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
-                        )}
-                      >
-                        <CircleCheck className="h-4 w-4" />
-                        {markingPendingHours !== null ? "Setting…" : "Set to Pending"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          flashActionPress("set-pending-menu");
-                          setPendingMenuOpen((open) => !open);
-                        }}
-                        disabled={
-                          markingStatusOnly !== null ||
-                          markingPendingHours !== null ||
-                          sendQueueBusy
-                        }
-                        aria-expanded={pendingMenuOpen}
-                        aria-label="Choose pending duration"
-                        className={actionButtonClass(
-                          "set-pending-menu",
-                          "rounded-r border border-l-0 border-zendesk-border bg-white px-1.5 py-1.5 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
-                        )}
-                      >
-                        <ChevronDown
-                          className={`h-3.5 w-3.5 transition-transform ${pendingMenuOpen ? "rotate-180" : ""}`}
-                        />
-                      </button>
-                      {pendingMenuOpen && (
-                        <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[10rem] rounded border border-zendesk-border bg-white py-1 shadow-md">
-                          {PENDING_WITHOUT_EMAIL_HOURS_OPTIONS.map((hours) => (
-                            <button
-                              key={hours}
-                              type="button"
-                              onClick={() =>
-                                void setStatusWithoutEmail(
-                                  "pending",
-                                  {
-                                    pendingHours: hours,
-                                    adminNote: pendingWithoutEmailAdminNote(hours),
-                                  },
-                                  `set-pending-${hours}h`
-                                )
-                              }
-                              className="block w-full px-3 py-1.5 text-left text-xs text-zendesk-navy hover:bg-gray-100"
-                            >
-                              Pending {hours}h
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => queueSend("resolved", "send-resolved")}
-                      disabled={sendQueueBusy || isSending}
-                      className={actionButtonClass(
-                        "send-resolved",
-                        "flex items-center gap-1.5 rounded border border-zendesk-green bg-white px-3 py-1.5 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
-                      )}
-                    >
-                      <Send className="h-4 w-4" />
-                      {isSending ? "Sending..." : "Send/Resolved"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void setStatusWithoutEmail(
-                          "resolved",
-                          {
-                            adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
-                          },
-                          "set-resolved"
-                        )
-                      }
-                      disabled={
-                        markingStatusOnly !== null ||
-                        markingPendingHours !== null ||
-                        sendQueueBusy ||
-                        ticket.status === "resolved"
-                      }
-                      title="Set status to Resolved without sending an email"
-                      className={actionButtonClass(
-                        "set-resolved",
-                        "flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
-                      )}
-                    >
-                      <CircleCheck className="h-4 w-4" />
-                      {markingStatusOnly === "resolved" ? "Setting…" : "Set to Resolved"}
-                    </button>
-                    <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={openInGmail}
-                        disabled={!gmailThreadUrl}
-                        title={
-                          gmailThreadUrl
-                            ? "Open this email thread in Gmail"
-                            : ticket.gmailLinkArchivedAt
-                              ? "Gmail link was archived — re-link from Unread Gmail if the customer replies"
-                              : "No linked Gmail thread for this ticket"
-                        }
-                        className="flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
-                      >
-                        <Mail className="h-4 w-4" />
-                        Open in Gmail
-                      </button>
-                      {ticket.gmailLinkArchivedAt && (
-                        <p className="max-w-xs text-right text-[10px] leading-snug text-zendesk-muted">
-                          Gmail link archived{" "}
-                          {new Date(ticket.gmailLinkArchivedAt).toLocaleDateString()}. Thread
-                          history is kept locally; bind again if the customer replies on the old
-                          thread.
-                        </p>
-                      )}
-                    </div>
-                    </div>
-                    {statusOnlyError && (
-                      <p className="text-xs text-red-600">{statusOnlyError}</p>
-                    )}
-                    {sendError && <p className="text-xs text-red-600">{sendError}</p>}
-                  </div>
-                </div>
+                {renderEmailDraftComposePanel()}
               </div>
-
               <div
                 className={`absolute inset-0 overflow-hidden ${
                   composeTab === "admin-notes" ? "" : "pointer-events-none invisible"
@@ -1734,6 +2472,7 @@ export function TicketDetail({
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {internalToolsCollapsed ? (
@@ -1787,11 +2526,8 @@ export function TicketDetail({
                   </a>
                 ) : (
                   <p className="text-sm text-zendesk-muted">
-                    No {columnLabels?.columnD || "Column D"} value to search
+                    No form User ID or manual override to search
                   </p>
-                )}
-                {ticket.columnD && (
-                  <p className="mt-1 break-all text-[10px] text-zendesk-muted">{ticket.columnD}</p>
                 )}
               </li>
               <li
@@ -1804,7 +2540,7 @@ export function TicketDetail({
               >
                 <label className="block text-[10px]">
                   <span className="font-medium text-zendesk-muted">
-                    {columnLabels?.airbnbUserId || "User ID (AD)"}
+                    {columnLabels?.airbnbUserId || "Manual User ID override"}
                   </span>
                   <input
                     type="text"
@@ -1819,19 +2555,20 @@ export function TicketDetail({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                     }}
-                    placeholder="Enter user ID…"
+                    placeholder={intakeAirbnbUserId ? `Form: ${intakeAirbnbUserId}` : "Override form User ID…"}
                     className="mt-1 w-full rounded border border-zendesk-border px-2 py-1 font-mono text-xs outline-none focus:border-zendesk-green"
                   />
-                  <span
-                    className={`mt-1 block text-[10px] ${
-                      userIdSaveError ? "text-red-600" : "text-zendesk-muted"
-                    }`}
-                  >
-                    {savingUserId
-                      ? `Saving to ${columnLabels?.airbnbUserId || "Column AD"}…`
-                      : userIdSaveError ||
-                        `Synced with ${columnLabels?.airbnbUserId || "Column AD"} on save`}
-                  </span>
+                  {(savingUserId || userIdSaveError) && (
+                    <span
+                      className={`mt-1 block text-[10px] ${
+                        userIdSaveError ? "text-red-600" : "text-zendesk-muted"
+                      }`}
+                    >
+                      {savingUserId
+                        ? `Saving to ${columnLabels?.airbnbUserId || "mapped sheet column"}…`
+                        : userIdSaveError}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1849,6 +2586,24 @@ export function TicketDetail({
                   >
                     <UserRound className="h-3.5 w-3.5" />
                     Nova profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (novaHostPerformanceUrl) {
+                        window.open(novaHostPerformanceUrl, "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                    disabled={!novaHostPerformanceUrl}
+                    title={
+                      novaHostPerformanceUrl
+                        ? "Open host performance in Nova"
+                        : "Enter a numeric user ID for Nova host performance"
+                    }
+                    className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <LineChart className="h-3.5 w-3.5" />
+                    Host Performance
                   </button>
                   <button
                     type="button"
@@ -1978,6 +2733,15 @@ export function TicketDetail({
           onConfirm={() => void performRedactMessage(redactConfirmMessage)}
         />
       )}
+      {resetGmailLinkConfirmOpen && (
+        <ResetGmailLinkConfirmModal
+          busy={resettingGmailLink}
+          onCancel={() => {
+            if (!resettingGmailLink) setResetGmailLinkConfirmOpen(false);
+          }}
+          onConfirm={() => void performResetGmailLink()}
+        />
+      )}
     </main>
   );
 }
@@ -1992,14 +2756,9 @@ function LinkedCaseField({
   onSave: (value: string) => void | Promise<void>;
 }) {
   const [copied, setCopied] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(() => formatLinkedCaseForEdit(value));
+  const [editOpen, setEditOpen] = useState(false);
   const parsed = parseLinkedCase(value);
   const hasLink = Boolean(parsed.url);
-
-  useEffect(() => {
-    if (!isEditing) setDraft(formatLinkedCaseForEdit(value));
-  }, [value, isEditing]);
 
   async function copyUrl() {
     if (!parsed.url) return;
@@ -2008,75 +2767,57 @@ function LinkedCaseField({
     window.setTimeout(() => setCopied(false), 1500);
   }
 
-  async function saveDraft() {
-    const next = serializeLinkedCaseFromDraft(draft);
-    if (next === value.trim()) {
-      setIsEditing(false);
-      return;
-    }
-    await onSave(next);
-    setIsEditing(false);
-  }
-
   return (
-    <div className="flex min-w-0 items-start gap-1 text-xs">
-      <span className="mt-0.5 w-3.5 shrink-0 text-[10px] text-zendesk-muted">{slot}.</span>
-      {isEditing ? (
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => void saveDraft()}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              setDraft(formatLinkedCaseForEdit(value));
-              setIsEditing(false);
-            }
-          }}
-          placeholder={"Safety\nhttps://…"}
-          rows={2}
-          autoFocus
-          className="min-w-0 flex-1 resize-none rounded border border-zendesk-green px-2 py-1 text-xs leading-snug outline-none"
-        />
-      ) : hasLink ? (
-        <a
-          href={parsed.url!}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={parsed.url!}
-          className="min-w-0 flex-1 truncate text-sm font-medium text-blue-600 hover:underline"
-        >
-          {parsed.label || "Link"}
-        </a>
-      ) : parsed.label ? (
-        <span className="min-w-0 flex-1 truncate text-sm text-zendesk-muted" title={parsed.label}>
-          {parsed.label}
-        </span>
-      ) : (
-        <span className="min-w-0 flex-1 text-sm text-zendesk-muted">—</span>
-      )}
-      {hasLink && !isEditing && (
+    <>
+      <div className="flex min-w-0 items-start gap-1 text-xs">
+        <span className="mt-0.5 w-3.5 shrink-0 text-[10px] text-zendesk-muted">{slot}.</span>
+        {hasLink ? (
+          <a
+            href={parsed.url!}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={parsed.url!}
+            className="min-w-0 flex-1 truncate text-sm font-medium text-blue-600 hover:underline"
+          >
+            {parsed.label || "Link"}
+          </a>
+        ) : parsed.label ? (
+          <span className="min-w-0 flex-1 truncate text-sm text-zendesk-muted" title={parsed.label}>
+            {parsed.label}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1 text-sm text-zendesk-muted">—</span>
+        )}
+        {hasLink && (
+          <button
+            type="button"
+            onClick={copyUrl}
+            title={copied ? "Copied!" : "Copy URL"}
+            aria-label={copied ? "Copied" : "Copy URL"}
+            className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
-          onClick={copyUrl}
-          title={copied ? "Copied!" : "Copy URL"}
-          aria-label={copied ? "Copied" : "Copy URL"}
-          className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </button>
-      )}
-      {!isEditing && (
-        <button
-          type="button"
-          onClick={() => setIsEditing(true)}
+          onClick={() => setEditOpen(true)}
           title={`Edit linked case ${slot}`}
           aria-label={`Edit linked case ${slot}`}
           className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
+      </div>
+      {editOpen && (
+        <LinkedCaseEditModal
+          slot={slot}
+          value={value}
+          onSave={onSave}
+          onClose={() => setEditOpen(false)}
+        />
       )}
-    </div>
+    </>
   );
 }
 

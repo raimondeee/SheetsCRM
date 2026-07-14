@@ -1,20 +1,31 @@
 /** Workspace timer defaults — overridable in user preferences. */
 export interface TimerSettings {
-  /** Pending → Open after this many business hours (Mon–Fri 9–17 local). */
+  /** Pending → Open after this many weekday hours (24h on workdays, weekends excluded). */
   pendingReopenBusinessHours: number;
   /** Longterm Hold / on_hold → Open after this many calendar days. */
   longtermHoldReopenDays: number;
-  /** Flag tickets with no outbound reply after this many hours since intake. */
+  /** Flag tickets with no outbound reply after this many business hours since intake. */
   initialResponseHours: number;
   /** Default Response SLA hours — due time is anchored on the customer's last message. */
   defaultSlaHours: number;
+  /** Days after resolve before unlinking Gmail thread and stopping background sync (Send/Resolved). */
+  resolvedGmailLinkArchiveDays: number;
+}
+
+export function defaultResolvedGmailLinkArchiveDays(): number {
+  if (typeof process !== "undefined" && process.env.GMAIL_LINK_ARCHIVE_DAYS) {
+    const fromEnv = Number(process.env.GMAIL_LINK_ARCHIVE_DAYS);
+    if (Number.isFinite(fromEnv) && fromEnv > 0) return Math.round(fromEnv);
+  }
+  return 90;
 }
 
 export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
-  pendingReopenBusinessHours: 72,
+  pendingReopenBusinessHours: 48,
   longtermHoldReopenDays: 7,
   initialResponseHours: 48,
   defaultSlaHours: 48,
+  resolvedGmailLinkArchiveDays: defaultResolvedGmailLinkArchiveDays(),
 };
 
 export const SLA_HOUR_OPTIONS = [4, 8, 24, 48, 72] as const;
@@ -52,6 +63,12 @@ export function normalizeTimerSettings(
       DEFAULT_TIMER_SETTINGS.defaultSlaHours,
       1,
       720
+    ),
+    resolvedGmailLinkArchiveDays: clampInt(
+      partial?.resolvedGmailLinkArchiveDays,
+      DEFAULT_TIMER_SETTINGS.resolvedGmailLinkArchiveDays,
+      1,
+      365
     ),
   };
 }

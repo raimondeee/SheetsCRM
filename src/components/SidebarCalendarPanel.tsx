@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Calendar, ChevronDown, ChevronUp, ExternalLink, RefreshCw } from "lucide-react";
+import { Calendar, ChevronDown, ChevronUp, ExternalLink, RefreshCw, X } from "lucide-react";
 import {
   CALENDAR_SIDEBAR_COLLAPSED_KEY,
   CALENDAR_SIDEBAR_POLL_MS,
   calendarEventCardClass,
+  calendarEventCurrentPulseClass,
   calendarEventHighlight,
   formatCalendarEventWhen,
   type CalendarUpcomingEvent,
@@ -48,6 +49,18 @@ export function SidebarCalendarPanel({ enabled, fontScale = 1 }: SidebarCalendar
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = usePersistedBoolean(CALENDAR_SIDEBAR_COLLAPSED_KEY, false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [acknowledgedCurrentIds, setAcknowledgedCurrentIds] = useState<Set<string>>(
+    () => new Set()
+  );
+
+  const acknowledgeCurrentEvent = useCallback((eventId: string) => {
+    setAcknowledgedCurrentIds((prev) => {
+      if (prev.has(eventId)) return prev;
+      const next = new Set(prev);
+      next.add(eventId);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     if (!enabled) return;
@@ -104,6 +117,26 @@ export function SidebarCalendarPanel({ enabled, fontScale = 1 }: SidebarCalendar
     const tickId = window.setInterval(() => setNowMs(Date.now()), 15_000);
     return () => window.clearInterval(tickId);
   }, [enabled, collapsed]);
+
+  useEffect(() => {
+    const currentIds = new Set(
+      events
+        .filter((event) => calendarEventHighlight(event, nowMs) === "current")
+        .map((event) => event.id)
+    );
+    setAcknowledgedCurrentIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (currentIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [events, nowMs]);
 
   if (!enabled) return null;
 
@@ -171,39 +204,62 @@ export function SidebarCalendarPanel({ enabled, fontScale = 1 }: SidebarCalendar
               {events.map((event) => {
                 const when = formatCalendarEventWhen(event.start, event.allDay);
                 const highlight = calendarEventHighlight(event, nowMs);
+                const acknowledged = acknowledgedCurrentIds.has(event.id);
+                const isPulsing = highlight === "current" && !acknowledged;
                 const cardClass = calendarEventCardClass(highlight);
-                const content = (
-                  <>
-                    <p className={`line-clamp-2 ${text.tiny} font-medium leading-snug text-zendesk-navy`}>
-                      {event.summary}
-                    </p>
-                    <p className={`mt-0.5 ${text.micro} text-zendesk-muted`}>{when}</p>
-                  </>
-                );
+                const pulseClass = calendarEventCurrentPulseClass(highlight, acknowledged);
 
-                if (event.htmlLink) {
-                  return (
-                    <li key={event.id}>
+                return (
+                  <li
+                    key={event.id}
+                    className={`rounded border px-2 py-1.5 ${cardClass} ${pulseClass} ${text.tiny}`}
+                  >
+                    <div className="flex items-start gap-1">
+                      <div
+                        className={`min-w-0 flex-1 ${isPulsing ? "cursor-pointer" : ""}`}
+                        onClick={() => {
+                          if (isPulsing) acknowledgeCurrentEvent(event.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (isPulsing && (e.key === "Enter" || e.key === " ")) {
+                            e.preventDefault();
+                            acknowledgeCurrentEvent(event.id);
+                          }
+                        }}
+                        role={isPulsing ? "button" : undefined}
+                        tabIndex={isPulsing ? 0 : undefined}
+                      >
+                        <p
+                          className={`line-clamp-2 ${text.tiny} font-medium leading-snug text-zendesk-navy`}
+                        >
+                          {event.summary}
+                        </p>
+                        <p className={`mt-0.5 ${text.micro} text-zendesk-muted`}>{when}</p>
+                      </div>
+                      {isPulsing && (
+                        <button
+                          type="button"
+                          onClick={() => acknowledgeCurrentEvent(event.id)}
+                          className="shrink-0 rounded p-0.5 text-zendesk-muted hover:bg-black/5 hover:text-zendesk-navy"
+                          aria-label="Stop highlighting event"
+                          title="Dismiss highlight"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                    {event.htmlLink && (
                       <a
                         href={event.htmlLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`block rounded border px-2 py-1.5 ${cardClass} ${text.tiny}`}
-                        title="Open in Google Calendar"
+                        className={`mt-1 inline-flex items-center gap-0.5 ${text.micro} text-blue-600 hover:underline`}
+                        title="Open event in Google Calendar"
                       >
-                        {content}
-                        <span className={`mt-1 inline-flex items-center gap-0.5 ${text.micro} text-blue-600`}>
-                          Open
-                          <ExternalLink className="h-2.5 w-2.5" />
-                        </span>
+                        Open
+                        <ExternalLink className="h-2.5 w-2.5" />
                       </a>
-                    </li>
-                  );
-                }
-
-                return (
-                  <li key={event.id} className={`rounded border px-2 py-1.5 ${cardClass} ${text.tiny}`}>
-                    {content}
+                    )}
                   </li>
                 );
               })}

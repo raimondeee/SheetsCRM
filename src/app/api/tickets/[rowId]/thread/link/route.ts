@@ -11,7 +11,9 @@ import {
   ensureTicketGmailApiThreadId,
   fetchFirstThreadSubject,
   fetchGmailThreadCandidatePreviews,
+  importGmailThreadMessagesForTicket,
   resolveGmailThreadLinkTargetDetailed,
+  syncGmailThreadForTicket,
 } from "@/lib/gmail";
 import { shouldSetSubjectFromLinkedGmailThread } from "@/lib/email-subject";
 import { isGmailLegacyWebId } from "@/lib/gmail-urls";
@@ -22,13 +24,14 @@ async function finishLink(
   decoded: string,
   apiThreadId: string,
   openUrl: string,
-  replace: boolean,
+  options: { replace: boolean; append: boolean },
   requesterEmail?: string
 ) {
   const result = linkExistingGmailThread(decoded, {
     threadId: apiThreadId,
     openUrl,
-    replace,
+    replace: options.replace,
+    append: options.append,
   });
   if (!result.ok) {
     const linkedTicket = result.linkedTicketRowId
@@ -44,9 +47,22 @@ async function finishLink(
     );
   }
 
+  if (result.appended && requesterEmail?.trim()) {
+    await importGmailThreadMessagesForTicket({
+      ticketRowId: decoded,
+      threadId: apiThreadId,
+      requesterEmail: requesterEmail.trim(),
+    });
+  } else if (requesterEmail?.trim()) {
+    await syncGmailThreadForTicket({
+      ticketRowId: decoded,
+      requesterEmail: requesterEmail.trim(),
+    });
+  }
+
   let importedSubject: string | null = null;
   const overlay = getTicketOverlay(decoded);
-  if (shouldSetSubjectFromLinkedGmailThread(overlay.crmSubject)) {
+  if (!options.append && shouldSetSubjectFromLinkedGmailThread(overlay.crmSubject)) {
     const resolvedThreadId = await ensureTicketGmailApiThreadId({
       ticketRowId: decoded,
       requesterEmail,
@@ -65,6 +81,7 @@ async function finishLink(
     messages: getThreadMessages(decoded),
     gmailOpenUrl: resolveTicketGmailOpenUrl(decoded) ?? result.openUrl,
     subject: importedSubject,
+    appended: result.appended ?? false,
   });
 }
 
@@ -76,11 +93,23 @@ export async function POST(
     const { rowId } = await params;
     const decoded = decodeURIComponent(rowId);
     const body = await request.json();
-    const { threadId: rawThreadId, replace, requesterEmail, selectedApiThreadId } = body as {
+    const {
+      threadId: rawThreadId,
+      replace,
+      append,
+      requesterEmail,
+      selectedApiThreadId,
+    } = body as {
       threadId?: string;
       replace?: boolean;
+      append?: boolean;
       requesterEmail?: string;
       selectedApiThreadId?: string;
+    };
+
+    const linkOptions = {
+      replace: Boolean(replace),
+      append: Boolean(append),
     };
 
     const parsed = rawThreadId ? parseGmailLinkInput(rawThreadId) : null;
@@ -99,7 +128,7 @@ export async function POST(
         decoded,
         selectedApiThreadId.trim(),
         parsed.openUrl,
-        Boolean(replace),
+        linkOptions,
         requesterEmail
       );
     }
@@ -110,7 +139,7 @@ export async function POST(
         decoded,
         resolution.apiThreadId,
         parsed.openUrl,
-        Boolean(replace),
+        linkOptions,
         requesterEmail
       );
     }

@@ -1,3 +1,5 @@
+import type { BusinessHoursConfig } from "./business-hours";
+
 export type ColumnRole =
   | "rowKey"
   | "timestamp"
@@ -50,10 +52,21 @@ export interface SheetConfig {
   columns: ColumnMapping[];
   /** Optional header-area fields under the ticket subject. */
   uiFieldSlots?: UiFieldSlot[];
+  /** Workspace business schedule for timers and service metrics. */
+  businessHours?: BusinessHoursConfig;
   /** When true, saved column roles are not auto-overwritten on load. */
   manuallyMapped?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Teammate intake sheet configured under Setup → Team coverage. */
+export interface CoverSheetEntry {
+  id: string;
+  /** Agent or team name shown on tickets from this sheet. */
+  label: string;
+  enabled: boolean;
+  config: SheetConfig | null;
 }
 
 export interface Ticket {
@@ -63,7 +76,7 @@ export interface Ticket {
   sheetName: string;
   timestamp: string;
   requesterEmail: string;
-  /** Value from sheet Column D (Salesforce search) */
+  /** Value from the mapped email column (legacy field name). */
   columnD: string;
   requesterName: string;
   /** Mappable header field shown under the ticket subject (Setup → column role). */
@@ -74,28 +87,30 @@ export interface Ticket {
   /** CRM-only subject suffix (after the fixed email prefix) for list display. */
   crmSubjectLabel: string;
   description: string;
-  /** Contact reason from sheet Column I */
+  /** Contact reason from the mapped contact reason column */
   contactReason: string;
-  /** Market Manager from sheet Column H */
+  /** Market Manager from the mapped market manager column */
   marketManager: string;
-  /** Raw value from sheet Column N / status column */
+  /** Raw value from the mapped status column */
   sheetStatus: string;
-  /** Case summary from sheet Column U (read-only reference) */
+  /** Case summary from the mapped case summary column (read-only reference) */
   sheetCaseSummary: string;
-  /** CRM admin notes (seeded from Column U, editable in overlay) */
+  /** CRM admin notes (seeded from case summary column, editable in overlay) */
   adminNotes: string;
-  /** Airbnb User ID from sheet Column AD */
+  /** Airbnb User ID from the mapped airbnbUserId column */
   airbnbUserId: string;
-  /** Reservation code from sheet Column E */
+  /** Reservation code from the mapped reservation code column */
   reservationCode: string;
-  /** Listing ID from sheet Column F */
+  /** Listing ID from the mapped listing ID column */
   listingId: string;
   /** CRM overlay status */
   status: string;
   /** When status was set to pending/longterm_hold — anchors response timer while waiting */
   statusChangedAt: string | null;
-  /** Calendar-hour pending timer when set via Set to Pending (null = business-hour default). */
+  /** Weekday-hour pending timer when set via Set to Pending (null = workspace default). */
   pendingReopenHours: number | null;
+  /** True when resolved via Resolve & Close — blocks auto-reopen. */
+  resolvedClosed?: boolean;
   internalTools: {
     k: string;
     m: string;
@@ -112,8 +127,14 @@ export interface Ticket {
   gmailOpenUrl: string | null;
   /** When Gmail thread claim was archived after prolonged closed status */
   gmailLinkArchivedAt: string | null;
+  /** Next outbound send should start a fresh Gmail thread (not reply to a prior link). */
+  forceNewGmailThreadOnSend: boolean;
   /** CRM-only linked case URLs (not synced to intake sheet) */
   linkedCases: [string, string, string];
+  /** When set, ticket is from a teammate cover sheet (Setup → Team coverage). */
+  coverSourceLabel?: string | null;
+  /** CRM-only manual Airbnb User ID from Internal tools (syncs to mapped airbnbUserId column). */
+  crmAirbnbUserId?: string | null;
   raw: Record<string, string>;
 }
 
@@ -131,7 +152,7 @@ export interface ThreadMessageAttachment {
 export interface ThreadMessage {
   id: string;
   ticketRowId: string;
-  direction: "inbound" | "outbound" | "system" | "redacted";
+  direction: "inbound" | "outbound" | "system" | "admin_note" | "redacted";
   from: string;
   to: string;
   cc: string | null;

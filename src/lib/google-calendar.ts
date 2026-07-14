@@ -5,6 +5,7 @@ import {
   CALENDAR_REMINDER_LEAD_SECONDS,
   CALENDAR_SIDEBAR_EVENT_LIMIT,
   CALENDAR_SIDEBAR_LOOKAHEAD_DAYS,
+  buildCalendarEventOpenUrl,
   type CalendarReminderEvent,
   type CalendarUpcomingEvent,
 } from "./calendar-reminders";
@@ -29,6 +30,7 @@ function mapCalendarItem(
     start?: { dateTime?: string | null; date?: string | null } | null;
     end?: { dateTime?: string | null; date?: string | null } | null;
     htmlLink?: string | null;
+    organizer?: { email?: string | null } | null;
   },
   now: Date
 ): CalendarUpcomingEvent | null {
@@ -69,7 +71,11 @@ function mapCalendarItem(
     summary: item.summary?.trim() || "Calendar event",
     start: startIso,
     end: endIso,
-    htmlLink: item.htmlLink ?? null,
+    htmlLink: buildCalendarEventOpenUrl({
+      id: item.id,
+      htmlLink: item.htmlLink,
+      calendarEmail: item.organizer?.email,
+    }),
     allDay,
     secondsUntilStart,
   };

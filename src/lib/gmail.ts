@@ -3,18 +3,21 @@ import type { gmail_v1 } from "googleapis";
 import { v4 as uuidv4 } from "uuid";
 import type { ThreadMessage } from "./types";
 import type { GmailThreadCandidatePreview, GmailThreadLinkResolveResult } from "./types";
-import { stripHtmlToText } from "./html-utils";
+import { looksLikeHtml, sanitizeEmailHtml, stripHtmlToText } from "./html-utils";
 import { encodeMimeHeaderValue } from "./mime-headers";
 import { getGoogleAuthClient, getSignedInUser } from "./google-auth";
 import { joinRecipientList, parseHeaderRecipientList } from "./email-recipients";
-import { stripQuotedReplyPlainText } from "./email-reply-body";
+import { stripQuotedReplyHtml, stripQuotedReplyPlainText } from "./email-reply-body";
 import { withOpsMetric } from "./ops-metrics";
 import {
   addThreadMessage,
   claimGmailThreadForTicket,
+  clearForceNewGmailThreadOnSend,
   dedupeThreadMessagesForTicket,
   getGmailThreadImportCutoff,
+  getGmailThreadImportCutoffForThread,
   getGmailThreadOpenUrl,
+  getLinkedGmailThreadIdsForTicket,
   getTicketRowIdForGmailThread,
   getThreadMessages,
   isGmailMessageRedactionBlocked,
@@ -22,6 +25,7 @@ import {
   refreshResponseSlaDueAt,
   reopenPendingOnCustomerReply,
   resolveTicketGmailThreadId,
+  ticketForceNewGmailThreadOnSend,
   ticketHasExplicitGmailLink,
   upsertThreadMessageFromGmail,
   type MessageAttachmentInput,
@@ -844,6 +848,8 @@ export async function ensureTicketGmailApiThreadId(params: {
   ticketRowId: string;
   requesterEmail?: string | null;
 }): Promise<string | null> {
+  if (ticketForceNewGmailThreadOnSend(params.ticketRowId)) return null;
+
   const stored = resolveTicketGmailThreadId(params.ticketRowId);
   const openUrl = getGmailThreadOpenUrl(params.ticketRowId);
   const conversationId =
@@ -1106,24 +1112,75 @@ function extractEmailAddress(headerValue: string): string {
   return (match?.[1] ?? headerValue).trim().toLowerCase();
 }
 
-function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): string {
-  if (!payload) return "";
+function decodeBodyData(data: string | null | undefined): string {
+  if (!data) return "";
+  return Buffer.from(data, "base64url").toString("utf-8");
+}
 
-  if (payload.mimeType === "text/plain" && payload.body?.data) {
-    return Buffer.from(payload.body.data, "base64url").toString("utf-8");
+function isAttachmentPart(part: gmail_v1.Schema$MessagePart): boolean {
+  const disposition = part.headers
+    ?.find((h) => h.name?.toLowerCase() === "content-disposition")
+    ?.value?.toLowerCase();
+  return Boolean(disposition?.includes("attachment") || part.filename);
+}
+
+/** Collect text/plain and text/html from a MIME tree (skip file attachments). */
+function extractBodyParts(
+  payload: gmail_v1.Schema$MessagePart | undefined
+): { plain: string; html: string } {
+  const result = { plain: "", html: "" };
+  if (!payload) return result;
+
+  function walk(part: gmail_v1.Schema$MessagePart): void {
+    if (isAttachmentPart(part)) return;
+
+    const mime = part.mimeType ?? "";
+    if (mime === "text/plain" && part.body?.data && !result.plain) {
+      result.plain = decodeBodyData(part.body.data);
+    } else if (mime === "text/html" && part.body?.data && !result.html) {
+      result.html = decodeBodyData(part.body.data);
+    }
+
+    for (const child of part.parts ?? []) {
+      walk(child);
+    }
   }
 
-  for (const part of payload.parts ?? []) {
-    const text = extractBody(part);
-    if (text) return text;
-  }
+  walk(payload);
+  return result;
+}
 
-  return "";
+/** Prefer sanitized HTML for CRM display; fall back to plain text. */
+function resolveMessageBodyForCrm(parts: { plain: string; html: string }): string {
+  const html = parts.html.trim();
+  if (html) {
+    const sanitized = sanitizeEmailHtml(html);
+    if (sanitized) return sanitized;
+  }
+  return parts.plain.trim();
 }
 
 interface ParsedGmailMessage {
   message: ThreadMessage;
   attachments: MessageAttachmentInput[];
+}
+
+/** Classify Gmail thread messages for CRM display (inbound = white, outbound = blue). */
+function classifyGmailMessageDirection(
+  msg: gmail_v1.Schema$Message,
+  agentEmail: string
+): "inbound" | "outbound" {
+  if (msg.labelIds?.includes("SENT")) {
+    return "outbound";
+  }
+
+  const fromEmail = extractEmailAddress(getHeader(msg.payload?.headers, "From"));
+  const agent = extractEmailAddress(agentEmail);
+  if (fromEmail && agent && fromEmail === agent) {
+    return "outbound";
+  }
+
+  return "inbound";
 }
 
 function parseGmailMessage(
@@ -1142,7 +1199,8 @@ function parseGmailMessage(
   const cc = ccParts.length ? joinRecipientList(ccParts) : null;
   const subject = getHeader(headers, "Subject");
   const dateHeader = getHeader(headers, "Date");
-  let body = extractBody(msg.payload).trim();
+  const bodyParts = extractBodyParts(msg.payload);
+  let body = resolveMessageBodyForCrm(bodyParts);
   const attachments = extractAttachmentsFromPayload(msg.payload).map((att) => ({
     gmailAttachmentId: att.gmailAttachmentId,
     filename: att.filename,
@@ -1150,12 +1208,13 @@ function parseGmailMessage(
     sizeBytes: att.sizeBytes,
   }));
 
-  const fromEmail = extractEmailAddress(from);
-  const requester = requesterEmail.trim().toLowerCase();
-  const isInbound = fromEmail === requester;
+  const direction = classifyGmailMessageDirection(msg, agentEmail);
+  const isOutbound = direction === "outbound";
 
-  if (isInbound && body) {
-    body = stripQuotedReplyPlainText(body);
+  if (!isOutbound && body) {
+    body = looksLikeHtml(body)
+      ? stripQuotedReplyHtml(body)
+      : stripQuotedReplyPlainText(body);
   }
 
   const fallbackBody =
@@ -1165,9 +1224,9 @@ function parseGmailMessage(
     message: {
       id: uuidv4(),
       ticketRowId,
-      direction: isInbound ? "inbound" : "outbound",
-      from: from || (isInbound ? requesterEmail : agentEmail),
-      to: to || (isInbound ? agentEmail : requesterEmail),
+      direction,
+      from: from || (isOutbound ? agentEmail : requesterEmail),
+      to: to || (isOutbound ? requesterEmail : agentEmail),
       cc,
       subject: subject || "(no subject)",
       body: body || fallbackBody,
@@ -1204,6 +1263,261 @@ export async function fetchGmailAttachment(params: {
     data: Buffer.from(encoded, "base64url"),
     size: res.data.size ?? 0,
   };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function headerValue(
+  headers: gmail_v1.Schema$MessagePartHeader[] | undefined,
+  name: string
+): string {
+  const match = headers?.find((header) => header.name?.toLowerCase() === name.toLowerCase());
+  return match?.value?.trim() ?? "";
+}
+
+export interface ImportedGmailDraftAttachment {
+  filename: string;
+  mimeType: string;
+  data: Buffer;
+}
+
+function escapeGmailQueryValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function recipientsIncludeEmail(
+  headers: gmail_v1.Schema$MessagePartHeader[] | undefined,
+  email: string
+): boolean {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return true;
+  const to = headerValue(headers, "To").toLowerCase();
+  const cc = headerValue(headers, "Cc").toLowerCase();
+  const bcc = headerValue(headers, "Bcc").toLowerCase();
+  return to.includes(needle) || cc.includes(needle) || bcc.includes(needle);
+}
+
+function messageBodyText(payload: gmail_v1.Schema$MessagePart | undefined): string {
+  if (!payload) return "";
+  const chunks: string[] = [];
+  if (payload.body?.data) {
+    chunks.push(Buffer.from(payload.body.data, "base64url").toString("utf8"));
+  }
+  for (const part of payload.parts ?? []) {
+    chunks.push(messageBodyText(part));
+  }
+  return chunks.join("\n");
+}
+
+function filenamesMatch(expected: string, actual: string): boolean {
+  return sanitizeAttachmentFilename(expected).toLowerCase() === sanitizeAttachmentFilename(actual).toLowerCase();
+}
+
+/** Reuse a file already present in the user's Gmail (sent mail, drafts, etc.). */
+export async function findGmailAttachmentBytesByFilename(
+  filename: string
+): Promise<ImportedGmailDraftAttachment | null> {
+  const gmail = await getGmailClient();
+  if (!gmail) return null;
+
+  const sanitized = sanitizeAttachmentFilename(filename);
+  const basename = sanitized.split(/[/\\]/).pop() ?? sanitized;
+  const queries = [
+    `filename:"${escapeGmailQueryValue(sanitized)}" has:attachment`,
+    `filename:"${escapeGmailQueryValue(basename)}" has:attachment`,
+    `has:attachment "${escapeGmailQueryValue(basename)}"`,
+  ];
+
+  let best: ImportedGmailDraftAttachment | null = null;
+  let bestDate = 0;
+
+  for (const query of queries) {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q: query,
+      maxResults: 10,
+    });
+
+    for (const ref of list.data.messages ?? []) {
+      if (!ref.id) continue;
+      const full = await gmail.users.messages.get({
+        userId: "me",
+        id: ref.id,
+        format: "full",
+      });
+      const internalDate = Number(full.data.internalDate ?? 0);
+      if (internalDate < bestDate) continue;
+
+      const messageId = full.data.id;
+      const payload = full.data.payload;
+      if (!messageId || !payload) continue;
+
+      const parts = extractAttachmentsFromPayload(payload);
+      const match = parts.find((part) => filenamesMatch(sanitized, part.filename));
+      if (!match) continue;
+
+      const { data } = await fetchGmailAttachment({
+        gmailMessageId: messageId,
+        gmailAttachmentId: match.gmailAttachmentId,
+      });
+      best = {
+        filename: sanitizeAttachmentFilename(match.filename),
+        mimeType: match.mimeType || "application/octet-stream",
+        data,
+      };
+      bestDate = internalDate;
+    }
+
+    if (best) break;
+  }
+
+  return best;
+}
+
+async function findMatchingMixmaxDraftId(
+  gmail: gmail_v1.Gmail,
+  params: {
+    subjectMarker: string;
+    bodyMarker: string;
+    toEmail?: string;
+    startedAt: number;
+    expectedFilenames: string[];
+  }
+): Promise<string | null> {
+  const expected = params.expectedFilenames.map((name) => sanitizeAttachmentFilename(name));
+  const toEmail = params.toEmail?.trim().toLowerCase();
+
+  const list = await gmail.users.drafts.list({ userId: "me", maxResults: 30 });
+  for (const draft of list.data.drafts ?? []) {
+    if (!draft.id) continue;
+    const full = await gmail.users.drafts.get({
+      userId: "me",
+      id: draft.id,
+      format: "full",
+    });
+    const message = full.data.message;
+    const messageId = message?.id;
+    const payload = message?.payload;
+    if (!messageId || !payload) continue;
+
+    const internalDate = Number(message.internalDate ?? 0);
+    if (internalDate > 0 && internalDate < params.startedAt - 15_000) continue;
+
+    const subject = headerValue(payload.headers, "Subject");
+    const body = messageBodyText(payload);
+    const markerHit =
+      subject.includes(params.subjectMarker) || body.includes(params.bodyMarker);
+    if (!markerHit) continue;
+    if (toEmail && !recipientsIncludeEmail(payload.headers, toEmail)) continue;
+
+    const parts = extractAttachmentsFromPayload(payload);
+    const matchedNames = expected.filter((name) =>
+      parts.some((part) => filenamesMatch(name, part.filename))
+    );
+    if (matchedNames.length === 0) continue;
+
+    return draft.id;
+  }
+
+  return null;
+}
+
+/**
+ * Poll Gmail drafts for a transient Mixmax-synced draft, read attachment bytes, then delete it.
+ * Mixmax cloud files are not downloadable via the REST API; Gmail draft sync is the supported bridge.
+ */
+export async function importAttachmentsFromTransientGmailDraft(params: {
+  subjectMarker: string;
+  bodyMarker: string;
+  toEmail?: string;
+  startedAt?: number;
+  expectedFilenames: string[];
+  maxWaitMs?: number;
+}): Promise<ImportedGmailDraftAttachment[]> {
+  const gmail = await getGmailClient();
+  if (!gmail) {
+    throw new Error("Sign in with Google to import Mixmax template attachments");
+  }
+
+  const subjectMarker = params.subjectMarker.trim();
+  const bodyMarker = params.bodyMarker.trim();
+  if (!subjectMarker || !bodyMarker) throw new Error("Missing draft import markers");
+
+  const startedAt = params.startedAt ?? Date.now();
+  const deadline = Date.now() + (params.maxWaitMs ?? 45_000);
+  let draftId: string | null = null;
+
+  while (Date.now() < deadline) {
+    draftId = await findMatchingMixmaxDraftId(gmail, {
+      subjectMarker,
+      bodyMarker,
+      toEmail: params.toEmail,
+      startedAt,
+      expectedFilenames: params.expectedFilenames,
+    });
+    if (draftId) break;
+    await sleep(1_000);
+  }
+
+  if (!draftId) {
+    throw new Error(
+      "Could not import Mixmax cloud attachments automatically. Try sending this template once from Gmail/Mixmax first, or re-save the file in Mixmax as a traditional paperclip attachment."
+    );
+  }
+
+  try {
+    const full = await gmail.users.drafts.get({
+      userId: "me",
+      id: draftId,
+      format: "full",
+    });
+    const message = full.data.message;
+    const messageId = message?.id;
+    const payload = message?.payload;
+    if (!messageId || !payload) {
+      throw new Error("Gmail draft is missing attachment data");
+    }
+
+    const parts = extractAttachmentsFromPayload(payload);
+    if (parts.length === 0) {
+      throw new Error(
+        "Mixmax did not sync template files as Gmail attachments. Re-save the template in Mixmax with a traditional (paperclip) attachment instead of cloud-only hosting."
+      );
+    }
+
+    const expected = params.expectedFilenames.map((name) => sanitizeAttachmentFilename(name));
+    const imported: ImportedGmailDraftAttachment[] = [];
+
+    for (const part of parts) {
+      const { data } = await fetchGmailAttachment({
+        gmailMessageId: messageId,
+        gmailAttachmentId: part.gmailAttachmentId,
+      });
+      const filename = sanitizeAttachmentFilename(part.filename);
+      if (expected.length > 0 && !expected.some((name) => filenamesMatch(name, filename))) {
+        continue;
+      }
+      imported.push({
+        filename,
+        mimeType: part.mimeType || "application/octet-stream",
+        data,
+      });
+    }
+
+    if (imported.length === 0) {
+      throw new Error("Could not match template attachment files in the Gmail draft");
+    }
+
+    return imported;
+  } finally {
+    try {
+      await gmail.users.drafts.delete({ userId: "me", id: draftId });
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
 }
 
 async function importThreadMessages(
@@ -1247,8 +1561,8 @@ async function importThreadMessages(
 }
 
 /**
- * Sync Gmail messages for a ticket using only its bound thread ID.
- * Each Gmail thread maps to exactly one CRM ticket.
+ * Sync Gmail messages for a ticket across all linked thread IDs.
+ * Outbound replies still use the primary thread only.
  */
 export async function syncGmailThreadForTicket(params: {
   ticketRowId: string;
@@ -1276,12 +1590,16 @@ export async function syncGmailThreadForTicket(params: {
     };
   }
 
-  const threadId = await ensureTicketGmailApiThreadId({
-    ticketRowId: params.ticketRowId,
-    requesterEmail: params.requesterEmail,
-  });
+  let threadIds = getLinkedGmailThreadIdsForTicket(params.ticketRowId);
+  if (threadIds.length === 0) {
+    const primary = await ensureTicketGmailApiThreadId({
+      ticketRowId: params.ticketRowId,
+      requesterEmail: params.requesterEmail,
+    });
+    if (primary) threadIds = [primary];
+  }
 
-  if (!gmail || !threadId || !params.requesterEmail.trim()) {
+  if (!gmail || threadIds.length === 0 || !params.requesterEmail.trim()) {
     const statusReopened = reopenPendingOnCustomerReply(params.ticketRowId);
     if (params.intakeTimestamp) {
       refreshResponseSlaDueAt(params.ticketRowId, params.intakeTimestamp);
@@ -1302,17 +1620,27 @@ export async function syncGmailThreadForTicket(params: {
     existing.map((m) => m.gmailMessageId).filter((id): id is string => Boolean(id))
   );
 
-  const importCutoff = getGmailThreadImportCutoff(params.ticketRowId);
+  for (const threadId of threadIds) {
+    const resolved =
+      isGmailApiThreadId(threadId)
+        ? threadId
+        : await ensureTicketGmailApiThreadId({
+            ticketRowId: params.ticketRowId,
+            requesterEmail: params.requesterEmail,
+          });
+    if (!resolved) continue;
 
-  await importThreadMessages(
-    gmail,
-    threadId,
-    params.ticketRowId,
-    params.requesterEmail,
-    agentEmail,
-    knownIds,
-    importCutoff
-  );
+    const importCutoff = getGmailThreadImportCutoffForThread(params.ticketRowId, threadId);
+    await importThreadMessages(
+      gmail,
+      resolved,
+      params.ticketRowId,
+      params.requesterEmail,
+      agentEmail,
+      knownIds,
+      importCutoff
+    );
+  }
 
   pruneMismatchedThreadMessages(params.ticketRowId);
   dedupeThreadMessagesForTicket(params.ticketRowId);
@@ -1333,6 +1661,42 @@ export async function syncGmailThreadForTicket(params: {
   });
 }
 
+/** Import messages for one linked Gmail thread (e.g. immediately after append). */
+export async function importGmailThreadMessagesForTicket(params: {
+  ticketRowId: string;
+  threadId: string;
+  requesterEmail: string;
+  /** When true, import the entire thread — not only messages at/after link time. */
+  importFullHistory?: boolean;
+}): Promise<void> {
+  const gmail = await getGmailClient();
+  if (!gmail || !params.requesterEmail.trim()) return;
+
+  const threadId = params.threadId.trim();
+  if (!threadId) return;
+
+  const agentEmail = await resolveSenderEmail();
+  const existing = getThreadMessages(params.ticketRowId);
+  const knownIds = new Set(
+    existing.map((m) => m.gmailMessageId).filter((id): id is string => Boolean(id))
+  );
+  const importCutoff = params.importFullHistory
+    ? null
+    : getGmailThreadImportCutoffForThread(params.ticketRowId, threadId);
+
+  await importThreadMessages(
+    gmail,
+    threadId,
+    params.ticketRowId,
+    params.requesterEmail,
+    agentEmail,
+    knownIds,
+    importCutoff
+  );
+  pruneMismatchedThreadMessages(params.ticketRowId);
+  dedupeThreadMessagesForTicket(params.ticketRowId);
+}
+
 export async function sendReplyEmail(params: {
   ticketRowId: string;
   to: string;
@@ -1344,12 +1708,16 @@ export async function sendReplyEmail(params: {
 }): Promise<ThreadMessage> {
   return withOpsMetric("gmail", "messages.send", async () => {
   const from = await resolveSenderEmail();
-  let boundThreadId = resolveTicketGmailThreadId(params.ticketRowId);
-  if (!boundThreadId || !isGmailApiThreadId(boundThreadId)) {
-    boundThreadId = await ensureTicketGmailApiThreadId({
-      ticketRowId: params.ticketRowId,
-      requesterEmail: params.to,
-    });
+  const forceNewThread = ticketForceNewGmailThreadOnSend(params.ticketRowId);
+  let boundThreadId: string | null = null;
+  if (!forceNewThread) {
+    boundThreadId = resolveTicketGmailThreadId(params.ticketRowId);
+    if (!boundThreadId || !isGmailApiThreadId(boundThreadId)) {
+      boundThreadId = await ensureTicketGmailApiThreadId({
+        ticketRowId: params.ticketRowId,
+        requesterEmail: params.to,
+      });
+    }
   }
 
   const message: ThreadMessage = {
@@ -1373,7 +1741,8 @@ export async function sendReplyEmail(params: {
       params.body.trim() ||
       ((params.attachments?.length ?? 0) > 0 ? "(see attachments)" : params.body);
     const { plain, html } = appendSignatureToBody(bodyForSend, signatureHtml);
-    message.body = plain;
+    // Store HTML in the CRM thread so conversation matches draft/Gmail formatting.
+    message.body = html ? sanitizeEmailHtml(html) : plain;
 
     const encoded = encodeMessage(
       from,
@@ -1405,6 +1774,9 @@ export async function sendReplyEmail(params: {
     }
 
     if (message.gmailThreadId) {
+      if (forceNewThread) {
+        clearForceNewGmailThreadOnSend(params.ticketRowId);
+      }
       claimGmailThreadForTicket(params.ticketRowId, message.gmailThreadId);
     }
   }
@@ -1421,6 +1793,45 @@ export async function sendReplyEmail(params: {
   }
 
   return message;
+  });
+}
+
+/** Send a one-off email (dashboard reports, etc.) without binding to a ticket thread. */
+export async function sendStandaloneEmail(params: {
+  to: string;
+  subject: string;
+  body: string;
+  attachments?: OutboundEmailAttachment[];
+}): Promise<{ messageId: string | null }> {
+  return withOpsMetric("gmail", "messages.send", async () => {
+    const to = params.to.trim();
+    if (!to) throw new Error("Recipient email is required");
+
+    const from = await resolveSenderEmail();
+    const gmail = await getGmailClient();
+    if (!gmail) {
+      throw new Error("Gmail is not connected — sign in with Google to send reports");
+    }
+
+    const signatureHtml = await fetchGmailSignature(gmail, from);
+    const bodyForSend = params.body.trim() || "(empty report)";
+    const { plain, html } = appendSignatureToBody(bodyForSend, signatureHtml);
+
+    const encoded = encodeMessage(
+      from,
+      to,
+      params.subject,
+      plain,
+      null,
+      html,
+      params.attachments ?? [],
+      null
+    );
+    const res = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: { raw: encoded },
+    });
+    return { messageId: res.data.id ?? null };
   });
 }
 
@@ -1450,12 +1861,22 @@ export async function markGmailThreadAsRead(threadId: string): Promise<boolean> 
   }
 }
 
-/** Mark the Gmail thread linked to a CRM ticket as read in the inbox. */
+/** Mark all Gmail threads linked to a CRM ticket as read in the inbox. */
 export async function markTicketGmailThreadAsRead(params: {
   ticketRowId: string;
   requesterEmail?: string | null;
 }): Promise<boolean> {
   if (process.env.USE_MOCK_DATA === "true") return false;
+  if (ticketForceNewGmailThreadOnSend(params.ticketRowId)) return false;
+
+  const linked = getLinkedGmailThreadIdsForTicket(params.ticketRowId);
+  if (linked.length > 0) {
+    let anyMarked = false;
+    for (const threadId of linked) {
+      if (await markGmailThreadAsRead(threadId)) anyMarked = true;
+    }
+    return anyMarked;
+  }
 
   let threadId = await ensureTicketGmailApiThreadId({
     ticketRowId: params.ticketRowId,

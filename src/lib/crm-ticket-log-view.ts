@@ -1,3 +1,4 @@
+import { loadWorkspaceBusinessHours } from "./business-hours-loader";
 import { getCrmTicketEvents } from "./crm-ticket-log";
 import { getTicketOverlay } from "./overlay-db";
 import {
@@ -9,16 +10,19 @@ import type { TimerSettings } from "./timer-settings";
 
 export function buildCrmTicketLogView(rowId: string, timerSettings: TimerSettings) {
   const overlay = getTicketOverlay(rowId);
+  const businessHours = loadWorkspaceBusinessHours();
   const pendingTimerLabel = describePendingReopenTimer(
     overlay.pendingReopenHours,
-    timerSettings
+    timerSettings,
+    businessHours
   );
   const pendingReopenDueAt =
     overlay.status === "pending" && overlay.statusChangedAt
       ? computePendingReopenDueAt(
           overlay.statusChangedAt,
           timerSettings,
-          overlay.pendingReopenHours
+          overlay.pendingReopenHours,
+          businessHours
         )?.toISOString() ?? null
       : null;
 

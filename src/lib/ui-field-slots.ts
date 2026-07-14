@@ -1,3 +1,4 @@
+import { normalizeBusinessHours } from "./business-hours";
 import { repairRowKeyMapping } from "./config-repair";
 import type { ColumnMapping, SheetConfig, Ticket, UiFieldSlot } from "./types";
 import { getCellValue, getColumnByRole } from "./column-mapper";
@@ -23,9 +24,16 @@ export function prepareSheetConfig(config: SheetConfig): SheetConfig {
   };
   const repaired = repairRowKeyMapping(withHeaders);
   const syncedSlots = syncUiSlotLabelsWithColumns(repaired);
+  const businessHours =
+    config.businessHours != null
+      ? normalizeBusinessHours(config.businessHours)
+      : repaired.businessHours != null
+        ? normalizeBusinessHours(repaired.businessHours)
+        : undefined;
   return {
     ...repaired,
     uiFieldSlots: syncedSlots,
+    businessHours,
   };
 }
 

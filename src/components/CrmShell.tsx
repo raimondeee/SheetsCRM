@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
-import type { SheetConfig, Ticket } from "@/lib/types";
-import { EXAMPLE_COLUMN_POSITIONS } from "@/lib/default-sheet-config";
+import type { CoverSheetEntry, SheetConfig, Ticket } from "@/lib/types";
+import { resolveSheetConfigForTicket } from "@/lib/cover-sheets";
+import { intakeAirbnbUserIdFromTicket } from "@/lib/airbnb-user-id";
 import {
   columnDisplayLabel,
   getMappedUiFieldSlots,
@@ -13,12 +14,15 @@ import { DEFAULT_STATUSES } from "@/lib/types";
 import { Sidebar, type AppView } from "./Sidebar";
 import { TicketList } from "./TicketList";
 import { TicketDetail } from "./TicketDetail";
-import { TicketDetailTransition } from "./TicketDetailTransition";
+import { TicketDetailTransition, type TicketLoadedCue } from "./TicketDetailTransition";
 import { DashboardView } from "./DashboardView";
+import { TeamDashboardView } from "./TeamDashboardView";
 import { SetupModal, type SetupModalTab } from "./SetupModal";
+import { BusinessHoursUpdatedModal } from "./BusinessHoursUpdatedModal";
 import { PreferencesModal } from "./PreferencesModal";
 import { CrmDebugLogPanel } from "./CrmDebugLogPanel";
 import { CalendarReminderToast } from "./CalendarReminderToast";
+import { CalendarReminderModal } from "./CalendarReminderModal";
 import { UnreadInboxModal } from "./UnreadInboxModal";
 import { appendAdminNoteToText } from "@/lib/admin-notes";
 import { crmSubjectLabelFromStored } from "@/lib/email-subject";
@@ -112,7 +116,9 @@ function buildOptimisticStatusFields(ticket: Ticket, status: string, _defaultSla
 export function CrmShell() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [config, setConfig] = useState<SheetConfig | null>(null);
+  const [coverSheets, setCoverSheets] = useState<CoverSheetEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [autoAdvanceCue, setAutoAdvanceCue] = useState<TicketLoadedCue | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeView, setActiveView] = useState<AppView>("tickets");
   const [dashboardFilter, setDashboardFilter] = useState<DashboardFilter | null>(null);
@@ -126,6 +132,7 @@ export function CrmShell() {
   const [qualityFilters, setQualityFilters] = useState<TicketQualityFilter[]>([]);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupInitialTab, setSetupInitialTab] = useState<SetupModalTab>("sheet");
+  const [businessHoursUpdatedOpen, setBusinessHoursUpdatedOpen] = useState(false);
   const [marketManagersVersion, setMarketManagersVersion] = useState(0);
 
   function openSetup(tab: SetupModalTab = "sheet") {
@@ -164,6 +171,9 @@ export function CrmShell() {
     DEFAULT_USER_PREFERENCES.initialResponseHours
   );
   const [externalTools, setExternalTools] = useState(DEFAULT_USER_PREFERENCES.externalTools);
+  const [calendarReminderFullscreen, setCalendarReminderFullscreen] = useState(
+    DEFAULT_USER_PREFERENCES.calendarReminderFullscreen
+  );
   const [countdownResetKey, setCountdownResetKey] = useState(0);
   const sourceRef = useRef(source);
   const initialSelectionDone = useRef(false);
@@ -238,6 +248,7 @@ export function CrmShell() {
         }
         setTickets(incomingTickets);
         setConfig(data.config ?? null);
+        setCoverSheets(data.coverSheets ?? []);
         setSource(data.source ?? "mock");
         setLastSyncedAt(new Date());
         setCountdownResetKey((k) => k + 1);
@@ -301,7 +312,8 @@ export function CrmShell() {
   }, []);
 
   const calendarReminders = useCalendarReminders(
-    auth.signedIn && auth.method === "oauth" && source !== "mock"
+    auth.signedIn && auth.method === "oauth" && source !== "mock",
+    calendarReminderFullscreen ? "fullscreen" : "toast"
   );
 
   useEffect(() => {
@@ -326,6 +338,7 @@ export function CrmShell() {
       setCrmErrorLoggingEnabled(prefs.errorLoggingEnabled);
       setInitialResponseHours(prefs.initialResponseHours);
       setExternalTools(prefs.externalTools);
+      setCalendarReminderFullscreen(prefs.calendarReminderFullscreen);
       setPrefsLoaded(true);
     })();
     return () => {
@@ -379,8 +392,17 @@ export function CrmShell() {
     [tickets]
   );
 
+  const selected = tickets.find((t) => t.rowId === selectedId) ?? null;
+
+  const activeSheetConfig = useMemo(() => {
+    if (selected) {
+      return resolveSheetConfigForTicket(selected.rowId, config, coverSheets) ?? config;
+    }
+    return config;
+  }, [selected, config, coverSheets]);
+
   const columnLabels = useMemo(() => {
-    if (!config) {
+    if (!activeSheetConfig) {
       return {
         airbnbUserId: null as string | null,
         columnD: null as string | null,
@@ -389,16 +411,14 @@ export function CrmShell() {
       };
     }
     const byRole = (role: SheetConfig["columns"][number]["role"]) =>
-      columnDisplayLabel(config.columns.find((c) => c.role === role)) || null;
-    const byIndex = (index: number) =>
-      columnDisplayLabel(config.columns.find((c) => c.index === index)) || null;
+      columnDisplayLabel(activeSheetConfig.columns.find((c) => c.role === role)) || null;
     return {
       airbnbUserId: byRole("airbnbUserId"),
-      columnD: byIndex(EXAMPLE_COLUMN_POSITIONS.email.index),
+      columnD: byRole("email"),
       reservationCode: byRole("reservationCode"),
       listingId: byRole("listingId"),
     };
-  }, [config]);
+  }, [activeSheetConfig]);
 
   const filtered = useMemo(
     () =>
@@ -478,23 +498,22 @@ export function CrmShell() {
     setCrmErrorLoggingEnabled(prefs.errorLoggingEnabled);
     setInitialResponseHours(prefs.initialResponseHours);
     setExternalTools(prefs.externalTools);
+    setCalendarReminderFullscreen(prefs.calendarReminderFullscreen);
     setPreferencesOpen(false);
     void loadTickets({ silent: true, reason: "manual" });
   }
 
-  const selected = tickets.find((t) => t.rowId === selectedId) ?? null;
-
   const ticketUiFields = useMemo(() => {
-    if (!config || !selected) return [];
-    return getMappedUiFieldSlots(config).map((slot) => {
-      const col = config.columns.find((c) => c.index === slot.columnIndex);
+    if (!activeSheetConfig || !selected) return [];
+    return getMappedUiFieldSlots(activeSheetConfig).map((slot) => {
+      const col = activeSheetConfig.columns.find((c) => c.index === slot.columnIndex);
       return {
         slotId: slot.id,
         label: uiFieldDisplayLabel(slot, col),
         value: selected.uiFields?.[slot.id] ?? "",
       };
     });
-  }, [config, selected]);
+  }, [activeSheetConfig, selected]);
 
   const counts = useMemo(() => {
     const map: Record<string, number> = { all: tickets.length };
@@ -603,6 +622,15 @@ export function CrmShell() {
 
     setInboxVictory(false);
     if (result.statusFilter) setStatusFilter(result.statusFilter);
+    const nextTicket = ticketList.find((ticket) => ticket.rowId === result.rowId);
+    if (nextTicket) {
+      setAutoAdvanceCue({
+        rowId: nextTicket.rowId,
+        rowNumber: nextTicket.rowNumber,
+        requesterName: nextTicket.requesterName,
+        requesterEmail: nextTicket.requesterEmail,
+      });
+    }
     setSelectedId(result.rowId);
     return true;
   }
@@ -627,7 +655,11 @@ export function CrmShell() {
   }
 
   async function handleTicketSent(rowId: string, status: "pending" | "resolved") {
-    const nextTickets = ticketsAfterSend(tickets, rowId, status);
+    const nextTickets = ticketsAfterSend(tickets, rowId, status).map((t) =>
+      t.rowId === rowId && status === "resolved"
+        ? { ...t, resolvedClosed: false }
+        : t
+    );
     setTickets(nextTickets);
     setComposeClearedRowId(rowId);
 
@@ -639,6 +671,23 @@ export function CrmShell() {
   const handleGmailLinkChange = useCallback((rowId: string, gmailOpenUrl: string | null) => {
     setTickets((prev) =>
       prev.map((t) => (t.rowId === rowId ? { ...t, gmailOpenUrl } : t))
+    );
+  }, []);
+
+  const handleForceNewGmailThreadChange = useCallback((rowId: string, enabled: boolean) => {
+    setTickets((prev) =>
+      prev.map((t) =>
+        t.rowId === rowId
+          ? {
+              ...t,
+              forceNewGmailThreadOnSend: enabled,
+              gmailOpenUrl: enabled ? null : t.gmailOpenUrl,
+              ...(enabled
+                ? { subject: "", crmSubjectLabel: "" }
+                : {}),
+            }
+          : t
+      )
     );
   }, []);
 
@@ -664,13 +713,14 @@ export function CrmShell() {
 
   function handleSelectTicket(rowId: string) {
     setInboxVictory(false);
+    setAutoAdvanceCue(null);
     setSelectedId(rowId);
   }
 
   async function handleSetStatusWithoutEmail(
     rowId: string,
     status: string,
-    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string }
+    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string; closeTicket?: boolean }
   ) {
     if (source === "mock") {
       const now = new Date().toISOString();
@@ -734,6 +784,7 @@ export function CrmShell() {
           ...(typeof options?.pendingHours === "number"
             ? { pendingReopenHours: options.pendingHours }
             : {}),
+          ...(options?.closeTicket ? { closeTicket: true } : {}),
           ...(options?.airbnbUserId ? { airbnbUserId: options.airbnbUserId } : {}),
         }),
       });
@@ -761,6 +812,7 @@ export function CrmShell() {
         });
         return {
           ...withStatus,
+          resolvedClosed: options?.closeTicket ? true : withStatus.resolvedClosed,
           sheetStatus: (data.sheetStatus as string | undefined) ?? withStatus.sheetStatus,
           adminNotes: data.adminNotes ?? withStatus.adminNotes,
           sheetCaseSummary: data.adminNotes ?? withStatus.sheetCaseSummary,
@@ -778,17 +830,6 @@ export function CrmShell() {
   }
 
   async function handleAppendAdminNote(rowId: string, note: string) {
-    if (source === "mock") {
-      setTickets((prev) =>
-        prev.map((t) => {
-          if (t.rowId !== rowId) return t;
-          const updated = appendAdminNoteToText(t.adminNotes, note);
-          return { ...t, adminNotes: updated, sheetCaseSummary: updated };
-        })
-      );
-      return;
-    }
-
     const snapshot = tickets;
     const optimistic = tickets.map((t) => {
       if (t.rowId !== rowId) return t;
@@ -846,18 +887,21 @@ export function CrmShell() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      throw new Error(data.error || "Failed to update Column AD");
+      throw new Error(data.error || "Failed to update Airbnb User ID on sheet");
     }
 
     setTickets((prev) =>
       prev.map((t) => {
         if (t.rowId !== rowId) return t;
+        const trimmed = airbnbUserId.trim();
         const rawKey =
-          Object.keys(t.raw).find((k) => /airbnb\s*user\s*id/i.test(k)) || "Column AD";
+          Object.keys(t.raw).find((k) => /airbnb\s*user\s*id/i.test(k)) || "Airbnb User ID";
+        const resolvedId = trimmed || intakeAirbnbUserIdFromTicket(t);
         return {
           ...t,
-          airbnbUserId,
-          raw: { ...t.raw, [rawKey]: airbnbUserId, "Column AD": airbnbUserId },
+          crmAirbnbUserId: trimmed || null,
+          airbnbUserId: resolvedId,
+          raw: trimmed ? { ...t.raw, [rawKey]: trimmed } : t.raw,
         };
       })
     );
@@ -1018,6 +1062,61 @@ export function CrmShell() {
     );
   }
 
+  async function handleResyncFromSheet(rowId: string) {
+    const res = await fetch(`/api/tickets/${encodeURIComponent(rowId)}/resync-sheet`, {
+      method: "POST",
+    });
+    const data = (await res.json()) as { ticket?: Ticket; error?: string };
+    if (!res.ok || !data.ticket) {
+      throw new Error(data.error ?? "Failed to resync from sheet");
+    }
+    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? data.ticket! : t)));
+  }
+
+  async function handleIgnoreCoverTicket(rowId: string) {
+    const snapshot = tickets;
+    const optimistic = tickets.map((t) =>
+      t.rowId === rowId
+        ? buildOptimisticStatusFields(t, "resolved", prefsRef.current.defaultSlaHours)
+        : t
+    );
+    setTickets(optimistic);
+
+    try {
+      const res = await fetch(`/api/tickets/${encodeURIComponent(rowId)}/ignore-cover`, {
+        method: "POST",
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        status?: string;
+        statusChangedAt?: string | null;
+        slaDueAt?: string | null;
+      };
+      if (!res.ok || data.error) {
+        throw new Error(data.error ?? "Failed to ignore cover ticket");
+      }
+
+      const nextTickets = optimistic.map((t) => {
+        if (t.rowId !== rowId) return t;
+        return applyPendingStatusTimerFields(t, {
+          status: data.status ?? "resolved",
+          statusChangedAt: data.statusChangedAt,
+          slaDueAt: data.slaDueAt,
+        });
+      });
+      setTickets(nextTickets);
+
+      const advanced = advanceAfterSend(rowId, "resolved", nextTickets);
+      if (!advanced) {
+        showInboxVictory();
+      }
+    } catch (error) {
+      setTickets(snapshot);
+      logCrmError("Ignore cover ticket failed", error);
+      throw error;
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col bg-white">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-zendesk-border bg-zendesk-navy px-4 text-white">
@@ -1127,6 +1226,24 @@ export function CrmShell() {
             onRollingPeriodChange={handleDashboardRollingPeriodChange}
             onCalendarMonthChange={handleDashboardCalendarMonthChange}
             onFilter={handleDashboardFilter}
+            userEmail={auth.email}
+            canSendEmail={auth.signedIn && auth.method === "oauth" && source !== "mock"}
+          />
+        ) : activeView === "team-dashboard" ? (
+          <TeamDashboardView
+            tickets={tickets}
+            loading={loading || !prefsLoaded}
+            period={dashboardPeriod}
+            rollingPeriod={
+              isRollingDashboardPeriod(dashboardPeriod)
+                ? dashboardPeriod
+                : lastRollingDashboardPeriod
+            }
+            calendarMonth={calendarMonthKeyFromPeriod(dashboardPeriod) ?? ""}
+            onRollingPeriodChange={handleDashboardRollingPeriodChange}
+            onCalendarMonthChange={handleDashboardCalendarMonthChange}
+            userEmail={auth.email}
+            canSendEmail={auth.signedIn && auth.method === "oauth" && source !== "mock"}
           />
         ) : (
           <div className="flex min-w-0 flex-1 flex-col">
@@ -1172,7 +1289,15 @@ export function CrmShell() {
         {inboxVictory ? (
           <InboxVictoryView />
         ) : (
-          <TicketDetailTransition ticketKey={selected?.rowId ?? null}>
+          <TicketDetailTransition
+            ticketKey={selected?.rowId ?? null}
+            loadedCue={
+              autoAdvanceCue && autoAdvanceCue.rowId === selected?.rowId
+                ? autoAdvanceCue
+                : null
+            }
+            onLoadedCueComplete={() => setAutoAdvanceCue(null)}
+          >
             <TicketDetail
               key={selected?.rowId ?? "none"}
               ticket={selected}
@@ -1215,8 +1340,11 @@ export function CrmShell() {
               onListingIdChange={handleListingIdChange}
               onSlaChange={handleSlaChange}
               onClearInitialResponseSla={handleClearInitialResponseSla}
+              onResyncFromSheet={handleResyncFromSheet}
+              onIgnoreCoverTicket={handleIgnoreCoverTicket}
               onThreadUpdate={handleThreadUpdate}
               onGmailLinkChange={handleGmailLinkChange}
+              onForceNewGmailThreadChange={handleForceNewGmailThreadChange}
               onLinkedCaseChange={handleLinkedCaseChange}
               externalTools={externalTools}
               ticketUiFields={ticketUiFields}
@@ -1224,7 +1352,7 @@ export function CrmShell() {
               columnLabels={columnLabels}
               onOpenSetup={openSetup}
               marketManagersVersion={marketManagersVersion}
-              sheetUrl={config?.sheetUrl ?? null}
+              sheetUrl={activeSheetConfig?.sheetUrl ?? null}
             />
           </TicketDetailTransition>
         )}
@@ -1234,14 +1362,20 @@ export function CrmShell() {
         )}
       </div>
 
-      {calendarReminders.toast && (
-        <div className="pointer-events-none fixed right-4 top-4 z-50">
-          <CalendarReminderToast
+      {calendarReminders.toast &&
+        (calendarReminders.display === "fullscreen" ? (
+          <CalendarReminderModal
             event={calendarReminders.toast}
             onDismiss={calendarReminders.dismissToast}
           />
-        </div>
-      )}
+        ) : (
+          <div className="pointer-events-none fixed right-4 top-4 z-50">
+            <CalendarReminderToast
+              event={calendarReminders.toast}
+              onDismiss={calendarReminders.dismissToast}
+            />
+          </div>
+        ))}
 
       {pendingSendQueue.sendError &&
         pendingSendQueue.sendError.rowId !== selected?.rowId && (
@@ -1280,6 +1414,10 @@ export function CrmShell() {
         />
       )}
 
+      {businessHoursUpdatedOpen ? (
+        <BusinessHoursUpdatedModal onClose={() => setBusinessHoursUpdatedOpen(false)} />
+      ) : null}
+
       {setupOpen && (
         <SetupModal
           config={config}
@@ -1288,9 +1426,13 @@ export function CrmShell() {
             setSetupOpen(false);
             setMarketManagersVersion((version) => version + 1);
           }}
-          onSaved={() => {
+          onSaved={(savedConfig, meta) => {
+            if (savedConfig) setConfig(savedConfig);
             setSetupOpen(false);
             setMarketManagersVersion((version) => version + 1);
+            if (meta?.businessHoursUpdated) {
+              setBusinessHoursUpdatedOpen(true);
+            }
             void loadTickets({ reason: "setup" });
           }}
         />
@@ -1300,6 +1442,8 @@ export function CrmShell() {
         <UnreadInboxModal
           tickets={tickets}
           selectedTicketId={selectedId}
+          bindToSelectedEnabled={prefsRef.current.unreadInboxBindToSelectedEnabled}
+          appendToSelectedEnabled={prefsRef.current.unreadInboxAppendToSelectedEnabled}
           onClose={() => setUnreadInboxOpen(false)}
           onOpenTicket={(rowId) => {
             setUnreadInboxOpen(false);

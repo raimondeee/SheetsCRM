@@ -1,4 +1,5 @@
 import type { Ticket } from "./types";
+import { hasManualNumericAirbnbUserId } from "./airbnb-user-id";
 import { uiFieldValuesForSearch } from "./ui-field-slots";
 import { normalizeStatusId } from "./status-mapper";
 
@@ -111,7 +112,7 @@ export function ticketMissingContactReason(ticket: Ticket): boolean {
 }
 
 export function ticketMissingAirbnbUserId(ticket: Ticket): boolean {
-  return !ticket.airbnbUserId.trim();
+  return !hasManualNumericAirbnbUserId(ticket);
 }
 
 export function ticketPassesQualityFilters(
