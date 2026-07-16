@@ -1,3 +1,5 @@
+export type StatusAfterSend = "pending" | "resolved" | "unchanged";
+
 export interface QueuedSendPayload {
   ticketRowId: string;
   to: string;
@@ -5,7 +7,7 @@ export interface QueuedSendPayload {
   message: string;
   cc: string | null;
   bcc: string | null;
-  statusAfterSend: "pending" | "resolved";
+  statusAfterSend: StatusAfterSend;
   attachmentFiles: File[];
   intakeTimestamp?: string;
   label: string;

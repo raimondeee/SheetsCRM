@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SheetConfig } from "@/lib/types";
 import { EXAMPLE_SHEET_URL } from "@/lib/default-sheet-config";
 import {
@@ -41,6 +41,11 @@ export function SetupModal({
   const [businessHoursDraft, setBusinessHoursDraft] = useState<BusinessHoursConfig>(() =>
     normalizeBusinessHours(config?.businessHours)
   );
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [activeTab]);
 
   useEffect(() => {
     setBusinessHoursDraft(normalizeBusinessHours(config?.businessHours));
@@ -110,80 +115,59 @@ export function SetupModal({
     }
   }
 
+  const tabs: { id: SetupModalTab; label: string }[] = [
+    { id: "sheet", label: "Sheet mapping" },
+    { id: "cover", label: "Team coverage" },
+    { id: "managers", label: "Market managers" },
+    { id: "environment", label: "Environment" },
+    { id: "hours", label: "Business hours" },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zendesk-border px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Setup</h2>
-            <p className="text-sm text-zendesk-muted">
-              Connect your intake sheet, teammate coverage, local environment, and Market Manager directory.
-            </p>
+        <div className="shrink-0 border-b border-zendesk-border px-6 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Setup</h2>
+              <p className="text-sm text-zendesk-muted">
+                Connect your intake sheet, teammate coverage, local environment, and Market Manager
+                directory.
+              </p>
+            </div>
+            <button type="button" onClick={onClose} className="rounded p-1 hover:bg-gray-100">
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-gray-100">
-            <X className="h-5 w-5" />
-          </button>
+
+          <div
+            role="tablist"
+            aria-label="Setup sections"
+            className="mt-4 flex gap-1 overflow-x-auto pb-px"
+          >
+            {tabs.map((tab) => {
+              const selected = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 rounded-t border px-4 py-2 text-sm font-medium ${
+                    selected
+                      ? "border-zendesk-border border-b-white bg-white text-zendesk-green"
+                      : "border-transparent text-zendesk-muted hover:text-gray-900"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-b border-zendesk-border px-6 pt-3">
-          <button
-            type="button"
-            onClick={() => setActiveTab("sheet")}
-            className={`shrink-0 rounded-t px-4 py-2 text-sm font-medium ${
-              activeTab === "sheet"
-                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
-                : "text-zendesk-muted hover:text-gray-900"
-            }`}
-          >
-            Sheet mapping
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("cover")}
-            className={`shrink-0 rounded-t px-4 py-2 text-sm font-medium ${
-              activeTab === "cover"
-                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
-                : "text-zendesk-muted hover:text-gray-900"
-            }`}
-          >
-            Team coverage
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("managers")}
-            className={`shrink-0 rounded-t px-4 py-2 text-sm font-medium ${
-              activeTab === "managers"
-                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
-                : "text-zendesk-muted hover:text-gray-900"
-            }`}
-          >
-            Market managers
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("environment")}
-            className={`shrink-0 rounded-t px-4 py-2 text-sm font-medium ${
-              activeTab === "environment"
-                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
-                : "text-zendesk-muted hover:text-gray-900"
-            }`}
-          >
-            Environment
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("hours")}
-            className={`shrink-0 rounded-t px-4 py-2 text-sm font-medium ${
-              activeTab === "hours"
-                ? "border border-b-white border-zendesk-border bg-white text-zendesk-green -mb-px"
-                : "text-zendesk-muted hover:text-gray-900"
-            }`}
-          >
-            Business hours
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {activeTab === "environment" ? (
             <EnvSettingsPanel />
           ) : activeTab === "managers" ? (
@@ -214,7 +198,7 @@ export function SetupModal({
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-2 border-t border-zendesk-border px-6 py-4">
+        <div className="flex shrink-0 flex-col items-end gap-2 border-t border-zendesk-border px-6 py-4">
           {saveError ? (
             <p className="w-full text-right text-sm text-red-700">{saveError}</p>
           ) : null}

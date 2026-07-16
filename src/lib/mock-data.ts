@@ -44,6 +44,7 @@ export function getMockTickets(
       adminNotes: "",
       airbnbUserId: "USR-8842",
       reservationCode: "HMQW5Y3BCF",
+      claimNumber: "CLSF-06100223",
       listingId: "1441333127016254063",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-8842",
@@ -73,6 +74,7 @@ export function getMockTickets(
       adminNotes: "",
       airbnbUserId: "USR-3310",
       reservationCode: "",
+      claimNumber: "",
       listingId: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-3310",
@@ -102,6 +104,7 @@ export function getMockTickets(
       adminNotes: "",
       airbnbUserId: "USR-5501",
       reservationCode: "",
+      claimNumber: "",
       listingId: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-5501",

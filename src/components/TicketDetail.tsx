@@ -12,7 +12,7 @@ import {
 import type { Ticket, ThreadMessage } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";
 import { buildGmailMessageUrl, buildGmailComposeUrl, openGmailComposePopup } from "@/lib/gmail-urls";
-import { buildSalesforceUnifiedSearchUrl } from "@/lib/salesforce";
+import { buildClaimSalesforceSearchUrl, buildSalesforceUnifiedSearchUrl } from "@/lib/salesforce";
 import {
   buildNovaListingUrl,
   buildNovaHostPerformanceUrl,
@@ -100,10 +100,12 @@ import {
   buildOutboundCc,
   deriveThreadCcRecipients,
   mergeRecipientLists,
+  parseRecipientList,
   removeRecipient,
 } from "@/lib/email-recipients";
 import {
   ChevronDown,
+  ChevronUp,
   ChevronLeft,
   Copy,
   ExternalLink,
@@ -140,6 +142,7 @@ interface TicketDetailProps {
   onAdminNotesChange?: (rowId: string, adminNotes: string) => void;
   onAirbnbUserIdChange: (rowId: string, airbnbUserId: string) => Promise<void>;
   onReservationCodeChange: (rowId: string, reservationCode: string) => Promise<void>;
+  onClaimNumberChange: (rowId: string, claimNumber: string) => Promise<void>;
   onListingIdChange: (rowId: string, listingId: string) => Promise<void>;
   onSlaChange: (rowId: string, hours: number) => void;
   onClearInitialResponseSla: (rowId: string) => Promise<void>;
@@ -156,7 +159,7 @@ interface TicketDetailProps {
     active: boolean;
     secondsLeft: number;
     label: string | null;
-    status: "pending" | "resolved";
+    status: "pending" | "resolved" | "unchanged";
     attachmentCount: number;
     onUndo: () => void;
   };
@@ -175,6 +178,7 @@ interface TicketDetailProps {
     airbnbUserId?: string | null;
     columnD?: string | null;
     reservationCode?: string | null;
+    claimNumber?: string | null;
     listingId?: string | null;
   };
   onOpenSetup?: (tab?: SetupModalTab) => void;
@@ -193,6 +197,7 @@ export function TicketDetail({
   onAdminNotesChange,
   onAirbnbUserIdChange,
   onReservationCodeChange,
+  onClaimNumberChange,
   onListingIdChange,
   onSlaChange,
   onClearInitialResponseSla,
@@ -951,7 +956,10 @@ export function TicketDetail({
     }
   }
 
-  function queueSend(statusAfterSend: "pending" | "resolved", buttonId: string) {
+  function queueSend(
+    statusAfterSend: "pending" | "resolved" | "unchanged",
+    buttonId: string
+  ) {
     flashActionPress(buttonId);
     if (!ticket || sendQueueBusy) return;
     const validation =
@@ -997,6 +1005,7 @@ export function TicketDetail({
   const intakeAirbnbUserId = ticket ? intakeAirbnbUserIdFromTicket(ticket) : "";
   const configuredExternalTools = activeExternalTools(externalTools);
   const novaReservationUrl = buildNovaReservationUrl(ticket.reservationCode);
+  const claimSearchUrl = buildClaimSalesforceSearchUrl(ticket.claimNumber);
   const novaListingUrl = buildNovaListingUrl(ticket.listingId);
   const becomeUserId = getEffectiveAirbnbUserId();
   const becomeUserUrl = buildBecomeUserUrl(becomeUserId);
@@ -1148,6 +1157,11 @@ export function TicketDetail({
     });
   }
 
+  function collapseRecipientFields() {
+    setCcFieldOpen(false);
+    setBccFieldOpen(false);
+  }
+
   function toggleReplyDraftExpanded() {
     if (composePanelView === "draft-full") {
       closeReplyDraftExpanded();
@@ -1165,6 +1179,13 @@ export function TicketDetail({
   }
 
   function renderEmailDraftComposePanel() {
+    const ccRecipients = parseRecipientList(ccDraft);
+    const bccRecipients = parseRecipientList(bccDraft);
+    const ccHasRecipients = ccRecipients.length > 0;
+    const bccHasRecipients = bccRecipients.length > 0;
+    const canCollapseRecipients =
+      (ccFieldOpen || bccFieldOpen) && (ccHasRecipients || bccHasRecipients);
+
     return (
       <div className="flex min-h-0 flex-1 flex-col">
                   <div className="shrink-0 border-b border-zendesk-border bg-white text-xs">
@@ -1173,16 +1194,26 @@ export function TicketDetail({
                       <span className="min-w-0 flex-1 truncate text-zendesk-navy">
                         {ticket.requesterEmail || "—"}
                       </span>
-                      {(!ccFieldOpen || !bccFieldOpen) && (
-                        <span className="flex shrink-0 items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-1">
                           {!ccFieldOpen && (
                             <button
                               type="button"
                               onClick={() => openRecipientField("cc")}
                               disabled={sendQueueBusy}
-                              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                              title={
+                                ccHasRecipients
+                                  ? `Show Cc · ${ccDraft}`
+                                  : "Add Cc recipients"
+                              }
+                              className={`rounded px-1.5 py-0.5 text-[11px] font-medium hover:bg-gray-100 disabled:opacity-50 ${
+                                ccHasRecipients
+                                  ? "text-zendesk-navy"
+                                  : "text-zendesk-muted hover:text-zendesk-navy"
+                              }`}
                             >
-                              Cc
+                              {ccHasRecipients
+                                ? `Cc · ${ccRecipients.length}`
+                                : "Cc"}
                             </button>
                           )}
                           {!bccFieldOpen && (
@@ -1190,13 +1221,36 @@ export function TicketDetail({
                               type="button"
                               onClick={() => openRecipientField("bcc")}
                               disabled={sendQueueBusy}
-                              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                              title={
+                                bccHasRecipients
+                                  ? `Show Bcc · ${bccDraft}`
+                                  : "Add Bcc recipients"
+                              }
+                              className={`rounded px-1.5 py-0.5 text-[11px] font-medium hover:bg-gray-100 disabled:opacity-50 ${
+                                bccHasRecipients
+                                  ? "text-zendesk-navy"
+                                  : "text-zendesk-muted hover:text-zendesk-navy"
+                              }`}
                             >
-                              Bcc
+                              {bccHasRecipients
+                                ? `Bcc · ${bccRecipients.length}`
+                                : "Bcc"}
+                            </button>
+                          )}
+                          {canCollapseRecipients && (
+                            <button
+                              type="button"
+                              onClick={collapseRecipientFields}
+                              disabled={sendQueueBusy}
+                              title="Hide Cc/Bcc fields (keeps recipients)"
+                              aria-label="Hide Cc and Bcc fields without removing recipients"
+                              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                            >
+                              <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                              Hide
                             </button>
                           )}
                         </span>
-                      )}
                     </label>
                     {ccFieldOpen && (
                       <div ref={ccFieldRef}>
@@ -1259,33 +1313,71 @@ export function TicketDetail({
                       className="hidden"
                       onChange={handleAttachmentPick}
                     />
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {replyAttachments.length > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900">
-                          <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          {replyAttachments.length} attachment
-                          {replyAttachments.length === 1 ? "" : "s"}
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                      <div className="min-w-0 flex-1">
+                        <label className="flex items-center gap-2 text-xs leading-tight">
+                          <input
+                            type="checkbox"
+                            checked={ccMarketManager}
+                            onChange={(e) => handleCcMarketManagerChange(e.target.checked)}
+                            disabled={!marketManagerEmail}
+                            className="rounded border-zendesk-border"
+                          />
+                          <span>
+                            CC Market Manager
+                            {ticket.marketManager && (
+                              <span className="text-zendesk-muted"> ({ticket.marketManager})</span>
+                            )}
+                          </span>
+                        </label>
+                        {marketManagerMissingFromDirectory && (
+                          <p className="pl-6 text-[11px] leading-snug text-amber-800">
+                            Market manager{" "}
+                            <span className="font-medium">{ticket.marketManager.trim()}</span> is not
+                            in the directory.{" "}
+                            {onOpenSetup ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenSetup("managers")}
+                                className="font-medium text-amber-950 underline underline-offset-2 hover:text-amber-900"
+                              >
+                                Open Settings
+                              </button>
+                            ) : (
+                              "Open Settings"
+                            )}{" "}
+                            to add them under Market managers.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                        {replyAttachments.length > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900">
+                            <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            {replyAttachments.length} attachment
+                            {replyAttachments.length === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => attachmentInputRef.current?.click()}
+                          disabled={
+                            sendQueueBusy ||
+                            replyAttachments.length >= MAX_OUTBOUND_ATTACHMENTS
+                          }
+                          className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium disabled:opacity-50 ${
+                            replyAttachments.length > 0
+                              ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200"
+                              : "border-zendesk-border bg-white text-zendesk-navy hover:bg-gray-100"
+                          }`}
+                        >
+                          <Paperclip className="h-3.5 w-3.5" />
+                          {replyAttachments.length > 0 ? "Add more" : "Attach files"}
+                        </button>
+                        <span className="text-[10px] leading-none text-zendesk-muted">
+                          Up to {MAX_OUTBOUND_ATTACHMENTS} files, 20MB each
                         </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => attachmentInputRef.current?.click()}
-                        disabled={
-                          sendQueueBusy ||
-                          replyAttachments.length >= MAX_OUTBOUND_ATTACHMENTS
-                        }
-                        className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium disabled:opacity-50 ${
-                          replyAttachments.length > 0
-                            ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200"
-                            : "border-zendesk-border bg-white text-zendesk-navy hover:bg-gray-100"
-                        }`}
-                      >
-                        <Paperclip className="h-3.5 w-3.5" />
-                        {replyAttachments.length > 0 ? "Add more" : "Attach files"}
-                      </button>
-                      <span className="text-[10px] leading-none text-zendesk-muted">
-                        Up to {MAX_OUTBOUND_ATTACHMENTS} files, 20MB each
-                      </span>
+                      </div>
                     </div>
                     {replyAttachments.length > 0 && (
                       <ComposeAttachmentList
@@ -1307,43 +1399,7 @@ export function TicketDetail({
                     {attachmentError && (
                       <p className="text-xs leading-snug text-red-600">{attachmentError}</p>
                     )}
-                    <div>
-                      <label className="flex items-center gap-2 text-xs leading-tight">
-                        <input
-                          type="checkbox"
-                          checked={ccMarketManager}
-                          onChange={(e) => handleCcMarketManagerChange(e.target.checked)}
-                          disabled={!marketManagerEmail}
-                          className="rounded border-zendesk-border"
-                        />
-                        <span>
-                          CC Market Manager
-                          {ticket.marketManager && (
-                            <span className="text-zendesk-muted"> ({ticket.marketManager})</span>
-                          )}
-                        </span>
-                      </label>
-                      {marketManagerMissingFromDirectory && (
-                        <p className="pl-6 text-[11px] leading-snug text-amber-800">
-                          Market manager{" "}
-                          <span className="font-medium">{ticket.marketManager.trim()}</span> is not
-                          in the directory.{" "}
-                          {onOpenSetup ? (
-                            <button
-                              type="button"
-                              onClick={() => onOpenSetup("managers")}
-                              className="font-medium text-amber-950 underline underline-offset-2 hover:text-amber-900"
-                            >
-                              Open Settings
-                            </button>
-                          ) : (
-                            "Open Settings"
-                          )}{" "}
-                          to add them under Market managers.
-                        </p>
-                      )}
-                    </div>
-                    <div className="relative space-y-1">
+                    <div className="relative space-y-1.5 pt-1">
                       {actionValidation && (
                         <p className="text-center text-[10px] font-medium text-red-600">
                           {actionValidation.message}
@@ -1362,7 +1418,11 @@ export function TicketDetail({
                             </button>
                             <p className="text-right text-[10px] font-medium leading-snug text-amber-950">
                               {pendingSendUndo.label ?? "Ticket"} →{" "}
-                              {pendingSendUndo.status === "resolved" ? "Resolved" : "Pending"}
+                              {pendingSendUndo.status === "resolved"
+                                ? "Resolved"
+                                : pendingSendUndo.status === "pending"
+                                  ? "Pending"
+                                  : "Send only"}
                               {pendingSendUndo.attachmentCount > 0 && (
                                 <span>
                                   {" "}
@@ -1374,7 +1434,21 @@ export function TicketDetail({
                           </div>
                         </div>
                       )}
-                      <div className="flex w-full flex-wrap items-end gap-1.5">
+                      <div className="flex w-full flex-wrap items-end justify-between gap-x-4 gap-y-2.5 pt-0.5">
+                      <div className="flex flex-wrap items-end gap-3.5">
+                      <button
+                        type="button"
+                        onClick={() => queueSend("unchanged", "send-only")}
+                        disabled={sendQueueBusy || isSending}
+                        title="Send reply without changing ticket status"
+                        className={actionButtonClass(
+                          "send-only",
+                          "flex items-center gap-1 rounded border border-zendesk-green bg-white px-2.5 py-1 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
+                        )}
+                      >
+                        <Send className="h-4 w-4" />
+                        {isSending ? "Sending..." : "Send only"}
+                      </button>
                       <button
                         type="button"
                         onClick={() => queueSend("pending", "send-pending")}
@@ -1460,7 +1534,7 @@ export function TicketDetail({
                         disabled={sendQueueBusy || isSending}
                         className={actionButtonClass(
                           "send-resolved",
-                          "flex items-center gap-1 rounded border border-zendesk-green bg-white px-2.5 py-1 text-xs font-medium text-zendesk-green hover:bg-green-50 disabled:opacity-50"
+                          "flex items-center gap-1 rounded border border-[#FF5A5F] bg-[#FF5A5F] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#e84e53] disabled:opacity-50"
                         )}
                       >
                         <Send className="h-4 w-4" />
@@ -1493,37 +1567,40 @@ export function TicketDetail({
                         <CircleCheck className="h-4 w-4" />
                         {markingStatusOnly === "resolved" ? "Closing…" : "Resolve & Close"}
                       </button>
+                      </div>
                       <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
-                        {showResetGmailLinkButton && !awaitingNewGmailThread && (
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {showResetGmailLinkButton && !awaitingNewGmailThread && (
+                            <button
+                              type="button"
+                              onClick={() => setResetGmailLinkConfirmOpen(true)}
+                              disabled={resettingGmailLink || sendQueueBusy || isSending}
+                              title="Remove the Gmail link and send the next reply as a new email thread"
+                              className="flex items-center gap-1 rounded border border-violet-300 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                            >
+                              <Link2Off className="h-4 w-4" />
+                              {resettingGmailLink ? "Resetting…" : "Unlink & new thread"}
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => setResetGmailLinkConfirmOpen(true)}
-                            disabled={resettingGmailLink || sendQueueBusy || isSending}
-                            title="Remove the Gmail link and send the next reply as a new email thread"
-                            className="flex items-center gap-1 rounded border border-violet-300 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                            onClick={openInGmail}
+                            disabled={!gmailThreadUrl}
+                            title={
+                              gmailThreadUrl
+                                ? "Open this email thread in Gmail"
+                                : ticket.gmailLinkArchivedAt
+                                  ? "Gmail link was archived — re-link from Unread Gmail if the customer replies"
+                                  : awaitingNewGmailThread
+                                    ? "Send your reply to create a new Gmail thread"
+                                    : "No linked Gmail thread for this ticket"
+                            }
+                            className="flex items-center gap-1 rounded border border-zendesk-border bg-white px-2.5 py-1 text-xs font-medium text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
                           >
-                            <Link2Off className="h-4 w-4" />
-                            {resettingGmailLink ? "Resetting…" : "Unlink & new thread"}
+                            <Mail className="h-4 w-4" />
+                            Open in Gmail
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={openInGmail}
-                          disabled={!gmailThreadUrl}
-                          title={
-                            gmailThreadUrl
-                              ? "Open this email thread in Gmail"
-                              : ticket.gmailLinkArchivedAt
-                                ? "Gmail link was archived — re-link from Unread Gmail if the customer replies"
-                                : awaitingNewGmailThread
-                                  ? "Send your reply to create a new Gmail thread"
-                                  : "No linked Gmail thread for this ticket"
-                          }
-                          className="flex items-center gap-1 rounded border border-zendesk-border bg-white px-2.5 py-1 text-xs font-medium text-zendesk-muted hover:bg-gray-100 disabled:opacity-50"
-                        >
-                          <Mail className="h-4 w-4" />
-                          Open in Gmail
-                        </button>
+                        </div>
                         {ticket.gmailLinkArchivedAt && (
                           <p className="max-w-xs text-right text-[10px] leading-snug text-zendesk-muted">
                             Gmail link archived{" "}
@@ -2161,6 +2238,14 @@ export function TicketDetail({
                 onSave={(value) => onReservationCodeChange(ticket.rowId, value)}
               />
               <NovaSheetLinkField
+                label={columnLabels?.claimNumber || "Claims"}
+                value={ticket.claimNumber}
+                href={claimSearchUrl}
+                openInLabel="Salesforce"
+                maxDisplayLength={14}
+                onSave={(value) => onClaimNumberChange(ticket.rowId, value)}
+              />
+              <NovaSheetLinkField
                 label={columnLabels?.listingId || "Listing"}
                 value={ticket.listingId}
                 href={novaListingUrl}
@@ -2496,7 +2581,12 @@ export function TicketDetail({
         ) : (
         <aside className="relative flex w-44 shrink-0 flex-col overflow-hidden bg-zendesk-sidebar xl:w-52">
           <div className="flex shrink-0 items-center justify-between border-b border-zendesk-border px-2.5 py-1.5">
-            <h3 className="text-[10px] font-semibold uppercase text-zendesk-muted">Internal tools</h3>
+            <h3
+              className="text-[10px] font-semibold uppercase text-zendesk-muted"
+              data-help-tour="internal-tools"
+            >
+              Internal tools
+            </h3>
             <button
               type="button"
               onClick={() => setInternalToolsCollapsed(true)}
@@ -2577,6 +2667,7 @@ export function TicketDetail({
                       }
                     }}
                     disabled={!novaProfileUrl}
+                    data-help-tour="nova-profile"
                     title={
                       novaProfileUrl
                         ? "Open user profile in Nova"
@@ -2595,6 +2686,7 @@ export function TicketDetail({
                       }
                     }}
                     disabled={!novaHostPerformanceUrl}
+                    data-help-tour="host-performance"
                     title={
                       novaHostPerformanceUrl
                         ? "Open host performance in Nova"
@@ -2613,6 +2705,7 @@ export function TicketDetail({
                       }
                     }}
                     disabled={!becomeUserUrl}
+                    data-help-tour="become-user"
                     title={
                       becomeUserUrl
                         ? "Open Become User in admin.airbnb.com"
@@ -2628,6 +2721,7 @@ export function TicketDetail({
                   <button
                     type="button"
                     onClick={() => window.open(ADMIN_LOGOUT_URL, "_blank", "noopener,noreferrer")}
+                    data-help-tour="logout"
                     title="Log out of all users in admin.airbnb.com"
                     className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded border border-zendesk-border bg-white px-2 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-100"
                   >
@@ -2637,7 +2731,9 @@ export function TicketDetail({
                 </label>
               </li>
               <li className="rounded border border-zendesk-border bg-white p-2">
-                <p className="text-xs font-medium text-zendesk-navy">Linked cases</p>
+                <p className="text-xs font-medium text-zendesk-navy" data-help-tour="linked-cases">
+                  Linked cases
+                </p>
                 <p className="mt-0.5 text-[10px] text-zendesk-muted">
                   Label · URL
                 </p>
@@ -2654,7 +2750,9 @@ export function TicketDetail({
                 </ul>
               </li>
               <li className="rounded border border-zendesk-border bg-white p-2">
-                <p className="text-xs font-medium text-zendesk-navy">External tools</p>
+                <p className="text-xs font-medium text-zendesk-navy" data-help-tour="external-tools">
+                  External tools
+                </p>
                 <p className="mt-0.5 text-[10px] text-zendesk-muted">
                   Configure in Preferences
                 </p>
@@ -2701,6 +2799,7 @@ export function TicketDetail({
               onClick={() => setTrustEscalationsOpen(true)}
               title="Trust Escalations — choose the right escalation path"
               aria-label="Trust Escalations"
+              data-help-tour="trust-escalations"
               className="flex w-full items-start gap-1.5 text-left"
             >
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-teal" />
@@ -2826,12 +2925,14 @@ function NovaSheetLinkField({
   value,
   href,
   maxDisplayLength,
+  openInLabel = "Nova",
   onSave,
 }: {
   label: string;
   value: string;
   href: string | null;
   maxDisplayLength?: number;
+  openInLabel?: string;
   onSave?: (value: string) => void | Promise<void>;
 }) {
   const [copied, setCopied] = useState(false);
@@ -2890,7 +2991,11 @@ function NovaSheetLinkField({
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            title={trimmed ? `Open in Nova (${label}): ${trimmed}` : `Open in Nova (${label})`}
+            title={
+              trimmed
+                ? `Open in ${openInLabel} (${label}): ${trimmed}`
+                : `Open in ${openInLabel} (${label})`
+            }
             className="rounded border border-zendesk-border bg-white px-1.5 py-0.5 font-mono text-xs text-blue-600 hover:bg-gray-100 hover:underline"
           >
             {displayValue}

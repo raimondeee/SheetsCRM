@@ -20,6 +20,7 @@ import {
 } from "@/lib/status-mapper";
 import {
   updateAirbnbUserIdOnSheet,
+  updateClaimNumberOnSheet,
   updateContactReasonOnSheet,
   updateListingIdOnSheet,
   updateReservationCodeOnSheet,
@@ -67,6 +68,7 @@ export async function PATCH(request: Request) {
       appendAdminNote,
       airbnbUserId,
       reservationCode,
+      claimNumber,
       listingId,
       headerField,
       uiFieldSlotId,
@@ -87,6 +89,7 @@ export async function PATCH(request: Request) {
       appendAdminNote?: string;
       airbnbUserId?: string;
       reservationCode?: string;
+      claimNumber?: string;
       listingId?: string;
       headerField?: string;
       uiFieldSlotId?: string;
@@ -218,6 +221,12 @@ export async function PATCH(request: Request) {
     if (typeof reservationCode === "string" && canSyncSheet) {
       queueSheetSync("reservationCode", () =>
         updateReservationCodeOnSheet(config!, rowNumber!, reservationCode.trim())
+      );
+    }
+
+    if (typeof claimNumber === "string" && canSyncSheet) {
+      queueSheetSync("claimNumber", () =>
+        updateClaimNumberOnSheet(config!, rowNumber!, claimNumber.trim())
       );
     }
 

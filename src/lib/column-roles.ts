@@ -18,6 +18,7 @@ export const CRM_ROLE_DESTINATIONS: Partial<Record<ColumnRole, string>> = {
   airbnbUserId:
     "Manual override in sidebar · written to the mapped sheet column when saved",
   reservationCode: "Details → Reso · Nova reservation link",
+  claimNumber: "Details → Claims · Salesforce Care search link",
   listingId: "Details → Listing · Nova listing link",
   internalToolK: "Legacy sheet column — not shown in CRM",
   internalToolM: "Legacy sheet column — not shown in CRM",
@@ -97,6 +98,11 @@ export const COLUMN_ROLE_OPTIONS: { value: ColumnRole; label: string; hint?: str
     hint: CRM_ROLE_DESTINATIONS.reservationCode,
   },
   {
+    value: "claimNumber",
+    label: "Claim number → Claims",
+    hint: CRM_ROLE_DESTINATIONS.claimNumber,
+  },
+  {
     value: "listingId",
     label: "Listing ID → Listing & Nova",
     hint: CRM_ROLE_DESTINATIONS.listingId,
@@ -128,6 +134,7 @@ export const RECOMMENDED_ROLES: ColumnRole[] = [
   "caseSummary",
   "airbnbUserId",
   "reservationCode",
+  "claimNumber",
   "listingId",
 ];
 

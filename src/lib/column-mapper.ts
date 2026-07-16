@@ -30,6 +30,10 @@ const HEADER_PATTERNS: { role: ColumnRole; patterns: RegExp[] }[] = [
     patterns: [/reservation\s*code/i, /^reso$/i, /confirmation\s*code/i, /booking\s*code/i],
   },
   {
+    role: "claimNumber",
+    patterns: [/claim\s*(number|no\.?|#|id)?/i, /^claims?$/i, /^clsf/i],
+  },
+  {
     role: "listingId",
     patterns: [/listing\s*id/i, /^listing$/i, /property\s*id/i, /space\s*id/i],
   },

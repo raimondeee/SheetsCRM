@@ -93,7 +93,9 @@ export function attachTicketChimeUnlockListeners(): () => void {
   };
 }
 
+/** @deprecated Prefer playInboundNotificationSound from notification-sounds. */
 export function playTicketChime(): void {
+  // Kept for calendar/classic fallbacks; inbound alerts use configured MP3s.
   const ctx = getAudioContext();
   if (!ctx || ctx.state !== "running") return;
 

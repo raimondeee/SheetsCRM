@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "SheetsCRM Nova Host Bridge",
+  "version": "0.1.0",
+  "description": "Send the Nova reservation host ID into the open SheetsCRM ticket Manual User ID field.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://nova.airbnb.tools/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "SheetsCRM Nova Host Bridge",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/*"],
+      "js": ["content-crm.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://nova.airbnb.tools/*"],
+      "js": ["content-nova.js"],
+      "css": ["content-nova.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

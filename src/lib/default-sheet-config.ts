@@ -104,6 +104,7 @@ function inferRoleFromHeader(header: string, index: number): import("./types").C
   if (index === EXAMPLE_COLUMN_POSITIONS.caseSummary.index) return "caseSummary";
   if (index === EXAMPLE_COLUMN_POSITIONS.airbnbUserId.index) return "airbnbUserId";
   if (/email|e-mail/.test(h)) return "email";
+  if (/claim/.test(h)) return "claimNumber";
   if (/name|contact/.test(h) && !/company|org/.test(h)) return "name";
   if (/subject|title|topic/.test(h)) return "subject";
   if (/description|message|details|issue|request/.test(h)) return "description";

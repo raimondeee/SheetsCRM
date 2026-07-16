@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:migrate": "node scripts/init-db.mjs",
-    "share:export": "bash scripts/create-shareable-copy.sh"
+    "share:export": "bash scripts/create-shareable-copy.sh",
+    "docs:richtext": "node scripts/export-docs-richtext.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

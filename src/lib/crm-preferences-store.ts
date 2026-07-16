@@ -2,6 +2,10 @@ import type { DashboardPeriod } from "./dashboard-period";
 import { normalizeDashboardPeriod } from "./dashboard-period";
 import type { ExternalToolLink } from "./external-tools";
 import { defaultExternalTools, normalizeExternalTools } from "./external-tools";
+import {
+  normalizeNotificationSoundPreferences,
+  type NotificationSoundPreferences,
+} from "./notification-sounds";
 import { getOverlayDb } from "./overlay-db";
 import {
   normalizeTimerSettings,
@@ -11,7 +15,7 @@ import {
 import type { SortBy, SortOrder } from "./user-preferences";
 import { DEFAULT_USER_PREFERENCES } from "./user-preferences";
 
-export interface StoredUserPreferences extends TimerSettings {
+export interface StoredUserPreferences extends TimerSettings, NotificationSoundPreferences {
   defaultStatusFilter: string;
   sortBy: SortBy;
   sortOrder: SortOrder;
@@ -77,6 +81,7 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
           : DEFAULT_STORED_PREFERENCES.unreadInboxAppendToSelectedEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
       ...normalizeTimerSettings(parsed),
+      ...normalizeNotificationSoundPreferences(parsed),
     };
   } catch {
     return { ...DEFAULT_STORED_PREFERENCES };

@@ -176,6 +176,7 @@ function buildTicketFromSheetRow(
     adminNotes: "",
     airbnbUserId: getCellValueByRole(row, config, "airbnbUserId"),
     reservationCode: getCellValueByRole(row, config, "reservationCode"),
+    claimNumber: getCellValueByRole(row, config, "claimNumber"),
     listingId: getCellValueByRole(row, config, "listingId"),
     status: "new",
     statusChangedAt: null,
@@ -392,7 +393,13 @@ export async function updateContactReasonOnSheet(
 async function updateSheetCellByRole(
   config: SheetConfig,
   rowNumber: number,
-  role: "reservationCode" | "listingId" | "airbnbUserId" | "userEmailed" | "ticketHeaderField",
+  role:
+    | "reservationCode"
+    | "claimNumber"
+    | "listingId"
+    | "airbnbUserId"
+    | "userEmailed"
+    | "ticketHeaderField",
   value: string
 ): Promise<void> {
   const auth = await getGoogleAuthClient();
@@ -419,6 +426,15 @@ export async function updateReservationCodeOnSheet(
   value: string
 ): Promise<void> {
   await updateSheetCellByRole(config, rowNumber, "reservationCode", value);
+}
+
+/** Writes claim number to the mapped claim number column. */
+export async function updateClaimNumberOnSheet(
+  config: SheetConfig,
+  rowNumber: number,
+  value: string
+): Promise<void> {
+  await updateSheetCellByRole(config, rowNumber, "claimNumber", value);
 }
 
 /** Writes listing ID to the mapped listing ID column. */

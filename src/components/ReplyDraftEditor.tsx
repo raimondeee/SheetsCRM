@@ -6,12 +6,19 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ClipboardEvent,
   type FocusEvent,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { compactDraftBlockSpacing, isRichTextEmpty } from "@/lib/html-utils";
+import {
+  isRichTextEmpty,
+  looksLikeHtml,
+  normalizeDraftHtml,
+  plainTextToHtml,
+  sanitizeDraftPasteHtml,
+} from "@/lib/html-utils";
 import {
   AlignVerticalSpaceAround,
   Bold,
@@ -77,26 +84,34 @@ interface ReplyDraftEditorProps {
 
 function ToolbarButton({
   title,
+  active = false,
   onMouseDown,
   onClick,
   children,
 }: {
   title: string;
+  active?: boolean;
   onMouseDown?: () => void;
   onClick: () => void;
   children: ReactNode;
 }) {
+  const tooltip = active ? `${title} (on)` : `${title} (off)`;
   return (
     <button
       type="button"
-      title={title}
-      aria-label={title}
+      title={tooltip}
+      aria-label={tooltip}
+      aria-pressed={active}
       onMouseDown={(event) => {
         onMouseDown?.();
         event.preventDefault();
       }}
       onClick={onClick}
-      className="rounded p-1.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+      className={`rounded p-1.5 ${
+        active
+          ? "bg-zendesk-navy text-white hover:bg-zendesk-navy/90"
+          : "text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
+      }`}
     >
       {children}
     </button>
@@ -145,6 +160,30 @@ function placeCaretAfter(node: Node) {
   after.collapse(true);
   selection.removeAllRanges();
   selection.addRange(after);
+}
+
+/** Prefer DOM insert over execCommand so pasted emphasis/spacing is not flattened. */
+function insertHtmlFragment(html: string): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return false;
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const fragment = template.content;
+  const lastNode = fragment.lastChild;
+  range.insertNode(fragment);
+
+  if (lastNode) {
+    placeCaretAfter(lastNode);
+  } else {
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  return true;
 }
 
 function wrapRangeInStyledSpan(
@@ -375,12 +414,17 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState("");
     const [linkHasSelection, setLinkHasSelection] = useState(false);
+    const [formatActive, setFormatActive] = useState({
+      bold: false,
+      italic: false,
+      underline: false,
+    });
 
     useEffect(() => {
       const editor = editorRef.current;
       if (!editor) return;
 
-      const normalized = compactDraftBlockSpacing(value);
+      const normalized = normalizeDraftHtml(value);
 
       if (document.activeElement === editor) {
         const editorEmpty = isRichTextEmpty(editor.innerHTML);
@@ -437,6 +481,23 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       editorRef.current?.setAttribute("data-empty", isRichTextEmpty(html) ? "true" : "false");
     }
 
+    function syncFormatActive() {
+      const editor = editorRef.current;
+      if (!editor || document.activeElement !== editor) {
+        setFormatActive({ bold: false, italic: false, underline: false });
+        return;
+      }
+      try {
+        setFormatActive({
+          bold: document.queryCommandState("bold"),
+          italic: document.queryCommandState("italic"),
+          underline: document.queryCommandState("underline"),
+        });
+      } catch {
+        setFormatActive({ bold: false, italic: false, underline: false });
+      }
+    }
+
     function saveSelection() {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0 || !editorRef.current) return;
@@ -444,7 +505,18 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       const range = selection.getRangeAt(0);
       if (!editorRef.current.contains(range.commonAncestorContainer)) return;
       savedSelectionRef.current = range.cloneRange();
+      syncFormatActive();
     }
+
+    useEffect(() => {
+      function onSelectionChange() {
+        const editor = editorRef.current;
+        if (!editor || document.activeElement !== editor) return;
+        syncFormatActive();
+      }
+      document.addEventListener("selectionchange", onSelectionChange);
+      return () => document.removeEventListener("selectionchange", onSelectionChange);
+    }, []);
 
     function restoreSelection(): boolean {
       const saved = savedSelectionRef.current;
@@ -482,8 +554,29 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       saveSelection();
     }
 
+    function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+      const clipboard = event.clipboardData;
+      if (!clipboard) return;
+
+      const html = clipboard.getData("text/html");
+      const text = clipboard.getData("text/plain");
+      if (!html && !text) return;
+
+      event.preventDefault();
+      ensureEditorFocus();
+
+      const toInsert =
+        html && looksLikeHtml(html) ? sanitizeDraftPasteHtml(html) : plainTextToHtml(text);
+      if (!toInsert) return;
+
+      if (!insertHtmlFragment(toInsert)) {
+        document.execCommand("insertHTML", false, toInsert);
+      }
+      syncContent();
+    }
+
     function replaceHtml(html: string) {
-      const normalized = compactDraftBlockSpacing(html);
+      const normalized = normalizeDraftHtml(html);
       const editor = editorRef.current;
       if (!editor) return;
 
@@ -496,7 +589,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
     }
 
     function insertHtmlAtCursor(html: string) {
-      const normalized = compactDraftBlockSpacing(html);
+      const normalized = normalizeDraftHtml(html);
       const editor = editorRef.current;
       if (!normalized || !editor) return;
 
@@ -556,6 +649,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       document.execCommand("styleWithCSS", false, "true");
       document.execCommand(command, false, commandValue);
       syncContent();
+      syncFormatActive();
     }
 
     function insertList(ordered: boolean) {
@@ -758,6 +852,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
             data-placeholder={placeholder}
             data-empty="true"
             onInput={syncContent}
+            onPaste={handlePaste}
             onKeyDown={handleEditorKeyDown}
             onClick={handleEditorClick}
             onKeyUp={saveSelection}
@@ -774,11 +869,17 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
         </div>
         <div className="mt-1.5 flex shrink-0 items-center justify-between gap-2 rounded border border-zendesk-border bg-gray-50 px-1 py-0.5">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
-          <ToolbarButton title="Bold" onMouseDown={saveSelection} onClick={() => runCommand("bold")}>
+          <ToolbarButton
+            title="Bold"
+            active={formatActive.bold}
+            onMouseDown={saveSelection}
+            onClick={() => runCommand("bold")}
+          >
             <Bold className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
             title="Italic"
+            active={formatActive.italic}
             onMouseDown={saveSelection}
             onClick={() => runCommand("italic")}
           >
@@ -786,6 +887,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
           </ToolbarButton>
           <ToolbarButton
             title="Underline"
+            active={formatActive.underline}
             onMouseDown={saveSelection}
             onClick={() => runCommand("underline")}
           >

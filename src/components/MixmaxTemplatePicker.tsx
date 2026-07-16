@@ -55,11 +55,13 @@ function SectionToggle({
   onToggle,
   children,
   collapseIcon = false,
+  helpTourId,
 }: {
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
   collapseIcon?: boolean;
+  helpTourId?: string;
 }) {
   return (
     <button
@@ -67,6 +69,7 @@ function SectionToggle({
       onClick={onToggle}
       className="flex w-full items-start gap-1.5 text-left"
       aria-expanded={expanded}
+      data-help-tour={helpTourId}
     >
       {collapseIcon ? (
         <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
@@ -237,6 +240,7 @@ export function MixmaxTemplatePicker({
                 onClick={() => setExpandedState(false)}
                 className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
                 aria-label="Collapse Mixmax templates"
+                data-help-tour="mixmax"
               >
                 <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
                 <span className="block text-xs font-semibold uppercase text-zendesk-muted">
@@ -276,7 +280,11 @@ export function MixmaxTemplatePicker({
         )}
         {!expanded && (
           <div className={collapsedBarClass}>
-            <SectionToggle expanded={expanded} onToggle={toggleExpanded}>
+            <SectionToggle
+              expanded={expanded}
+              onToggle={toggleExpanded}
+              helpTourId="mixmax"
+            >
               Mixmax templates
             </SectionToggle>
           </div>
@@ -290,7 +298,12 @@ export function MixmaxTemplatePicker({
       <>
         {expanded && (
           <div className="absolute inset-x-0 bottom-0 top-0 z-20 flex flex-col border-t border-zendesk-border bg-white p-4 shadow-xl">
-            <SectionToggle expanded collapseIcon onToggle={() => setExpandedState(false)}>
+            <SectionToggle
+              expanded
+              collapseIcon
+              onToggle={() => setExpandedState(false)}
+              helpTourId="mixmax"
+            >
               Mixmax templates
             </SectionToggle>
             <p className="mt-2 pl-5 text-xs text-zendesk-muted">Loading Mixmax templates…</p>
@@ -298,7 +311,11 @@ export function MixmaxTemplatePicker({
         )}
         {!expanded && (
           <div className={collapsedBarClass}>
-            <SectionToggle expanded={expanded} onToggle={toggleExpanded}>
+            <SectionToggle
+              expanded={expanded}
+              onToggle={toggleExpanded}
+              helpTourId="mixmax"
+            >
               Mixmax templates
             </SectionToggle>
           </div>

@@ -131,7 +131,14 @@ export async function POST(
       attachments: attachmentsResult,
     });
 
-    const statusAfterSend = status === "resolved" || status === "solved" ? "resolved" : "pending";
+    const statusRaw = typeof status === "string" ? status.trim().toLowerCase() : "";
+    const statusAfterSend =
+      statusRaw === "resolved" || statusRaw === "solved"
+        ? "resolved"
+        : statusRaw === "pending"
+          ? "pending"
+          : null;
+
     if (statusAfterSend === "resolved") {
       const overlay = getTicketOverlay(decoded);
       if (!hasAirbnbUserIdForResolve(overlay.crmAirbnbUserId ?? "")) {
@@ -141,9 +148,12 @@ export async function POST(
         );
       }
     }
-    const { email } = await getSignedInUser();
-    const timerSettings = loadTimerSettings(email);
-    updateTicketStatus(decoded, statusAfterSend, timerSettings, intakeTimestamp);
+
+    if (statusAfterSend) {
+      const { email } = await getSignedInUser();
+      const timerSettings = loadTimerSettings(email);
+      updateTicketStatus(decoded, statusAfterSend, timerSettings, intakeTimestamp);
+    }
 
     let sheetSyncQueued = false;
     if (process.env.USE_MOCK_DATA !== "true") {
@@ -151,11 +161,13 @@ export async function POST(
       const parsed = parseTicketRowId(decoded);
       if (config && parsed) {
         sheetSyncQueued = true;
-        const sheetStatusValue = mapCrmStatusToSheetValue(statusAfterSend);
-        if (sheetStatusValue) {
-          queueSheetSync("send-status", () =>
-            updateSheetStatusOnSheet(config, parsed.rowNumber, sheetStatusValue)
-          );
+        if (statusAfterSend) {
+          const sheetStatusValue = mapCrmStatusToSheetValue(statusAfterSend);
+          if (sheetStatusValue) {
+            queueSheetSync("send-status", () =>
+              updateSheetStatusOnSheet(config, parsed.rowNumber, sheetStatusValue)
+            );
+          }
         }
         queueSheetSync("userEmailed", () =>
           markUserEmailedOnSheet(config, parsed.rowNumber)

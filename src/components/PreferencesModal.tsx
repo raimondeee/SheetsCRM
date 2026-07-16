@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Trash2, Upload, X } from "lucide-react";
 import { DASHBOARD_PERIOD_OPTIONS } from "@/lib/dashboard-period";
 import { SLA_HOUR_OPTIONS } from "@/lib/timer-settings";
 import { DEFAULT_STATUSES } from "@/lib/types";
@@ -9,6 +9,18 @@ import {
   EXTERNAL_TOOL_SLOT_COUNT,
   type ExternalToolLink,
 } from "@/lib/external-tools";
+import {
+  BUILTIN_INBOUND_SOUNDS,
+  BUILTIN_OUTBOUND_SOUNDS,
+  DEFAULT_INBOUND_SOUND_ID,
+  DEFAULT_OUTBOUND_SOUND_ID,
+  MAX_CUSTOM_SOUND_BYTES,
+  MAX_CUSTOM_SOUNDS,
+  SOUND_CLASSIC_ID,
+  SOUND_OFF_ID,
+  playSoundById,
+  type CustomSoundRecord,
+} from "@/lib/notification-sounds";
 import {
   DEFAULT_USER_PREFERENCES,
   type UserPreferences,
@@ -19,6 +31,10 @@ interface PreferencesModalProps {
   preferences: UserPreferences;
   onClose: () => void;
   onSaved: (prefs: UserPreferences) => void;
+}
+
+function customPreferenceId(id: string): string {
+  return `custom:${id}`;
 }
 
 export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesModalProps) {
@@ -50,8 +66,38 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
   const [unreadInboxAppendToSelectedEnabled, setUnreadInboxAppendToSelectedEnabled] = useState(
     preferences.unreadInboxAppendToSelectedEnabled
   );
+  const [inboundSoundId, setInboundSoundId] = useState(preferences.inboundSoundId);
+  const [outboundSoundId, setOutboundSoundId] = useState(preferences.outboundSoundId);
+  const [customSounds, setCustomSounds] = useState<CustomSoundRecord[]>([]);
+  const [soundsLoading, setSoundsLoading] = useState(true);
+  const [soundError, setSoundError] = useState<string | null>(null);
+  const [uploadingSound, setUploadingSound] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/sounds", { cache: "no-store", credentials: "same-origin" });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setSoundError(data.error || "Failed to load sounds");
+          return;
+        }
+        setCustomSounds(Array.isArray(data.custom) ? data.custom : []);
+      } catch {
+        if (!cancelled) setSoundError("Failed to load sounds");
+      } finally {
+        if (!cancelled) setSoundsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSave() {
     const prefs: UserPreferences = {
@@ -69,6 +115,8 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       calendarReminderFullscreen,
       unreadInboxBindToSelectedEnabled,
       unreadInboxAppendToSelectedEnabled,
+      inboundSoundId,
+      outboundSoundId,
     };
     setSaving(true);
     setError(null);
@@ -97,11 +145,119 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     setCalendarReminderFullscreen(DEFAULT_USER_PREFERENCES.calendarReminderFullscreen);
     setUnreadInboxBindToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxBindToSelectedEnabled);
     setUnreadInboxAppendToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled);
+    setInboundSoundId(DEFAULT_USER_PREFERENCES.inboundSoundId);
+    setOutboundSoundId(DEFAULT_USER_PREFERENCES.outboundSoundId);
   }
 
   function updateExternalTool(index: number, field: keyof ExternalToolLink, value: string) {
     setExternalTools((prev) =>
       prev.map((tool, i) => (i === index ? { ...tool, [field]: value } : tool))
+    );
+  }
+
+  function previewSound(soundId: string) {
+    void playSoundById(soundId, { customSounds });
+  }
+
+  async function handleUploadSound(file: File | undefined) {
+    if (!file) return;
+    setSoundError(null);
+    setUploadingSound(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/sounds", {
+        method: "POST",
+        body,
+        credentials: "same-origin",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      setCustomSounds(Array.isArray(data.custom) ? data.custom : []);
+    } catch (err) {
+      setSoundError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingSound(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteCustomSound(id: string) {
+    setSoundError(null);
+    try {
+      const res = await fetch("/api/sounds", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+        credentials: "same-origin",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete sound");
+      setCustomSounds(Array.isArray(data.custom) ? data.custom : []);
+      const prefId = customPreferenceId(id);
+      if (inboundSoundId === prefId) setInboundSoundId(DEFAULT_USER_PREFERENCES.inboundSoundId);
+      if (outboundSoundId === prefId) setOutboundSoundId(DEFAULT_USER_PREFERENCES.outboundSoundId);
+    } catch (err) {
+      setSoundError(err instanceof Error ? err.message : "Failed to delete sound");
+    }
+  }
+
+  function renderSoundSelect(
+    channel: "inbound" | "outbound",
+    value: string,
+    onChange: (id: string) => void
+  ) {
+    const builtins = channel === "inbound" ? BUILTIN_INBOUND_SOUNDS : BUILTIN_OUTBOUND_SOUNDS;
+    const fallback = channel === "inbound" ? DEFAULT_INBOUND_SOUND_ID : DEFAULT_OUTBOUND_SOUND_ID;
+    const known =
+      value === SOUND_OFF_ID ||
+      (channel === "inbound" && value === SOUND_CLASSIC_ID) ||
+      builtins.some((s) => s.id === value) ||
+      customSounds.some((s) => customPreferenceId(s.id) === value);
+    const selectValue = known ? value : fallback;
+
+    return (
+      <div className="flex gap-2">
+        <select
+          value={selectValue}
+          onChange={(e) => onChange(e.target.value)}
+          className="min-w-0 flex-1 rounded border border-zendesk-border px-3 py-2 text-sm"
+        >
+          <optgroup label="Built-in">
+            {builtins.map((sound) => (
+              <option key={sound.id} value={sound.id}>
+                {sound.label}
+              </option>
+            ))}
+          </optgroup>
+          {customSounds.length > 0 && (
+            <optgroup label="Custom">
+              {customSounds.map((sound) => (
+                <option key={sound.id} value={customPreferenceId(sound.id)}>
+                  {sound.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Other">
+            {channel === "inbound" && (
+              <option value={SOUND_CLASSIC_ID}>Classic chime</option>
+            )}
+            <option value={SOUND_OFF_ID}>Off</option>
+          </optgroup>
+        </select>
+        <button
+          type="button"
+          onClick={() => previewSound(value)}
+          disabled={value === SOUND_OFF_ID}
+          title="Preview sound"
+          aria-label="Preview sound"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded border border-zendesk-border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
+        >
+          <Play className="h-3.5 w-3.5" />
+          Play
+        </button>
+      </div>
     );
   }
 
@@ -127,6 +283,105 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
               {error}
             </p>
           )}
+
+          <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
+            <legend className="px-1 text-sm font-medium">Notification sounds</legend>
+            <p className="text-xs text-zendesk-muted">
+              Choose sounds for new inbound tickets and outbound sends. Preview before saving.
+            </p>
+
+            {soundError && (
+              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {soundError}
+              </p>
+            )}
+
+            <label className="block text-sm">
+              <span className="font-medium">Inbound notifications</span>
+              <p className="mt-0.5 text-xs text-zendesk-muted">
+                Plays when a new ticket arrives or a customer replies while Pending
+              </p>
+              <div className="mt-2">
+                {renderSoundSelect("inbound", inboundSoundId, setInboundSoundId)}
+              </div>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">Outbound sends</span>
+              <p className="mt-0.5 text-xs text-zendesk-muted">
+                Plays when you queue a Send / Pending or Send / Resolved reply
+              </p>
+              <div className="mt-2">
+                {renderSoundSelect("outbound", outboundSoundId, setOutboundSoundId)}
+              </div>
+            </label>
+
+            <div className="space-y-2 border-t border-zendesk-border pt-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">Custom sounds</p>
+                  <p className="text-xs text-zendesk-muted">
+                    MP3, WAV, or OGG · max {Math.round(MAX_CUSTOM_SOUND_BYTES / 1024)} KB · up to{" "}
+                    {MAX_CUSTOM_SOUNDS} files
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingSound || customSounds.length >= MAX_CUSTOM_SOUNDS}
+                  className="inline-flex items-center gap-1.5 rounded border border-zendesk-border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {uploadingSound ? "Uploading…" : "Upload"}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/ogg"
+                  className="hidden"
+                  onChange={(e) => void handleUploadSound(e.target.files?.[0])}
+                />
+              </div>
+
+              {soundsLoading ? (
+                <p className="text-xs text-zendesk-muted">Loading custom sounds…</p>
+              ) : customSounds.length === 0 ? (
+                <p className="text-xs text-zendesk-muted">No custom sounds yet.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {customSounds.map((sound) => (
+                    <li
+                      key={sound.id}
+                      className="flex items-center gap-2 rounded border border-zendesk-border px-2 py-1.5 text-sm"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{sound.name}</span>
+                      <span className="shrink-0 text-xs text-zendesk-muted">
+                        {Math.ceil(sound.sizeBytes / 1024)} KB
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => previewSound(customPreferenceId(sound.id))}
+                        title="Preview"
+                        aria-label={`Preview ${sound.name}`}
+                        className="rounded p-1 hover:bg-gray-100"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteCustomSound(sound.id)}
+                        title="Delete"
+                        aria-label={`Delete ${sound.name}`}
+                        className="rounded p-1 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </fieldset>
 
           <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
             <legend className="px-1 text-sm font-medium">Status timers</legend>

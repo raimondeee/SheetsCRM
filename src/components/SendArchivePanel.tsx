@@ -21,11 +21,13 @@ function SectionToggle({
   onToggle,
   children,
   collapseIcon = false,
+  helpTourId,
 }: {
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
   collapseIcon?: boolean;
+  helpTourId?: string;
 }) {
   return (
     <button
@@ -33,6 +35,7 @@ function SectionToggle({
       onClick={onToggle}
       className="flex w-full items-start gap-1.5 text-left"
       aria-expanded={expanded}
+      data-help-tour={helpTourId}
     >
       {collapseIcon ? (
         <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
@@ -124,7 +127,11 @@ function ArchiveRow({ entry }: { entry: SendArchiveEntry }) {
           </span>
           <span className="mt-0.5 block text-[9px] text-zendesk-muted">
             {formatWhen(entry.savedAt)}
-            {entry.statusAfterSend === "resolved" ? " · Resolved" : " · Pending"}
+            {entry.statusAfterSend === "resolved"
+              ? " · Resolved"
+              : entry.statusAfterSend === "pending"
+                ? " · Pending"
+                : " · Send only"}
           </span>
         </span>
       </button>
@@ -252,6 +259,7 @@ export function SendArchivePanel({ onExpandedChange }: SendArchivePanelProps) {
               onClick={() => setExpandedState(false)}
               className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
               aria-label="Collapse recent sends"
+              data-help-tour="recent-sends"
             >
               <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-muted" />
               <span className="block text-xs font-semibold uppercase text-zendesk-muted">
@@ -298,7 +306,11 @@ export function SendArchivePanel({ onExpandedChange }: SendArchivePanelProps) {
       )}
       {!expanded && (
         <div className={collapsedBarClass}>
-          <SectionToggle expanded={expanded} onToggle={toggleExpanded}>
+          <SectionToggle
+            expanded={expanded}
+            onToggle={toggleExpanded}
+            helpTourId="recent-sends"
+          >
             Recent sends{entries.length > 0 ? ` (${entries.length})` : ""}
           </SectionToggle>
         </div>

@@ -11,18 +11,16 @@ import {
   recordQueuedSend,
 } from "@/lib/send-archive";
 
-import type { QueuedSendPayload } from "@/lib/queued-send";
+import type { QueuedSendPayload, StatusAfterSend } from "@/lib/queued-send";
+import { playOutboundSendSound } from "@/lib/notification-sounds";
 
-export type { QueuedSendPayload };
+export type { QueuedSendPayload, StatusAfterSend };
 
 const UNDO_SEND_SECONDS = 10;
 
 interface UsePendingSendQueueOptions {
-  onTicketSent: (rowId: string, status: "pending" | "resolved") => Promise<void>;
-  onAdvanceAfterSend: (
-    rowId: string,
-    statusAfterSend: "pending" | "resolved"
-  ) => boolean;
+  onTicketSent: (rowId: string, status: StatusAfterSend) => Promise<void>;
+  onAdvanceAfterSend: (rowId: string, statusAfterSend: StatusAfterSend) => boolean;
   onShowInboxVictory: () => void;
   onRestoreSentTicket: (rowId: string) => void;
   onThreadUpdate: () => void;
@@ -38,7 +36,7 @@ export function usePendingSendQueue({
   const [pendingSend, setPendingSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [undoSecondsLeft, setUndoSecondsLeft] = useState(0);
-  const [pendingSendStatus, setPendingSendStatus] = useState<"pending" | "resolved">("pending");
+  const [pendingSendStatus, setPendingSendStatus] = useState<StatusAfterSend>("pending");
   const [queuedSendLabel, setQueuedSendLabel] = useState<string | null>(null);
   const [queuedAttachmentCount, setQueuedAttachmentCount] = useState(0);
   const [queuedTicketRowId, setQueuedTicketRowId] = useState<string | null>(null);
@@ -154,6 +152,7 @@ export function usePendingSendQueue({
     (payload: QueuedSendPayload) => {
       if (pendingPayloadRef.current || sending) return;
 
+      playOutboundSendSound();
       setSendError(null);
       pendingPayloadRef.current = payload;
       setPendingSendStatus(payload.statusAfterSend);
@@ -169,11 +168,15 @@ export function usePendingSendQueue({
         /* archive is best-effort */
       });
 
-      const advanced = onAdvanceAfterSendRef.current(
-        payload.ticketRowId,
-        payload.statusAfterSend
-      );
-      pendingVictoryRef.current = !advanced;
+      if (payload.statusAfterSend === "unchanged") {
+        pendingVictoryRef.current = false;
+      } else {
+        const advanced = onAdvanceAfterSendRef.current(
+          payload.ticketRowId,
+          payload.statusAfterSend
+        );
+        pendingVictoryRef.current = !advanced;
+      }
 
       if (countdownRef.current) clearInterval(countdownRef.current);
       countdownRef.current = setInterval(() => {

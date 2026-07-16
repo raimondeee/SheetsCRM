@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
+import { CircleHelp, LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
 import type { CoverSheetEntry, SheetConfig, Ticket } from "@/lib/types";
 import { resolveSheetConfigForTicket } from "@/lib/cover-sheets";
 import { intakeAirbnbUserIdFromTicket } from "@/lib/airbnb-user-id";
@@ -24,6 +24,7 @@ import { CrmDebugLogPanel } from "./CrmDebugLogPanel";
 import { CalendarReminderToast } from "./CalendarReminderToast";
 import { CalendarReminderModal } from "./CalendarReminderModal";
 import { UnreadInboxModal } from "./UnreadInboxModal";
+import { HelpOverlay } from "./HelpOverlay";
 import { appendAdminNoteToText } from "@/lib/admin-notes";
 import { crmSubjectLabelFromStored } from "@/lib/email-subject";
 import { applyPendingStatusTimerFields } from "@/lib/ticket-activity";
@@ -44,8 +45,11 @@ import { useRefreshCountdown } from "@/hooks/useRefreshCountdown";
 import { useCalendarReminders } from "@/hooks/useCalendarReminders";
 import { useTicketChimeUnlock } from "@/hooks/useTicketChime";
 import {
+  configureNotificationSounds,
+  playInboundNotificationSound,
+} from "@/lib/notification-sounds";
+import {
   buildTicketChimeSnapshots,
-  playTicketChime,
   shouldPlayTicketChime,
   type TicketChimeSnapshot,
 } from "@/lib/ticket-chime";
@@ -149,6 +153,7 @@ export function CrmShell() {
   const sidebarWidthState = usePersistedWidth("crm.sidebarWidth", sidebarMaxWidth);
   const ticketListWidthState = usePersistedWidth("crm.ticketListWidth", ticketListMaxWidth);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [unreadInboxOpen, setUnreadInboxOpen] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -244,7 +249,7 @@ export function CrmShell() {
           data.source !== "mock" &&
           shouldPlayTicketChime(previousChimeSnapshots, incomingTickets)
         ) {
-          playTicketChime();
+          playInboundNotificationSound();
         }
         setTickets(incomingTickets);
         setConfig(data.config ?? null);
@@ -327,6 +332,7 @@ export function CrmShell() {
       const prefs = await fetchUserPreferences();
       if (cancelled) return;
       prefsRef.current = prefs;
+      configureNotificationSounds(prefs);
       setStatusFilter(prefs.defaultStatusFilter);
       setSortBy(prefs.sortBy);
       setSortOrder(prefs.sortOrder);
@@ -394,6 +400,51 @@ export function CrmShell() {
 
   const selected = tickets.find((t) => t.rowId === selectedId) ?? null;
 
+  /** Expose selected ticket to the Nova host-ID Chrome extension (content script). */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.sheetscrmReady = "1";
+    if (selected) {
+      root.dataset.sheetscrmTicketRowId = selected.rowId;
+      root.dataset.sheetscrmReservationCode = selected.reservationCode?.trim() || "";
+      root.dataset.sheetscrmOrigin = window.location.origin;
+    } else {
+      delete root.dataset.sheetscrmTicketRowId;
+      delete root.dataset.sheetscrmReservationCode;
+      delete root.dataset.sheetscrmOrigin;
+    }
+    return () => {
+      delete root.dataset.sheetscrmReady;
+      delete root.dataset.sheetscrmTicketRowId;
+      delete root.dataset.sheetscrmReservationCode;
+      delete root.dataset.sheetscrmOrigin;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    function onHostIdSaved(event: Event) {
+      const detail = (event as CustomEvent<{ rowId?: string; hostId?: string }>).detail;
+      const rowId = detail?.rowId?.trim();
+      const hostId = detail?.hostId?.trim();
+      if (!rowId || !hostId) return;
+      setTickets((prev) =>
+        prev.map((t) => {
+          if (t.rowId !== rowId) return t;
+          const rawKey =
+            Object.keys(t.raw).find((k) => /airbnb\s*user\s*id/i.test(k)) || "Airbnb User ID";
+          return {
+            ...t,
+            crmAirbnbUserId: hostId,
+            airbnbUserId: hostId,
+            raw: { ...t.raw, [rawKey]: hostId },
+          };
+        })
+      );
+    }
+    window.addEventListener("sheetscrm:host-id-saved", onHostIdSaved);
+    return () => window.removeEventListener("sheetscrm:host-id-saved", onHostIdSaved);
+  }, []);
+
   const activeSheetConfig = useMemo(() => {
     if (selected) {
       return resolveSheetConfigForTicket(selected.rowId, config, coverSheets) ?? config;
@@ -407,6 +458,7 @@ export function CrmShell() {
         airbnbUserId: null as string | null,
         columnD: null as string | null,
         reservationCode: null as string | null,
+        claimNumber: null as string | null,
         listingId: null as string | null,
       };
     }
@@ -416,6 +468,7 @@ export function CrmShell() {
       airbnbUserId: byRole("airbnbUserId"),
       columnD: byRole("email"),
       reservationCode: byRole("reservationCode"),
+      claimNumber: byRole("claimNumber"),
       listingId: byRole("listingId"),
     };
   }, [activeSheetConfig]);
@@ -487,6 +540,7 @@ export function CrmShell() {
 
   function handlePreferencesSaved(prefs: UserPreferences) {
     prefsRef.current = prefs;
+    configureNotificationSounds(prefs);
     setStatusFilter(prefs.defaultStatusFilter);
     setSortBy(prefs.sortBy);
     setSortOrder(prefs.sortOrder);
@@ -640,6 +694,7 @@ export function CrmShell() {
     statusAfterSend: string,
     ticketsSnapshot?: Ticket[]
   ): boolean {
+    if (statusAfterSend === "unchanged") return true;
     const ticketList = ticketsAfterSend(ticketsSnapshot ?? tickets, rowId, statusAfterSend);
     return applySendHandoff(rowId, ticketList, { showVictoryWhenDone: false });
   }
@@ -654,7 +709,12 @@ export function CrmShell() {
     setSelectedId(rowId);
   }
 
-  async function handleTicketSent(rowId: string, status: "pending" | "resolved") {
+  async function handleTicketSent(rowId: string, status: "pending" | "resolved" | "unchanged") {
+    if (status === "unchanged") {
+      setComposeClearedRowId(rowId);
+      return;
+    }
+
     const nextTickets = ticketsAfterSend(tickets, rowId, status).map((t) =>
       t.rowId === rowId && status === "resolved"
         ? { ...t, resolvedClosed: false }
@@ -918,6 +978,15 @@ export function CrmShell() {
     );
   }
 
+  async function handleClaimNumberChange(rowId: string, claimNumber: string) {
+    await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rowId, claimNumber }),
+    });
+    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, claimNumber } : t)));
+  }
+
   async function handleListingIdChange(rowId: string, listingId: string) {
     await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
@@ -1172,6 +1241,15 @@ export function CrmShell() {
           )}
           <button
             type="button"
+            onClick={() => setHelpOpen(true)}
+            className="rounded p-2 hover:bg-white/10"
+            title="CRM help"
+            aria-label="Open CRM help overlay"
+          >
+            <CircleHelp className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
             onClick={() => setPreferencesOpen(true)}
             className="rounded p-2 hover:bg-white/10"
             title="View preferences"
@@ -1337,6 +1415,7 @@ export function CrmShell() {
               onAdminNotesChange={handleAdminNotesChange}
               onAirbnbUserIdChange={handleAirbnbUserIdChange}
               onReservationCodeChange={handleReservationCodeChange}
+              onClaimNumberChange={handleClaimNumberChange}
               onListingIdChange={handleListingIdChange}
               onSlaChange={handleSlaChange}
               onClearInitialResponseSla={handleClearInitialResponseSla}
@@ -1459,6 +1538,8 @@ export function CrmShell() {
           }}
         />
       )}
+
+      <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

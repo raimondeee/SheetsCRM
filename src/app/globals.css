@@ -78,7 +78,13 @@ body {
 }
 
 .reply-draft-editor {
-  line-height: normal;
+  line-height: 1.45;
+}
+
+/* Pasted Docs/Gmail HTML often carries opaque backgrounds; keep the editor wash. */
+.reply-draft-editor :where(p, div, span, li, td, th, font, h1, h2, h3, h4, h5, h6) {
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .reply-draft-editor p {
@@ -87,11 +93,48 @@ body {
 
 .reply-draft-editor p + p,
 .reply-draft-editor div + div {
-  margin-top: 0.65em;
+  margin-top: 0.85em;
 }
 
 .reply-draft-editor div {
   margin: 0;
+}
+
+/* Match conversation/Gmail emphasis — Tailwind preflight resets heading weight. */
+.reply-draft-editor b,
+.reply-draft-editor strong {
+  font-weight: 700;
+}
+
+.reply-draft-editor i,
+.reply-draft-editor em {
+  font-style: italic;
+}
+
+.reply-draft-editor u {
+  text-decoration: underline;
+}
+
+.reply-draft-editor h1,
+.reply-draft-editor h2,
+.reply-draft-editor h3,
+.reply-draft-editor h4 {
+  font-weight: 700;
+  margin: 0.75em 0 0.35em;
+  line-height: 1.25;
+}
+
+.reply-draft-editor h1 {
+  font-size: 1.25em;
+}
+
+.reply-draft-editor h2 {
+  font-size: 1.125em;
+}
+
+.reply-draft-editor h3,
+.reply-draft-editor h4 {
+  font-size: 1em;
 }
 
 .reply-draft-editor ul {
@@ -122,7 +165,7 @@ body {
 
 /* Conversation thread: same block spacing / list chrome as the draft editor */
 .thread-message-body {
-  line-height: normal;
+  line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -133,7 +176,7 @@ body {
 
 .thread-message-body p + p,
 .thread-message-body div + div {
-  margin-top: 0.65em;
+  margin-top: 0.85em;
 }
 
 .thread-message-body div {

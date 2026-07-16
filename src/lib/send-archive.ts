@@ -1,6 +1,6 @@
 import { readFilesAsAttachmentPayload } from "./outbound-attachments";
 import { normalizeDraftHtml } from "./html-utils";
-import type { QueuedSendPayload } from "./queued-send";
+import type { QueuedSendPayload, StatusAfterSend } from "./queued-send";
 
 export const SEND_ARCHIVE_LIMIT = 10;
 
@@ -23,7 +23,7 @@ export interface SendArchiveEntry {
   message: string;
   cc: string | null;
   bcc: string | null;
-  statusAfterSend: "pending" | "resolved";
+  statusAfterSend: StatusAfterSend;
   intakeTimestamp?: string;
   attachments: SendArchiveAttachment[];
   errorMessage?: string;

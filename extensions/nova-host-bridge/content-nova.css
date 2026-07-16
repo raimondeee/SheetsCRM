@@ -1,0 +1,59 @@
+#sheetscrm-nova-host-bridge {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483646;
+  width: 240px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #17494d;
+  color: #fff;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+#sheetscrm-nova-host-bridge .scrm-bridge-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+#sheetscrm-nova-host-bridge .scrm-bridge-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-bottom: 8px;
+  opacity: 0.95;
+  word-break: break-all;
+}
+
+#sheetscrm-nova-host-bridge button {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #17494d;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#sheetscrm-nova-host-bridge button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#sheetscrm-nova-host-bridge .scrm-bridge-status {
+  margin-top: 8px;
+  min-height: 1.2em;
+  opacity: 0.9;
+}
+
+#sheetscrm-nova-host-bridge .scrm-bridge-status[data-tone="ok"] {
+  color: #b7f7c5;
+}
+
+#sheetscrm-nova-host-bridge .scrm-bridge-status[data-tone="error"] {
+  color: #ffc9c9;
+}
+
+#sheetscrm-nova-host-bridge .scrm-bridge-status[data-tone="pending"] {
+  color: #ffe6a8;
+}

@@ -52,10 +52,11 @@ export function getResoAndListingValues(ticket: Ticket): string[] {
   };
 
   add(ticket.reservationCode);
+  add(ticket.claimNumber);
   add(ticket.listingId);
 
   for (const [key, value] of Object.entries(ticket.raw)) {
-    if (RESO_LISTING_RAW_KEY.test(key)) add(value);
+    if (RESO_LISTING_RAW_KEY.test(key) || /claim/i.test(key)) add(value);
   }
 
   add(ticket.raw.E);

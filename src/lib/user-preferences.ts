@@ -3,6 +3,11 @@ import { normalizeDashboardPeriod } from "./dashboard-period";
 import type { ExternalToolLink } from "./external-tools";
 import { defaultExternalTools, normalizeExternalTools } from "./external-tools";
 import {
+  DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
+  normalizeNotificationSoundPreferences,
+  type NotificationSoundPreferences,
+} from "./notification-sounds";
+import {
   DEFAULT_TIMER_SETTINGS,
   normalizeTimerSettings,
   type TimerSettings,
@@ -11,7 +16,7 @@ import {
 export type SortOrder = "asc" | "desc";
 export type SortBy = "submitted" | "updated";
 
-export interface UserPreferences extends TimerSettings {
+export interface UserPreferences extends TimerSettings, NotificationSoundPreferences {
   defaultStatusFilter: string;
   sortBy: SortBy;
   sortOrder: SortOrder;
@@ -37,6 +42,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   unreadInboxAppendToSelectedEnabled: true,
   externalTools: defaultExternalTools(),
   ...DEFAULT_TIMER_SETTINGS,
+  ...DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
 };
 
 const LEGACY_STORAGE_KEY = "sheetscrm_user_preferences";
@@ -82,6 +88,7 @@ export function readLegacyUserPreferences(): UserPreferences | null {
           : DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
       ...normalizeTimerSettings(parsed),
+      ...normalizeNotificationSoundPreferences(parsed),
     };
   } catch {
     return null;
@@ -126,6 +133,7 @@ export async function fetchUserPreferences(): Promise<UserPreferences> {
     ...DEFAULT_USER_PREFERENCES,
     ...data.preferences,
     externalTools: normalizeExternalTools(data.preferences?.externalTools),
+    ...normalizeNotificationSoundPreferences(data.preferences),
   };
 }
 
@@ -141,6 +149,7 @@ export async function saveUserPreferences(prefs: UserPreferences): Promise<UserP
     ...DEFAULT_USER_PREFERENCES,
     ...data.preferences,
     externalTools: normalizeExternalTools(data.preferences?.externalTools),
+    ...normalizeNotificationSoundPreferences(data.preferences),
   };
 }
 

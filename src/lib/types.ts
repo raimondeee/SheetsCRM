@@ -16,6 +16,7 @@ export type ColumnRole =
   | "internalToolR"
   | "airbnbUserId"
   | "reservationCode"
+  | "claimNumber"
   | "listingId"
   | "userEmailed"
   | "ticketHeaderField"
@@ -101,6 +102,8 @@ export interface Ticket {
   airbnbUserId: string;
   /** Reservation code from the mapped reservation code column */
   reservationCode: string;
+  /** Claim number from the mapped claim number column */
+  claimNumber: string;
   /** Listing ID from the mapped listing ID column */
   listingId: string;
   /** CRM overlay status */
