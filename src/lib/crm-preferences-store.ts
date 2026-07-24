@@ -14,8 +14,13 @@ import {
 } from "./timer-settings";
 import type { SortBy, SortOrder } from "./user-preferences";
 import { DEFAULT_USER_PREFERENCES } from "./user-preferences";
+import {
+  normalizeWellnessPreferences,
+  type WellnessPreferences,
+} from "./wellness-preferences";
 
-export interface StoredUserPreferences extends TimerSettings, NotificationSoundPreferences {
+export interface StoredUserPreferences
+  extends TimerSettings, NotificationSoundPreferences, WellnessPreferences {
   defaultStatusFilter: string;
   sortBy: SortBy;
   sortOrder: SortOrder;
@@ -82,6 +87,7 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
       externalTools: normalizeExternalTools(parsed.externalTools),
       ...normalizeTimerSettings(parsed),
       ...normalizeNotificationSoundPreferences(parsed),
+      ...normalizeWellnessPreferences(parsed),
     };
   } catch {
     return { ...DEFAULT_STORED_PREFERENCES };

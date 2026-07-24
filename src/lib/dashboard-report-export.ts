@@ -215,6 +215,12 @@ export function formatTeamDashboardReportPlain(
     );
   }
   lines.push("");
+  lines.push("Case status (period)");
+  for (const summary of stats.statusSummaries) {
+    if (summary.periodCount === 0 && summary.status !== "Blank") continue;
+    lines.push(`  ${summary.status}: ${summary.periodCount.toLocaleString()}`);
+  }
+  lines.push("");
 
   lines.push(
     ...formatBreakdownPlain("Volume by region", stats.regionBreakdown, stats.periodRecordCount)
@@ -223,6 +229,13 @@ export function formatTeamDashboardReportPlain(
     ...formatBreakdownPlain("Category", stats.categoryBreakdown, stats.periodRecordCount)
   );
   lines.push(...formatBreakdownPlain("Owner / MM", stats.ownerBreakdown, stats.periodRecordCount));
+  lines.push(
+    ...formatBreakdownPlain(
+      "Volume by day of week",
+      stats.casesByDayOfWeek,
+      stats.periodRecordCount
+    )
+  );
   lines.push("Generated from SheetsCRM");
   return lines.join("\n").trimEnd();
 }
@@ -243,6 +256,14 @@ export function formatTeamDashboardReportHtml(
     )
     .join("");
 
+  const statusOverviewRows = stats.statusSummaries
+    .filter((summary) => summary.periodCount > 0 || summary.status === "Blank")
+    .map(
+      (summary) =>
+        `<tr><td style="border: 1px solid #d8dcde; padding: 6px 8px;">${escapeHtml(summary.status)}</td><td style="border: 1px solid #d8dcde; padding: 6px 8px; text-align: right;">${summary.periodCount.toLocaleString()}</td></tr>`
+    )
+    .join("");
+
   const parts: string[] = [
     '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #17494d;">',
     `<p style="margin: 0 0 4px;"><strong>SheetsCRM Team Dashboard — ${escapeHtml(filters.periodLabel)}</strong></p>`,
@@ -252,9 +273,18 @@ export function formatTeamDashboardReportHtml(
     '<table style="border-collapse: collapse; width: 100%; max-width: 520px; font-size: 13px; margin-bottom: 16px;"><thead><tr style="background: #f4f6f8;"><th style="border: 1px solid #d8dcde; padding: 6px 8px; text-align: left;">Region</th><th style="border: 1px solid #d8dcde; padding: 6px 8px; text-align: right;">In period</th><th style="border: 1px solid #d8dcde; padding: 6px 8px; text-align: right;">All time</th></tr></thead><tbody>',
     regionOverviewRows,
     "</tbody></table>",
+    '<p style="margin: 0 0 8px; font-weight: bold;">Case status (period)</p>',
+    '<table style="border-collapse: collapse; width: 100%; max-width: 360px; font-size: 13px; margin-bottom: 16px;"><thead><tr style="background: #f4f6f8;"><th style="border: 1px solid #d8dcde; padding: 6px 8px; text-align: left;">Status</th><th style="border: 1px solid #d8dcde; padding: 6px 8px; text-align: right;">In period</th></tr></thead><tbody>',
+    statusOverviewRows,
+    "</tbody></table>",
     formatBreakdownHtml("Volume by region", stats.regionBreakdown, stats.periodRecordCount),
     formatBreakdownHtml("Category", stats.categoryBreakdown, stats.periodRecordCount),
     formatBreakdownHtml("Owner / MM", stats.ownerBreakdown, stats.periodRecordCount),
+    formatBreakdownHtml(
+      "Volume by day of week",
+      stats.casesByDayOfWeek,
+      stats.periodRecordCount
+    ),
     '<p style="margin-top: 16px; font-size: 11px; color: #87929d;">Generated from SheetsCRM</p>',
     "</div>",
   ];
@@ -281,9 +311,17 @@ export function formatTeamDashboardCsv(
     lines.push(csvRow([summary.region, summary.periodCount, summary.allTimeCount]));
   }
 
+  lines.push("");
+  lines.push("Case status (period)");
+  lines.push(csvRow(["Status", "In period"]));
+  for (const summary of stats.statusSummaries) {
+    lines.push(csvRow([summary.status, summary.periodCount]));
+  }
+
   appendBreakdownCsv(lines, "Volume by region", stats.regionBreakdown);
   appendBreakdownCsv(lines, "Category", stats.categoryBreakdown);
   appendBreakdownCsv(lines, "Owner / MM", stats.ownerBreakdown);
+  appendBreakdownCsv(lines, "Volume by day of week", stats.casesByDayOfWeek);
   appendWeekSeriesCsv(lines, "Cases by week", stats.casesByWeek, []);
   appendWeekSeriesCsv(
     lines,

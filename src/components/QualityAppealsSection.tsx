@@ -55,13 +55,9 @@ export function QualityAppealsSection({
   const [error, setError] = useState<string | null>(null);
   const info = qualityAppealInfoText();
   const sources = qualityReportSourceLinks();
-  const exportRef = useRef<HTMLDivElement>(null);
+  const qualityPrintRef = useRef<HTMLDivElement>(null);
   const csvFilename = useMemo(
     () => `quality-appeals-${period}.csv`.replace(/[^a-z0-9._-]+/gi, "-"),
-    [period]
-  );
-  const pdfFilename = useMemo(
-    () => `quality-appeals-${period}.pdf`.replace(/[^a-z0-9._-]+/gi, "-"),
     [period]
   );
 
@@ -138,8 +134,7 @@ export function QualityAppealsSection({
           showSectionExport ? (
             <DashboardReportMenu
               csvFilename={csvFilename}
-              pdfFilename={pdfFilename}
-              pdfTargetRef={exportRef}
+              printTargetRef={qualityPrintRef}
               buildCsv={() => formatQualityAppealCsv(metrics)}
               buildPlainReport={() => formatQualityAppealReportPlain(metrics)}
               buildHtmlReport={() => formatQualityAppealReportHtml(metrics)}
@@ -156,7 +151,7 @@ export function QualityAppealsSection({
         </p>
       </QualitySectionHeader>
 
-      <div ref={exportRef} className="space-y-4">
+      <div ref={qualityPrintRef} className="space-y-4">
       <QualityReportFilterBar>
         <QualityReportFilterSelect
           label="Agent"

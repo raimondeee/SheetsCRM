@@ -1,10 +1,8 @@
 import type { CountItem, MonthSeriesPoint, StackedGroup, WeekSeriesPoint } from "./dashboard-stats";
 import { shortMarketManagerLabel } from "./dashboard-stats";
 import {
-  calendarMonthKeyFromPeriod,
-  dashboardPeriodDays,
   dashboardPeriodLabel,
-  parseCalendarMonthKey,
+  dateMatchesDashboardPeriod,
 } from "./dashboard-period";
 import { LOCAL_TEAM_REGION } from "./team-dashboard-sources";
 import type { TeamTabSource } from "./team-dashboard-sources";
@@ -28,6 +26,11 @@ export interface TeamRegionSummary {
   allTimeCount: number;
 }
 
+export interface TeamStatusSummary {
+  status: string;
+  periodCount: number;
+}
+
 export interface TeamMetricsSnapshot {
   period: DashboardPeriod;
   periodLabel: string;
@@ -43,8 +46,10 @@ export interface TeamMetricsSnapshot {
   categoryByRegion: StackedGroup[];
   casesByWeek: WeekSeriesPoint[];
   casesByMonth: MonthSeriesPoint[];
+  casesByDayOfWeek: CountItem[];
   statusByWeek: WeekSeriesPoint[];
   regionSummaries: TeamRegionSummary[];
+  statusSummaries: TeamStatusSummary[];
   sourcesLoaded: number;
 }
 
@@ -67,25 +72,9 @@ export function recordMatchesDashboardPeriod(
   record: TeamIntakeRecord,
   period: DashboardPeriod
 ): boolean {
-  const monthKey = calendarMonthKeyFromPeriod(period);
   const submittedAt = recordTimestamp(record);
   if (!submittedAt) return false;
-
-  if (monthKey) {
-    const parsed = parseCalendarMonthKey(monthKey);
-    if (!parsed) return false;
-    return (
-      submittedAt.getFullYear() === parsed.year && submittedAt.getMonth() === parsed.month
-    );
-  }
-
-  const days = dashboardPeriodDays(period);
-  if (days === null) return true;
-
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - days);
-  return submittedAt >= cutoff;
+  return dateMatchesDashboardPeriod(submittedAt, period);
 }
 
 export function parseTeamTab(source: TeamTabSource, tab: SheetTabData): TeamIntakeRecord[] {
@@ -258,6 +247,29 @@ function buildWeeklyTotals(records: TeamIntakeRecord[]): WeekSeriesPoint[] {
     }));
 }
 
+const DAY_OF_WEEK_LABELS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+function buildDayOfWeekTotals(records: TeamIntakeRecord[]): CountItem[] {
+  const counts = [0, 0, 0, 0, 0, 0, 0];
+  for (const record of records) {
+    const d = recordTimestamp(record);
+    if (!d) continue;
+    counts[d.getDay()] += 1;
+  }
+  return DAY_OF_WEEK_LABELS.map((name, index) => ({
+    name,
+    value: counts[index] ?? 0,
+  }));
+}
+
 function buildMonthlyTotals(records: TeamIntakeRecord[]): MonthSeriesPoint[] {
   const map = new Map<string, number>();
   for (const record of records) {
@@ -286,6 +298,49 @@ function isResolvedSheetStatus(status: string): boolean {
 
 function isPendingSheetStatus(status: string): boolean {
   return /pending|awaiting|waiting|open|in progress|new/i.test(status.trim());
+}
+
+/** Preferred order for status overview cards (sheet + CRM labels). */
+const TEAM_STATUS_CARD_ORDER = [
+  "Blank",
+  "New",
+  "Open",
+  "Pending",
+  "Resolved",
+  "Do Not Action",
+  "Longterm Hold/Bugs",
+] as const;
+
+function normalizeTeamStatusLabel(status: string): string {
+  const trimmed = status.trim();
+  if (!trimmed) return "Blank";
+  const lower = trimmed.toLowerCase();
+  for (const known of TEAM_STATUS_CARD_ORDER) {
+    if (known.toLowerCase() === lower) return known;
+  }
+  return trimmed;
+}
+
+function buildStatusSummaries(records: TeamIntakeRecord[]): TeamStatusSummary[] {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    const label = normalizeTeamStatusLabel(record.status);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  const summaries: TeamStatusSummary[] = [];
+  const seen = new Set<string>();
+  for (const status of TEAM_STATUS_CARD_ORDER) {
+    summaries.push({ status, periodCount: counts.get(status) ?? 0 });
+    seen.add(status);
+  }
+  const extras = [...counts.entries()]
+    .filter(([status]) => !seen.has(status))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  for (const [status, periodCount] of extras) {
+    summaries.push({ status, periodCount });
+  }
+  return summaries;
 }
 
 function buildStatusByWeek(records: TeamIntakeRecord[]): WeekSeriesPoint[] {
@@ -390,6 +445,8 @@ export function buildTeamMetrics(params: {
     allTimeCount: allTimeByRegion.get(region) ?? 0,
   }));
 
+  const statusSummaries = buildStatusSummaries(inPeriod);
+
   return {
     period: params.period,
     periodLabel: dashboardPeriodLabel(params.period),
@@ -405,8 +462,10 @@ export function buildTeamMetrics(params: {
     categoryByRegion,
     casesByWeek: buildWeeklyTotals(inPeriod),
     casesByMonth: buildMonthlyTotals(inPeriod),
+    casesByDayOfWeek: buildDayOfWeekTotals(inPeriod),
     statusByWeek: buildStatusByWeek(inPeriod),
     regionSummaries,
+    statusSummaries,
     sourcesLoaded: params.sourcesLoaded ?? 0,
   };
 }

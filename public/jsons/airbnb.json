@@ -1,0 +1,506 @@
+{
+  "title": "100 Airbnb Facts",
+  "description": "A collection of historical, statistical, and fun facts about Airbnb.",
+  "airbnb_facts": [
+    {
+      "id": 1,
+      "category": "Origins",
+      "fact": "Airbnb was originally named 'AirBed & Breakfast'."
+    },
+    {
+      "id": 2,
+      "category": "Origins",
+      "fact": "The idea was born in October 2007 when founders Brian Chesky and Joe Gebbia couldn't afford their San Francisco rent."
+    },
+    {
+      "id": 3,
+      "category": "Origins",
+      "fact": "A local design conference had sold out all hotels, prompting the founders to rent out three air mattresses on their living room floor."
+    },
+    {
+      "id": 4,
+      "category": "Origins",
+      "fact": "The very first guests were provided with airbeds and a breakfast of Pop-Tarts."
+    },
+    {
+      "id": 5,
+      "category": "Origins",
+      "fact": "The first guest ever on Airbnb was Amol Surve, a design student from India."
+    },
+    {
+      "id": 6,
+      "category": "Origins",
+      "fact": "Nate Blecharczyk, a former roommate and software engineer, joined as the third co-founder in early 2008 to build the website."
+    },
+    {
+      "id": 7,
+      "category": "Origins",
+      "fact": "The official Airbedandbreakfast.com website launched on August 11, 2008."
+    },
+    {
+      "id": 8,
+      "category": "Origins",
+      "fact": "In its early days, the platform was used primarily to find lodging for high-profile events like the 2008 Democratic National Convention."
+    },
+    {
+      "id": 9,
+      "category": "Origins",
+      "fact": "To fund the site initially, the founders created custom cereal boxes: 'Obama O’s' and 'Cap'n McCain's'."
+    },
+    {
+      "id": 10,
+      "category": "Origins",
+      "fact": "They sold 800 boxes of the political cereal at $40 each, raising $30,000 for the company."
+    },
+    {
+      "id": 11,
+      "category": "Early Days",
+      "fact": "Paul Graham of Y Combinator famously accepted Airbnb into his incubator in 2009 because he was impressed they managed to sell cereal at $40 a box."
+    },
+    {
+      "id": 12,
+      "category": "Early Days",
+      "fact": "During Y Combinator, the founders flew to New York City to meet hosts and professionally photograph their spaces to increase bookings."
+    },
+    {
+      "id": 13,
+      "category": "Early Days",
+      "fact": "The name was officially shortened to 'Airbnb' in March 2009."
+    },
+    {
+      "id": 14,
+      "category": "Early Days",
+      "fact": "By April 2009, the company received its first major seed funding of $600,000 from Sequoia Capital."
+    },
+    {
+      "id": 15,
+      "category": "Early Days",
+      "fact": "In the early days, Brian Chesky lived entirely out of Airbnb listings for months to dogfood the product."
+    },
+    {
+      "id": 16,
+      "category": "Early Days",
+      "fact": "The first international booking took place in 2008 when a user from the US booked a stay in Canada."
+    },
+    {
+      "id": 17,
+      "category": "Early Days",
+      "fact": "Barry Manilow's drummer was one of the early success stories, renting out a whole house while on tour."
+    },
+    {
+      "id": 18,
+      "category": "Brand",
+      "fact": "Airbnb's iconic logo, the 'Bélo', was introduced in 2014."
+    },
+    {
+      "id": 19,
+      "category": "Brand",
+      "fact": "The Bélo is designed to symbolize four things: People, Places, Love, and Airbnb."
+    },
+    {
+      "id": 20,
+      "category": "Brand",
+      "fact": "Airbnb's core mission and tagline is 'Belong Anywhere'."
+    },
+    {
+      "id": 21,
+      "category": "Business",
+      "fact": "Airbnb went public on December 10, 2020."
+    },
+    {
+      "id": 22,
+      "category": "Business",
+      "fact": "The company trades on the NASDAQ under the ticker symbol ABNB."
+    },
+    {
+      "id": 23,
+      "category": "Business",
+      "fact": "On its first day of trading, Airbnb's valuation surpassed $100 billion."
+    },
+    {
+      "id": 24,
+      "category": "Business",
+      "fact": "Airbnb does not actually own any of the real estate properties listed on its platform."
+    },
+    {
+      "id": 25,
+      "category": "Business",
+      "fact": "The platform makes money primarily by charging a service fee to both guests and hosts."
+    },
+    {
+      "id": 26,
+      "category": "Scale",
+      "fact": "Airbnb has active listings in over 220 countries and regions."
+    },
+    {
+      "id": 27,
+      "category": "Scale",
+      "fact": "There are Airbnb listings in more than 100,000 cities worldwide."
+    },
+    {
+      "id": 28,
+      "category": "Scale",
+      "fact": "The platform boasts over 5 million hosts globally."
+    },
+    {
+      "id": 29,
+      "category": "Scale",
+      "fact": "There are over 7 million active listings on Airbnb."
+    },
+    {
+      "id": 30,
+      "category": "Scale",
+      "fact": "More than 1.5 billion guest arrivals have occurred through Airbnb since its founding."
+    },
+    {
+      "id": 31,
+      "category": "Scale",
+      "fact": "On any given night, millions of people are sleeping in an Airbnb."
+    },
+    {
+      "id": 32,
+      "category": "Scale",
+      "fact": "Airbnb is banned or heavily restricted in a few cities, such as New York City (under Local Law 18)."
+    },
+    {
+      "id": 33,
+      "category": "Scale",
+      "fact": "In 2022, Airbnb permanently suspended all operations in Russia and Belarus."
+    },
+    {
+      "id": 34,
+      "category": "Scale",
+      "fact": "Airbnb previously operated in China under the brand name 'Aibiying' before closing its domestic business there in 2022."
+    },
+    {
+      "id": 35,
+      "category": "Unique Stays",
+      "fact": "Treehouses are historically one of the most wish-listed property types on Airbnb."
+    },
+    {
+      "id": 36,
+      "category": "Unique Stays",
+      "fact": "You can rent out entire private islands on the platform."
+    },
+    {
+      "id": 37,
+      "category": "Unique Stays",
+      "fact": "There are thousands of historical castles available for rent."
+    },
+    {
+      "id": 38,
+      "category": "Unique Stays",
+      "fact": "Airbnb features a dedicated 'OMG!' category for highly unusual homes, like UFOs and giant boots."
+    },
+    {
+      "id": 39,
+      "category": "Unique Stays",
+      "fact": "In 2022, Airbnb launched a $1 million 'OMG! Fund' to help creators build the craziest home ideas."
+    },
+    {
+      "id": 40,
+      "category": "Unique Stays",
+      "fact": "There are over 40,000 farms listed on Airbnb."
+    },
+    {
+      "id": 41,
+      "category": "Unique Stays",
+      "fact": "You can stay in an actual converted train car via the platform."
+    },
+    {
+      "id": 42,
+      "category": "Pop Culture Stays",
+      "fact": "In 2023, Airbnb offered a stay at a real-life replica of Shrek's Swamp in Scotland."
+    },
+    {
+      "id": 43,
+      "category": "Pop Culture Stays",
+      "fact": "To celebrate the Barbie movie, Ken hosted guests at the Barbie Malibu Dreamhouse."
+    },
+    {
+      "id": 44,
+      "category": "Pop Culture Stays",
+      "fact": "The original 'Home Alone' house in Chicago was listed for a one-night stay."
+    },
+    {
+      "id": 45,
+      "category": "Pop Culture Stays",
+      "fact": "In 2020, the last remaining Blockbuster video store in Bend, Oregon, was listed for 90s-themed sleepovers."
+    },
+    {
+      "id": 46,
+      "category": "Pop Culture Stays",
+      "fact": "Guests once had the chance to sleep inside the glass pyramid of the Louvre Museum in Paris."
+    },
+    {
+      "id": 47,
+      "category": "Pop Culture Stays",
+      "fact": "A custom-built underwater bedroom in the Aquarium de Paris was once listed, surrounded by sharks."
+    },
+    {
+      "id": 48,
+      "category": "Pop Culture Stays",
+      "fact": "Bran Castle in Transylvania, the inspiration for Dracula's castle, hosted guests on Halloween in 2016."
+    },
+    {
+      "id": 49,
+      "category": "Pop Culture Stays",
+      "fact": "The Fresh Prince of Bel-Air mansion was hosted by Will Smith for a limited time."
+    },
+    {
+      "id": 50,
+      "category": "Pop Culture Stays",
+      "fact": "A floating house was once sailed down the River Thames in London to celebrate new UK regulations."
+    },
+    {
+      "id": 51,
+      "category": "Host & Guest Programs",
+      "fact": "The 'Superhost' program was launched to recognize hosts who provide exceptional hospitality."
+    },
+    {
+      "id": 52,
+      "category": "Host & Guest Programs",
+      "fact": "To be a Superhost, you must maintain a 4.8 or higher overall rating."
+    },
+    {
+      "id": 53,
+      "category": "Host & Guest Programs",
+      "fact": "Superhosts must also have a cancellation rate of less than 1%."
+    },
+    {
+      "id": 54,
+      "category": "Host & Guest Programs",
+      "fact": "In 2023, Airbnb introduced 'Guest Favorites', a collection of the 2 million most-loved homes on the platform."
+    },
+    {
+      "id": 55,
+      "category": "Host & Guest Programs",
+      "fact": "AirCover for Hosts provides $3 million in damage protection and $1 million in liability insurance."
+    },
+    {
+      "id": 56,
+      "category": "Host & Guest Programs",
+      "fact": "AirCover for Guests ensures if a host cancels within 30 days, Airbnb will find a similar or better home, or refund the guest."
+    },
+    {
+      "id": 57,
+      "category": "Host & Guest Programs",
+      "fact": "Airbnb Plus was a tier of homes verified for quality and design in person."
+    },
+    {
+      "id": 58,
+      "category": "Host & Guest Programs",
+      "fact": "Airbnb Luxe features ultra-luxury properties with dedicated trip designers."
+    },
+    {
+      "id": 59,
+      "category": "Host & Guest Programs",
+      "fact": "In 2016, Airbnb launched 'Experiences', allowing locals to host tours, classes, and activities."
+    },
+    {
+      "id": 60,
+      "category": "Host & Guest Programs",
+      "fact": "During the pandemic in 2020, Airbnb launched 'Online Experiences' over Zoom."
+    },
+    {
+      "id": 61,
+      "category": "Social Impact",
+      "fact": "Airbnb.org is an independent 501(c)(3) nonprofit that facilitates temporary stays for people in crisis."
+    },
+    {
+      "id": 62,
+      "category": "Social Impact",
+      "fact": "The idea for emergency housing started in 2012 when a host offered her home for free to people displaced by Hurricane Sandy."
+    },
+    {
+      "id": 63,
+      "category": "Social Impact",
+      "fact": "Airbnb.org committed to providing temporary housing to 100,000 Ukrainian refugees in 2022."
+    },
+    {
+      "id": 64,
+      "category": "Social Impact",
+      "fact": "The platform also provided housing for 20,000 Afghan refugees in 2021."
+    },
+    {
+      "id": 65,
+      "category": "Social Impact",
+      "fact": "During the COVID-19 pandemic, hosts offered places to stay for frontline medical workers."
+    },
+    {
+      "id": 66,
+      "category": "Social Impact",
+      "fact": "Airbnb operates a 'Frontline stays' program to support disaster relief workers."
+    },
+    {
+      "id": 67,
+      "category": "Social Impact",
+      "fact": "The Open Homes program (now part of Airbnb.org) originally launched to help medical patients traveling for treatment."
+    },
+    {
+      "id": 68,
+      "category": "Social Impact",
+      "fact": "Airbnb has pledged to operate as a net-zero company for corporate greenhouse gas emissions by 2030."
+    },
+    {
+      "id": 69,
+      "category": "Social Impact",
+      "fact": "Airbnb established a Community Fund to distribute $100 million over 10 years to organizations supporting host communities."
+    },
+    {
+      "id": 70,
+      "category": "Social Impact",
+      "fact": "The company actively partners with the NAACP to increase the number of Black hosts and guests on the platform."
+    },
+    {
+      "id": 71,
+      "category": "Company & Culture",
+      "fact": "Airbnb’s headquarters is located at 888 Brannan Street in San Francisco."
+    },
+    {
+      "id": 72,
+      "category": "Company & Culture",
+      "fact": "Many of the meeting rooms at Airbnb's headquarters are exact replicas of actual listings on the platform."
+    },
+    {
+      "id": 73,
+      "category": "Company & Culture",
+      "fact": "Airbnb is a dog-friendly workplace, with many employees bringing their dogs to the office."
+    },
+    {
+      "id": 74,
+      "category": "Company & Culture",
+      "fact": "Employees receive an annual travel stipend to stay in Airbnbs and experience the product firsthand."
+    },
+    {
+      "id": 75,
+      "category": "Company & Culture",
+      "fact": "In 2022, Brian Chesky announced a 'Live and Work Anywhere' policy, allowing employees to work remotely from anywhere in their home country without a pay cut."
+    },
+    {
+      "id": 76,
+      "category": "Company & Culture",
+      "fact": "Co-founders Brian Chesky and Joe Gebbia both attended the Rhode Island School of Design (RISD)."
+    },
+    {
+      "id": 77,
+      "category": "Company & Culture",
+      "fact": "Because of its design roots, design thinking is heavily embedded in Airbnb's product development."
+    },
+    {
+      "id": 78,
+      "category": "Company & Culture",
+      "fact": "Airbnb typically announces major platform updates twice a year, known as the Summer and Winter Releases."
+    },
+    {
+      "id": 79,
+      "category": "Company & Culture",
+      "fact": "In 2022, Brian Chesky resumed his early-days habit and began living in Airbnbs full-time to test the platform."
+    },
+    {
+      "id": 80,
+      "category": "Company & Culture",
+      "fact": "The company has an internal data university to teach employees how to make data-driven decisions."
+    },
+    {
+      "id": 81,
+      "category": "Product & Tech",
+      "fact": "In 2022, Airbnb completely overhauled its search function with 'Airbnb Categories', letting users search by style rather than just destination."
+    },
+    {
+      "id": 82,
+      "category": "Product & Tech",
+      "fact": "A feature called 'Split Stays' allows guests booking longer trips to automatically split their stay between two different homes."
+    },
+    {
+      "id": 83,
+      "category": "Product & Tech",
+      "fact": "'Instant Book' allows guests to book immediately without waiting for host approval."
+    },
+    {
+      "id": 84,
+      "category": "Product & Tech",
+      "fact": "Airbnb's 'Smart Pricing' uses machine learning to automatically adjust a host's prices based on local demand."
+    },
+    {
+      "id": 85,
+      "category": "Product & Tech",
+      "fact": "Airbnb has deployed sophisticated anti-party technology to identify high-risk bookings and prevent unauthorized parties."
+    },
+    {
+      "id": 86,
+      "category": "Product & Tech",
+      "fact": "The platform automatically translates reviews and listing descriptions into dozens of languages."
+    },
+    {
+      "id": 87,
+      "category": "Product & Tech",
+      "fact": "Airbnb introduced 'Pay Less Up Front' to let guests pay a deposit at booking and the remainder closer to the check-in date."
+    },
+    {
+      "id": 88,
+      "category": "Product & Tech",
+      "fact": "Airbnb’s Wishlists feature was so successful upon launch that it increased engagement by 30% almost instantly."
+    },
+    {
+      "id": 89,
+      "category": "Product & Tech",
+      "fact": "The platform has a dedicated Neighborhood Support line for neighbors to report disturbances at a listing."
+    },
+    {
+      "id": 90,
+      "category": "Product & Tech",
+      "fact": "In 2023, Airbnb revamped user profiles to create 'Host Passports', giving guests more context about who they are staying with."
+    },
+    {
+      "id": 91,
+      "category": "Fun Trivia",
+      "fact": "The highest altitude Airbnb ever listed was a basecamp on Mount Everest."
+    },
+    {
+      "id": 92,
+      "category": "Fun Trivia",
+      "fact": "The most booked Airbnb in the world is reportedly a small, mushroom-shaped dome cabin in Aptos, California."
+    },
+    {
+      "id": 93,
+      "category": "Fun Trivia",
+      "fact": "New Year's Eve is traditionally one of the biggest booking nights of the year for Airbnb globally."
+    },
+    {
+      "id": 94,
+      "category": "Fun Trivia",
+      "fact": "Women make up the majority of Airbnb’s global host community."
+    },
+    {
+      "id": 95,
+      "category": "Fun Trivia",
+      "fact": "Seniors (hosts aged 60+) are consistently rated as the most hospitable demographic on the platform."
+    },
+    {
+      "id": 96,
+      "category": "Fun Trivia",
+      "fact": "Airbnb bought the hotel booking app HotelTonight in 2019."
+    },
+    {
+      "id": 97,
+      "category": "Fun Trivia",
+      "fact": "The first major city to pass comprehensive short-term rental laws regulating Airbnb was San Francisco."
+    },
+    {
+      "id": 98,
+      "category": "Fun Trivia",
+      "fact": "During the 2014 World Cup in Brazil, roughly 20% of all attendees stayed in an Airbnb."
+    },
+    {
+      "id": 99,
+      "category": "Fun Trivia",
+      "fact": "Airbnb has a dedicated trust and safety team that works 24/7 to support the community globally."
+    },
+    {
+      "id": 100,
+      "category": "Fun Trivia",
+      "fact": "In 2023, Airbnb reintroduced 'Airbnb Rooms', getting back to its roots by highlighting private rooms and authentic host connections."
+    }
+  ]
+}

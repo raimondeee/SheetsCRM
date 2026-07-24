@@ -48,7 +48,6 @@ import {
   formatAgentDashboardReportPlain,
 } from "@/lib/dashboard-report-export";
 import type { ServiceMetricsSnapshot } from "@/lib/service-metrics";
-import { waitForDashboardExportReady } from "@/lib/dashboard-section-pdf";
 import { IntegrationsHealthPanel } from "./IntegrationsHealthPanel";
 import { ServiceMetricsSection } from "./ServiceMetricsSection";
 import { ReviewEscalationsSection } from "./ReviewEscalationsSection";
@@ -87,8 +86,8 @@ export function DashboardView({
   const [serviceMetrics, setServiceMetrics] = useState<ServiceMetricsSnapshot | null>(null);
   const [reviewMetrics, setReviewMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(null);
   const [qualityMetrics, setQualityMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
+  const dashboardPrintRef = useRef<HTMLDivElement>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
-  const dashboardExportRef = useRef<HTMLDivElement>(null);
 
   const stats = useMemo(
     () => buildDashboardStats(tickets, period, marketManagerFilter),
@@ -205,19 +204,6 @@ export function DashboardView({
     [period]
   );
 
-  const pdfFilename = useMemo(
-    () => `agent-dashboard-${period}.pdf`.replace(/[^a-z0-9._-]+/gi, "-"),
-    [period]
-  );
-
-  const preparePdfExport = useCallback(async () => {
-    await waitForDashboardExportReady(dashboardExportRef.current);
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }, []);
-
   async function copyHostsReport() {
     const reportParams = {
       periodLabel: periodNote,
@@ -313,9 +299,7 @@ export function DashboardView({
           </label>
           <DashboardReportMenu
             csvFilename={csvFilename}
-            pdfFilename={pdfFilename}
-            pdfTargetRef={dashboardExportRef}
-            preparePdfExport={preparePdfExport}
+            printTargetRef={dashboardPrintRef}
             buildCsv={() => formatAgentDashboardCsv(stats, reportFilters, exportSections)}
             buildPlainReport={() =>
               formatAgentDashboardReportPlain(stats, reportFilters, exportSections)
@@ -335,7 +319,7 @@ export function DashboardView({
         </div>
       </div>
 
-      <div ref={dashboardExportRef} className="w-full min-w-0 space-y-4">
+      <div ref={dashboardPrintRef} className="w-full min-w-0 space-y-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <ChartCard
           title="Contact Reason"

@@ -12,11 +12,17 @@ import {
   normalizeTimerSettings,
   type TimerSettings,
 } from "./timer-settings";
+import {
+  DEFAULT_WELLNESS_PREFERENCES,
+  normalizeWellnessPreferences,
+  type WellnessPreferences,
+} from "./wellness-preferences";
 
 export type SortOrder = "asc" | "desc";
 export type SortBy = "submitted" | "updated";
 
-export interface UserPreferences extends TimerSettings, NotificationSoundPreferences {
+export interface UserPreferences
+  extends TimerSettings, NotificationSoundPreferences, WellnessPreferences {
   defaultStatusFilter: string;
   sortBy: SortBy;
   sortOrder: SortOrder;
@@ -43,6 +49,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   externalTools: defaultExternalTools(),
   ...DEFAULT_TIMER_SETTINGS,
   ...DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
+  ...DEFAULT_WELLNESS_PREFERENCES,
 };
 
 const LEGACY_STORAGE_KEY = "sheetscrm_user_preferences";
@@ -89,6 +96,7 @@ export function readLegacyUserPreferences(): UserPreferences | null {
       externalTools: normalizeExternalTools(parsed.externalTools),
       ...normalizeTimerSettings(parsed),
       ...normalizeNotificationSoundPreferences(parsed),
+      ...normalizeWellnessPreferences(parsed),
     };
   } catch {
     return null;
@@ -134,6 +142,7 @@ export async function fetchUserPreferences(): Promise<UserPreferences> {
     ...data.preferences,
     externalTools: normalizeExternalTools(data.preferences?.externalTools),
     ...normalizeNotificationSoundPreferences(data.preferences),
+    ...normalizeWellnessPreferences(data.preferences),
   };
 }
 
@@ -150,6 +159,7 @@ export async function saveUserPreferences(prefs: UserPreferences): Promise<UserP
     ...data.preferences,
     externalTools: normalizeExternalTools(data.preferences?.externalTools),
     ...normalizeNotificationSoundPreferences(data.preferences),
+    ...normalizeWellnessPreferences(data.preferences),
   };
 }
 

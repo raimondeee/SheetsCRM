@@ -2,10 +2,8 @@ import type { CountItem } from "./dashboard-stats";
 import { shortMarketManagerLabel } from "./dashboard-stats";
 import type { DashboardPeriod } from "./dashboard-period";
 import {
-  calendarMonthKeyFromPeriod,
-  dashboardPeriodDays,
   dashboardPeriodLabel,
-  parseCalendarMonthKey,
+  dateMatchesDashboardPeriod,
 } from "./dashboard-period";
 import type { SheetTabData } from "./sheet-tabs";
 import { parseSheetTimestamp } from "./ticket-activity";
@@ -277,18 +275,7 @@ function parseAppealTabWithFallbacks(
 
 function dateMatchesPeriod(date: Date | null, period: DashboardPeriod): boolean {
   if (!date) return false;
-  const monthKey = calendarMonthKeyFromPeriod(period);
-  if (monthKey) {
-    const parsed = parseCalendarMonthKey(monthKey);
-    if (!parsed) return false;
-    return date.getFullYear() === parsed.year && date.getMonth() === parsed.month;
-  }
-  const days = dashboardPeriodDays(period);
-  if (days === null) return true;
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - days);
-  return date >= cutoff;
+  return dateMatchesDashboardPeriod(date, period);
 }
 
 function matchesCoordinator(coordinator: string, filter: string): boolean {

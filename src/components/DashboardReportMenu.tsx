@@ -2,13 +2,20 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Copy, Download, FileText, Mail, X } from "lucide-react";
+import JSZip from "jszip";
+import {
+  ChevronDown,
+  Copy,
+  Download,
+  FileArchive,
+  Mail,
+  Printer,
+  X,
+} from "lucide-react";
 import type { DashboardPeriod } from "@/lib/dashboard-period";
 import { downloadCsvFile } from "@/lib/dashboard-report-export";
 import {
-  exportElementToPdf,
-  renderElementToPdfBytes,
-  resolvePdfFilename,
+  renderElementToPngBlob,
 } from "@/lib/dashboard-section-pdf";
 import { MAX_OUTBOUND_ATTACHMENT_BYTES } from "@/lib/gmail-attachments";
 import type { MarketManager } from "@/lib/market-managers";
@@ -22,15 +29,20 @@ export interface DashboardSendReportParams {
   owner?: string;
 }
 
+export interface DashboardImageSection {
+  filename: string;
+  label: string;
+  getElement: () => HTMLElement | null;
+}
+
 interface DashboardExportMenuProps {
   label?: string;
   csvFilename: string;
   buildCsv: () => string;
   buildPlainReport: () => string;
   buildHtmlReport: () => string;
-  pdfTargetRef?: RefObject<HTMLElement | null>;
-  pdfFilename?: string;
-  preparePdfExport?: () => Promise<void>;
+  printTargetRef?: RefObject<HTMLElement | null>;
+  imageSections?: DashboardImageSection[];
   sendReportParams?: DashboardSendReportParams;
   userEmail?: string | null;
   canSendEmail?: boolean;
@@ -42,9 +54,8 @@ export function DashboardReportMenu({
   buildCsv,
   buildPlainReport,
   buildHtmlReport,
-  pdfTargetRef,
-  pdfFilename,
-  preparePdfExport,
+  printTargetRef,
+  imageSections,
   sendReportParams,
   userEmail,
   canSendEmail = false,
@@ -53,9 +64,9 @@ export function DashboardReportMenu({
   const [sendOpen, setSendOpen] = useState(false);
   const [recipient, setRecipient] = useState(userEmail ?? "");
   const [attachCsv, setAttachCsv] = useState(true);
-  const [attachPdf, setAttachPdf] = useState(false);
+  const [attachImages, setAttachImages] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
-  const [pdfState, setPdfState] = useState<"idle" | "exporting" | "error">("idle");
+  const [imagesState, setImagesState] = useState<"idle" | "exporting" | "error">("idle");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState(false);
@@ -63,7 +74,7 @@ export function DashboardReportMenu({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const showEmail = Boolean(sendReportParams);
-  const canAttachPdf = Boolean(pdfTargetRef);
+  const canAttachImages = Boolean(imageSections?.length);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -78,7 +89,7 @@ export function DashboardReportMenu({
   useEffect(() => {
     if (sendOpen) {
       setRecipient(userEmail ?? "");
-      setAttachPdf(false);
+      setAttachImages(false);
     }
   }, [sendOpen, userEmail]);
 
@@ -127,21 +138,75 @@ export function DashboardReportMenu({
     setMenuOpen(false);
   }
 
-  async function exportPdf() {
-    const target = pdfTargetRef?.current;
-    if (!target) return;
+  function imageZipFilename(): string {
+    const now = new Date();
+    const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
+    const prefix =
+      sendReportParams?.dashboard === "team"
+        ? "team-dashboard"
+        : csvFilename.replace(/\.csv$/i, "").replace(/[^a-z0-9._-]+/gi, "-");
+    return `${prefix}-${date}.zip`;
+  }
 
-    setPdfState("exporting");
+  async function buildDashboardImageZip(): Promise<Blob> {
+    if (!imageSections?.length) {
+      throw new Error("Dashboard image export is not available");
+    }
+
+    const zip = new JSZip();
+    for (const section of imageSections) {
+      const element = section.getElement();
+      if (!element) {
+        throw new Error(`Could not locate ${section.label} for image export`);
+      }
+      const image = await renderElementToPngBlob(element, "current-layout");
+      zip.file(section.filename, image);
+    }
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  }
+
+  async function exportDashboardImages() {
+    if (!imageSections?.length) return;
+
+    setImagesState("exporting");
     setMenuOpen(false);
     try {
-      if (preparePdfExport) await preparePdfExport();
-      const name = resolvePdfFilename(csvFilename, pdfFilename);
-      await exportElementToPdf(target, name);
-      setPdfState("idle");
+      const blob = await buildDashboardImageZip();
+      if (!blob) throw new Error("Could not build dashboard image ZIP");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = imageZipFilename();
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setImagesState("idle");
     } catch {
-      setPdfState("error");
-      window.setTimeout(() => setPdfState("idle"), 2500);
+      setImagesState("error");
+      window.setTimeout(() => setImagesState("idle"), 2500);
     }
+  }
+
+  function printDashboard() {
+    const target = printTargetRef?.current;
+    if (!target) return;
+
+    setMenuOpen(false);
+    target.dataset.printDashboardRoot = "true";
+    document.body.classList.add("crm-print-dashboard");
+
+    const cleanup = () => {
+      document.body.classList.remove("crm-print-dashboard");
+      delete target.dataset.printDashboardRoot;
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => window.print());
+    });
   }
 
   function openSendModal() {
@@ -156,11 +221,11 @@ export function DashboardReportMenu({
     if (!sendReportParams) return;
     const to = recipient.trim();
     if (!to) {
-      setSendError("Enter a recipient email address");
+      setSendError("Enter at least one recipient email address");
       return;
     }
-    if (!attachCsv && !attachPdf) {
-      setSendError("Select at least one attachment (CSV or PDF)");
+    if (!attachCsv && !attachImages) {
+      setSendError("Select at least one attachment (CSV or dashboard images)");
       return;
     }
 
@@ -169,38 +234,29 @@ export function DashboardReportMenu({
     setSendSuccess(false);
 
     try {
-      let pdfBlob: Blob | null = null;
-      let resolvedPdfFilename: string | null = null;
+      let imagesBlob: Blob | null = null;
+      let imagesFilename: string | null = null;
 
-      if (attachPdf) {
-        const target = pdfTargetRef?.current;
-        if (!target) {
-          throw new Error("PDF export is not available for this report");
-        }
-        if (preparePdfExport) await preparePdfExport();
-        const bytes = await renderElementToPdfBytes(target, "email");
-        if (bytes.length === 0) {
-          throw new Error("PDF export produced an empty file");
-        }
-        if (bytes.length > MAX_OUTBOUND_ATTACHMENT_BYTES) {
-          const mb = (bytes.length / (1024 * 1024)).toFixed(1);
+      if (attachImages) {
+        imagesBlob = await buildDashboardImageZip();
+        if (imagesBlob.size > MAX_OUTBOUND_ATTACHMENT_BYTES) {
+          const mb = (imagesBlob.size / (1024 * 1024)).toFixed(1);
           const limitMb = (MAX_OUTBOUND_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(0);
           throw new Error(
-            `PDF is too large (${mb} MB; limit ${limitMb} MB). Try CSV only or narrow your filters.`
+            `Dashboard image ZIP is too large (${mb} MB; limit ${limitMb} MB). Try CSV only or narrow your filters.`
           );
         }
-        resolvedPdfFilename = resolvePdfFilename(csvFilename, pdfFilename);
-        pdfBlob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+        imagesFilename = imageZipFilename();
       }
 
       let res: Response;
-      if (pdfBlob && resolvedPdfFilename) {
+      if (imagesBlob && imagesFilename) {
         const formData = new FormData();
         formData.append("dashboard", sendReportParams.dashboard);
         formData.append("period", sendReportParams.period);
         formData.append("to", to);
         formData.append("attachCsv", attachCsv ? "true" : "false");
-        formData.append("attachPdf", "true");
+        formData.append("attachImages", "true");
         if (sendReportParams.marketManager) {
           formData.append("marketManager", sendReportParams.marketManager);
         }
@@ -210,7 +266,7 @@ export function DashboardReportMenu({
         if (sendReportParams.owner) {
           formData.append("owner", sendReportParams.owner);
         }
-        formData.append("pdf", pdfBlob, resolvedPdfFilename);
+        formData.append("images", imagesBlob, imagesFilename);
 
         res = await fetch("/api/dashboard/send-report", {
           method: "POST",
@@ -226,7 +282,7 @@ export function DashboardReportMenu({
             ...sendReportParams,
             to,
             attachCsv,
-            attachPdf: false,
+            attachImages: false,
           }),
         });
       }
@@ -243,12 +299,13 @@ export function DashboardReportMenu({
 
   const copyLabel =
     copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : "Copy summary";
-  const pdfLabel =
-    pdfState === "exporting"
-      ? "Exporting PDF…"
-      : pdfState === "error"
-        ? "PDF failed"
-        : "Export PDF";
+  const exportingVisual = imagesState === "exporting";
+  const imagesLabel =
+    imagesState === "exporting"
+      ? "Building image ZIP…"
+      : imagesState === "error"
+        ? "Image ZIP failed"
+        : "Export dashboard images";
 
   return (
     <>
@@ -257,7 +314,7 @@ export function DashboardReportMenu({
           type="button"
           onClick={() => setMenuOpen((open) => !open)}
           aria-expanded={menuOpen}
-          disabled={pdfState === "exporting"}
+          disabled={exportingVisual}
           className="inline-flex items-center gap-1 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50 disabled:opacity-60"
         >
           {label}
@@ -265,15 +322,30 @@ export function DashboardReportMenu({
         </button>
         {menuOpen ? (
           <div className="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded border border-zendesk-border bg-white py-1 shadow-lg">
-            {pdfTargetRef ? (
+            {imageSections?.length ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void exportDashboardImages()}
+                  disabled={exportingVisual}
+                  title="Downloads current-layout dashboard sections as PNG files in one ZIP."
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zendesk-navy hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <FileArchive className="h-3.5 w-3.5 shrink-0" />
+                  {imagesLabel}
+                </button>
+              </>
+            ) : null}
+            {printTargetRef ? (
               <button
                 type="button"
-                onClick={() => void exportPdf()}
-                disabled={pdfState === "exporting"}
+                onClick={printDashboard}
+                disabled={exportingVisual}
+                title="Uses Chrome's native print renderer. Choose Save to PDF in the print dialog."
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zendesk-navy hover:bg-gray-50 disabled:opacity-50"
               >
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                {pdfLabel}
+                <Printer className="h-3.5 w-3.5 shrink-0" />
+                Print / Save PDF…
               </button>
             ) : null}
             <button
@@ -316,15 +388,15 @@ export function DashboardReportMenu({
         <SendReportModal
           recipient={recipient}
           attachCsv={attachCsv}
-          attachPdf={attachPdf}
-          canAttachPdf={canAttachPdf}
+          attachImages={attachImages}
+          canAttachImages={canAttachImages}
           marketManagers={marketManagers}
           sending={sending}
           sendError={sendError}
           sendSuccess={sendSuccess}
           onRecipientChange={setRecipient}
           onAttachCsvChange={setAttachCsv}
-          onAttachPdfChange={setAttachPdf}
+          onAttachImagesChange={setAttachImages}
           onSend={() => void sendReport()}
           onClose={() => {
             if (!sending) setSendOpen(false);
@@ -338,29 +410,29 @@ export function DashboardReportMenu({
 function SendReportModal({
   recipient,
   attachCsv,
-  attachPdf,
-  canAttachPdf,
+  attachImages,
+  canAttachImages,
   marketManagers,
   sending,
   sendError,
   sendSuccess,
   onRecipientChange,
   onAttachCsvChange,
-  onAttachPdfChange,
+  onAttachImagesChange,
   onSend,
   onClose,
 }: {
   recipient: string;
   attachCsv: boolean;
-  attachPdf: boolean;
-  canAttachPdf: boolean;
+  attachImages: boolean;
+  canAttachImages: boolean;
   marketManagers: MarketManager[];
   sending: boolean;
   sendError: string | null;
   sendSuccess: boolean;
   onRecipientChange: (value: string) => void;
   onAttachCsvChange: (value: boolean) => void;
-  onAttachPdfChange: (value: boolean) => void;
+  onAttachImagesChange: (value: boolean) => void;
   onSend: () => void;
   onClose: () => void;
 }) {
@@ -418,14 +490,17 @@ function SendReportModal({
 
         <div className="space-y-3 px-4 py-4">
           <EmailRecipientInput
-            label="Recipient"
+            label="Recipients"
             value={recipient}
             onChange={onRecipientChange}
             marketManagers={marketManagers}
-            placeholder="you@company.com or market manager name"
+            placeholder="you@company.com, teammate@company.com"
             disabled={sending}
             variant="stacked"
           />
+          <p className="-mt-1 text-[11px] text-zendesk-muted">
+            Separate recipients with commas or semicolons.
+          </p>
           <label className="flex items-center gap-2 text-xs text-zendesk-navy">
             <input
               type="checkbox"
@@ -436,20 +511,20 @@ function SendReportModal({
             />
             Attach CSV export
           </label>
-          {canAttachPdf ? (
+          {canAttachImages ? (
             <label className="flex items-center gap-2 text-xs text-zendesk-navy">
               <input
                 type="checkbox"
-                checked={attachPdf}
-                onChange={(e) => onAttachPdfChange(e.target.checked)}
+                checked={attachImages}
+                onChange={(e) => onAttachImagesChange(e.target.checked)}
                 disabled={sending}
                 className="rounded border-zendesk-border"
               />
-              Attach PDF export (includes charts)
+              Attach dashboard images ZIP (includes charts)
             </label>
           ) : null}
-          {!attachCsv && !attachPdf ? (
-            <p className="text-xs text-zendesk-muted">Select CSV and/or PDF to attach.</p>
+          {!attachCsv && !attachImages ? (
+            <p className="text-xs text-zendesk-muted">Select CSV and/or dashboard images to attach.</p>
           ) : null}
           {sendError ? <p className="text-xs text-red-700">{sendError}</p> : null}
           {sendSuccess ? (
@@ -472,7 +547,7 @@ function SendReportModal({
             disabled={sending || sendSuccess}
             className="rounded bg-zendesk-green px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            {sending ? (attachPdf ? "Generating PDF…" : "Sending…") : "Send report"}
+            {sending ? (attachImages ? "Building image ZIP…" : "Sending…") : "Send report"}
           </button>
         </div>
       </div>

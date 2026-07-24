@@ -7,6 +7,15 @@ function sanitizeFilename(filename: string): string {
   return base || "attachment";
 }
 
+function contentDisposition(filename: string): string {
+  const safe = sanitizeFilename(filename);
+  const asciiFallback = safe.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "");
+  const encoded = encodeURIComponent(safe).replace(/['()]/g, (ch) =>
+    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ rowId: string; attachmentId: string }> }
@@ -17,12 +26,21 @@ export async function GET(
     const decodedAttachmentId = decodeURIComponent(attachmentId);
 
     if (process.env.USE_MOCK_DATA === "true") {
-      return NextResponse.json({ error: "Attachments are not available in mock mode" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Attachments are not available in mock mode" },
+        { status: 400 }
+      );
     }
 
     const attachment = getMessageAttachmentById(decodedAttachmentId, ticketRowId);
     if (!attachment) {
-      return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+      return NextResponse.json(
+        {
+          error:
+            "Attachment not found. Refresh the ticket conversation and try again.",
+        },
+        { status: 404 }
+      );
     }
 
     const { data } = await fetchGmailAttachment({
@@ -30,17 +48,17 @@ export async function GET(
       gmailAttachmentId: attachment.gmailAttachmentId,
     });
 
-    const filename = sanitizeFilename(attachment.filename);
     const headers = new Headers({
       "Content-Type": attachment.mimeType || "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": contentDisposition(attachment.filename),
       "Content-Length": String(data.length),
       "Cache-Control": "private, no-store",
     });
 
     return new NextResponse(new Uint8Array(data), { status: 200, headers });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to download attachment";
+    const message =
+      error instanceof Error ? error.message : "Failed to download attachment";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

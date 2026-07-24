@@ -1,8 +1,15 @@
 import { EXAMPLE_SPREADSHEET_ID } from "./default-sheet-config";
-import { letterToIndex } from "./types";
+import { letterToIndex, indexToLetter, parseSheetUrl } from "./types";
 
-/** Region label for the local Form Responses intake tab. */
+/** Region label for the local Form Responses intake tab (full CRM only). */
 export const LOCAL_TEAM_REGION = "North East and Canada";
+
+export interface TeamTabColumnLetters {
+  timestamp: string;
+  status: string;
+  owner: string;
+  category: string;
+}
 
 export interface TeamTabColumnMap {
   timestamp: number;
@@ -16,15 +23,30 @@ export interface TeamTabSource {
   region: string;
   sheetName: string;
   gid: string;
+  spreadsheetId?: string;
   columns: TeamTabColumnMap;
 }
 
-function cols(letters: {
-  timestamp: string;
-  status: string;
-  owner: string;
-  category: string;
-}): TeamTabColumnMap {
+/** Editable, read-only reporting source for the Team Dashboard. */
+export interface TeamTabSourceConfig {
+  id: string;
+  region: string;
+  sheetName: string;
+  gid: string;
+  enabled?: boolean;
+  /** Direct source-sheet URL; only read by the dashboard. */
+  sheetUrl?: string;
+  /** Derived from sheetUrl, or an explicit spreadsheet ID for legacy sources. */
+  spreadsheetId?: string;
+  columns: TeamTabColumnLetters;
+}
+
+export interface TeamDashboardSourcesFile {
+  spreadsheetId: string;
+  sources: TeamTabSourceConfig[];
+}
+
+function cols(letters: TeamTabColumnLetters): TeamTabColumnMap {
   return {
     timestamp: letterToIndex(letters.timestamp),
     status: letterToIndex(letters.status),
@@ -33,8 +55,25 @@ function cols(letters: {
   };
 }
 
+export function teamSourceFromConfig(config: TeamTabSourceConfig): TeamTabSource {
+  return {
+    id: config.id.trim(),
+    region: config.region.trim(),
+    sheetName: config.sheetName.trim(),
+    gid: String(config.gid).trim(),
+    spreadsheetId: config.spreadsheetId?.trim() || undefined,
+    columns: cols({
+      timestamp: config.columns.timestamp.trim().toUpperCase() || "A",
+      status: config.columns.status.trim().toUpperCase() || "B",
+      owner: config.columns.owner.trim().toUpperCase() || "C",
+      category: config.columns.category.trim().toUpperCase() || "D",
+    }),
+  };
+}
+
 export const TEAM_SPREADSHEET_ID = EXAMPLE_SPREADSHEET_ID;
 
+/** Hardcoded regional tabs for the full CRM Team dashboard. */
 export const TEAM_TAB_SOURCES: TeamTabSource[] = [
   {
     id: "west-coast",
@@ -79,3 +118,95 @@ export const TEAM_TAB_SOURCES: TeamTabSource[] = [
     columns: cols({ timestamp: "A", status: "M", owner: "K", category: "L" }),
   },
 ];
+
+export const DEFAULT_TEAM_DASHBOARD_SOURCES_FILE: TeamDashboardSourcesFile = {
+  spreadsheetId: TEAM_SPREADSHEET_ID,
+  sources: TEAM_TAB_SOURCES.map((source) => ({
+    id: source.id,
+    region: source.region,
+    sheetName: source.sheetName,
+    gid: source.gid,
+    enabled: true,
+    spreadsheetId: TEAM_SPREADSHEET_ID,
+    sheetUrl: `https://docs.google.com/spreadsheets/d/${TEAM_SPREADSHEET_ID}/edit?gid=${source.gid}`,
+    columns: {
+      timestamp: indexToLetter(source.columns.timestamp),
+      status: indexToLetter(source.columns.status),
+      owner: indexToLetter(source.columns.owner),
+      category: indexToLetter(source.columns.category),
+    },
+  })),
+};
+
+function normalizeColumnLetters(value: unknown): TeamTabColumnLetters | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const timestamp = typeof row.timestamp === "string" ? row.timestamp.trim() : "";
+  const status = typeof row.status === "string" ? row.status.trim() : "";
+  const owner = typeof row.owner === "string" ? row.owner.trim() : "";
+  const category = typeof row.category === "string" ? row.category.trim() : "";
+  if (!timestamp || !status || !owner || !category) return null;
+  return {
+    timestamp: timestamp.toUpperCase(),
+    status: status.toUpperCase(),
+    owner: owner.toUpperCase(),
+    category: category.toUpperCase(),
+  };
+}
+
+function normalizeSourceConfig(value: unknown): TeamTabSourceConfig | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const id = typeof row.id === "string" ? row.id.trim() : "";
+  const region = typeof row.region === "string" ? row.region.trim() : "";
+  const sheetName = typeof row.sheetName === "string" ? row.sheetName.trim() : "";
+  const gid =
+    typeof row.gid === "string"
+      ? row.gid.trim()
+      : typeof row.gid === "number"
+        ? String(row.gid)
+        : "";
+  const sheetUrl = typeof row.sheetUrl === "string" ? row.sheetUrl.trim() : "";
+  const directSpreadsheetId =
+    typeof row.spreadsheetId === "string" ? row.spreadsheetId.trim() : "";
+  const spreadsheetId = parseSheetUrl(sheetUrl)?.spreadsheetId ?? directSpreadsheetId;
+  const parsedGid = parseSheetUrl(sheetUrl)?.gid ?? "";
+  const columns = normalizeColumnLetters(row.columns);
+  if (!id || !region || !sheetName || !columns) return null;
+  return {
+    id,
+    region,
+    sheetName,
+    gid: gid || parsedGid,
+    enabled: row.enabled !== false,
+    sheetUrl: sheetUrl || undefined,
+    spreadsheetId: spreadsheetId || undefined,
+    columns,
+  };
+}
+
+/** Used by the shareable Team Dashboard source-sheet tools / JSON config. */
+export function normalizeTeamDashboardSourcesFile(
+  partial: Partial<TeamDashboardSourcesFile> | null | undefined
+): TeamDashboardSourcesFile {
+  const spreadsheetId =
+    typeof partial?.spreadsheetId === "string" && partial.spreadsheetId.trim()
+      ? partial.spreadsheetId.trim()
+      : DEFAULT_TEAM_DASHBOARD_SOURCES_FILE.spreadsheetId;
+
+  const rawSources = Array.isArray(partial?.sources) ? partial.sources : null;
+  const sources: TeamTabSourceConfig[] = [];
+  if (rawSources) {
+    for (const entry of rawSources) {
+      const normalized = normalizeSourceConfig(entry);
+      if (!normalized) continue;
+      if (sources.some((s) => s.id === normalized.id)) continue;
+      sources.push(normalized);
+    }
+  }
+
+  return {
+    spreadsheetId,
+    sources: sources.length > 0 ? sources : DEFAULT_TEAM_DASHBOARD_SOURCES_FILE.sources,
+  };
+}

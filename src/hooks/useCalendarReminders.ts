@@ -9,7 +9,7 @@ import {
   markCalendarEventNotified,
   type CalendarReminderEvent,
 } from "@/lib/calendar-reminders";
-import { playCalendarReminderSound } from "@/lib/ticket-chime";
+import { playCalendarReminderSound } from "@/lib/notification-sounds";
 
 export type CalendarReminderDisplay = "toast" | "fullscreen";
 

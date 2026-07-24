@@ -3,24 +3,30 @@ import {
   buildAgentDashboardReportBundle,
   buildTeamDashboardReportBundle,
   csvAttachmentForReport,
-  pdfAttachmentForReport,
   loadColleagueTeamRecords,
   loadDashboardTickets,
+  zipAttachmentForReport,
 } from "@/lib/dashboard-report-server";
 import { normalizeDashboardPeriod } from "@/lib/dashboard-period";
 import { MAX_OUTBOUND_ATTACHMENT_BYTES } from "@/lib/gmail-attachments";
 import { sendStandaloneEmail } from "@/lib/gmail";
 import { getSignedInUser } from "@/lib/google-auth";
 import { hasGoogleCredentials } from "@/lib/sheets";
+import { parseRecipientList } from "@/lib/email-recipients";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function parseRecipient(raw: unknown): string | null {
+function parseRecipients(raw: unknown): string[] | null {
   if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return null;
-  return trimmed;
+  const recipients = parseRecipientList(raw);
+  if (
+    recipients.length === 0 ||
+    recipients.some((recipient) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient))
+  ) {
+    return null;
+  }
+  return [...new Map(recipients.map((recipient) => [recipient.toLowerCase(), recipient])).values()];
 }
 
 function parseOptionalString(raw: unknown): string | undefined {
@@ -35,60 +41,41 @@ function parseBoolean(raw: unknown, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
-function parsePdfAttachmentFromJson(raw: unknown): { filename: string; data: Buffer } | null {
-  if (!raw || typeof raw !== "object") return null;
-  const payload = raw as Record<string, unknown>;
-  const filenameRaw = typeof payload.filename === "string" ? payload.filename.trim() : "";
-  const dataBase64 = typeof payload.dataBase64 === "string" ? payload.dataBase64.trim() : "";
-  if (!filenameRaw || !dataBase64) return null;
-
-  const data = Buffer.from(dataBase64, "base64");
-  if (data.length === 0) return null;
-
-  const filename = filenameRaw.replace(/[^a-z0-9._-]+/gi, "-");
-  if (!filename) return null;
-
-  return {
-    filename: filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`,
-    data,
-  };
-}
-
-function validatePdfBuffer(data: Buffer): string | null {
-  if (data.length === 0) return "PDF attachment is empty";
+function validateZipBuffer(data: Buffer): string | null {
+  if (data.length === 0) return "Dashboard image ZIP is empty";
   if (data.length > MAX_OUTBOUND_ATTACHMENT_BYTES) {
     const mb = (data.length / (1024 * 1024)).toFixed(1);
     const limitMb = (MAX_OUTBOUND_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(0);
-    return `PDF attachment is too large (${mb} MB; limit ${limitMb} MB)`;
+    return `Dashboard image ZIP is too large (${mb} MB; limit ${limitMb} MB)`;
   }
-  if (data.subarray(0, 5).toString("ascii") !== "%PDF-") {
-    return "Uploaded file is not a valid PDF";
+  if (data.length < 4 || data.subarray(0, 2).toString("ascii") !== "PK") {
+    return "Uploaded file is not a valid ZIP";
   }
   return null;
 }
 
-function sanitizePdfFilename(filename: string): string {
+function sanitizeZipFilename(filename: string): string {
   const safe = filename.replace(/[^a-z0-9._-]+/gi, "-");
-  if (!safe) return "dashboard-report.pdf";
-  return safe.toLowerCase().endsWith(".pdf") ? safe : `${safe}.pdf`;
+  if (!safe) return "dashboard-images.zip";
+  return safe.toLowerCase().endsWith(".zip") ? safe : `${safe}.zip`;
 }
 
 async function parseSendReportRequest(request: Request): Promise<{
   payload: Record<string, unknown>;
-  pdfBuffer: Buffer | null;
-  pdfFilename: string | null;
+  imagesBuffer: Buffer | null;
+  imagesFilename: string | null;
 }> {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData();
-    const pdfEntry = form.get("pdf");
-    let pdfBuffer: Buffer | null = null;
-    let pdfFilename: string | null = null;
+    const imagesEntry = form.get("images");
+    let imagesBuffer: Buffer | null = null;
+    let imagesFilename: string | null = null;
 
-    if (pdfEntry instanceof File && pdfEntry.size > 0) {
-      pdfBuffer = Buffer.from(await pdfEntry.arrayBuffer());
-      pdfFilename = sanitizePdfFilename(pdfEntry.name || "dashboard-report.pdf");
+    if (imagesEntry instanceof File && imagesEntry.size > 0) {
+      imagesBuffer = Buffer.from(await imagesEntry.arrayBuffer());
+      imagesFilename = sanitizeZipFilename(imagesEntry.name || "dashboard-images.zip");
     }
 
     return {
@@ -100,20 +87,18 @@ async function parseSendReportRequest(request: Request): Promise<{
         region: form.get("region"),
         owner: form.get("owner"),
         attachCsv: form.get("attachCsv"),
-        attachPdf: form.get("attachPdf"),
+        attachImages: form.get("attachImages"),
       },
-      pdfBuffer,
-      pdfFilename,
+      imagesBuffer,
+      imagesFilename,
     };
   }
 
   const body = await request.json();
-  const payload = body as Record<string, unknown>;
-  const parsed = parsePdfAttachmentFromJson(payload.pdfAttachment);
   return {
-    payload,
-    pdfBuffer: parsed?.data ?? null,
-    pdfFilename: parsed?.filename ?? null,
+    payload: body as Record<string, unknown>,
+    imagesBuffer: null,
+    imagesFilename: null,
   };
 }
 
@@ -136,23 +121,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { payload, pdfBuffer, pdfFilename } = parsedRequest;
+  const { payload, imagesBuffer, imagesFilename } = parsedRequest;
   const dashboard =
     payload.dashboard === "team" ? "team" : payload.dashboard === "main" ? "main" : null;
   if (!dashboard) {
     return NextResponse.json({ error: "dashboard must be \"main\" or \"team\"" }, { status: 400 });
   }
 
-  const to = parseRecipient(payload.to);
-  if (!to) {
-    return NextResponse.json({ error: "A valid recipient email is required" }, { status: 400 });
+  const recipients = parseRecipients(payload.to);
+  if (!recipients) {
+    return NextResponse.json(
+      { error: "Enter one or more valid recipient email addresses" },
+      { status: 400 }
+    );
   }
 
   const period = normalizeDashboardPeriod(
     typeof payload.period === "string" ? payload.period : null
   );
   const attachCsv = parseBoolean(payload.attachCsv, true);
-  const attachPdf = parseBoolean(payload.attachPdf, false);
+  const attachImages = parseBoolean(payload.attachImages, false);
 
   try {
     const tickets = await loadDashboardTickets(user.email);
@@ -199,30 +187,30 @@ export async function POST(request: Request) {
       attachments.push(csvAttachmentForReport(csv, csvFilename));
     }
 
-    if (attachPdf) {
-      if (!pdfBuffer) {
+    if (attachImages) {
+      if (!imagesBuffer) {
         return NextResponse.json(
           {
             error:
-              "PDF attachment was missing from the request. Try again after the dashboard finishes loading.",
+              "Dashboard image ZIP was missing from the request. Try again after the dashboard finishes loading.",
           },
           { status: 400 }
         );
       }
-      const pdfError = validatePdfBuffer(pdfBuffer);
-      if (pdfError) {
-        return NextResponse.json({ error: pdfError }, { status: 400 });
+      const zipError = validateZipBuffer(imagesBuffer);
+      if (zipError) {
+        return NextResponse.json({ error: zipError }, { status: 400 });
       }
       attachments.push(
-        pdfAttachmentForReport(
-          pdfBuffer,
-          pdfFilename ?? csvFilename.replace(/\.csv$/i, ".pdf")
+        zipAttachmentForReport(
+          imagesBuffer,
+          imagesFilename ?? csvFilename.replace(/\.csv$/i, "-images.zip")
         )
       );
     }
 
     const result = await sendStandaloneEmail({
-      to,
+      to: recipients.join(", "),
       subject,
       body: html,
       attachments,
@@ -231,9 +219,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       messageId: result.messageId,
-      to,
+      to: recipients,
       attachCsv,
-      attachPdf,
+      attachImages,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send report";

@@ -104,6 +104,8 @@ import {
   removeRecipient,
 } from "@/lib/email-recipients";
 import {
+  ArrowDownToLine,
+  ArrowUpToLine,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
@@ -128,7 +130,6 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-
 type ComposePanelView = "split" | "draft-full" | "conversation-full";
 
 interface TicketDetailProps {
@@ -184,6 +185,41 @@ interface TicketDetailProps {
   onOpenSetup?: (tab?: SetupModalTab) => void;
   marketManagersVersion?: number;
   sheetUrl?: string | null;
+}
+
+function attachmentIdsKey(message: ThreadMessage): string {
+  return (message.attachments ?? []).map((att) => att.id).join("\0");
+}
+
+function threadMessagesLookEqual(a: ThreadMessage[], b: ThreadMessage[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.id !== right.id ||
+      left.body !== right.body ||
+      left.direction !== right.direction ||
+      left.sentAt !== right.sentAt ||
+      left.subject !== right.subject ||
+      left.from !== right.from ||
+      left.to !== right.to ||
+      left.cc !== right.cc ||
+      attachmentIdsKey(left) !== attachmentIdsKey(right)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isSelectingInside(container: HTMLElement | null): boolean {
+  if (!container) return false;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+  if (!selection.toString()) return false;
+  const anchor = selection.anchorNode;
+  return Boolean(anchor && container.contains(anchor));
 }
 
 export function TicketDetail({
@@ -243,6 +279,8 @@ export function TicketDetail({
   >(null);
   const [savingUserId, setSavingUserId] = useState(false);
   const replyEditorRef = useRef<ReplyDraftEditorHandle>(null);
+  const conversationPanelRef = useRef<HTMLDivElement>(null);
+  const shouldScrollConversationToNewestRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [replyAttachments, setReplyAttachments] = useState<Array<{ id: string; file: File }>>(
     []
@@ -318,6 +356,7 @@ export function TicketDetail({
   const bccDraftRef = useRef(bccDraft);
   const newAdminNoteRef = useRef(newAdminNote);
   const ticketRowIdRef = useRef(ticket?.rowId ?? null);
+  const replyAttachmentsCountRef = useRef(0);
 
   useEffect(() => {
     replyBodyRef.current = replyBody;
@@ -327,6 +366,10 @@ export function TicketDetail({
     newAdminNoteRef.current = newAdminNote;
     ticketRowIdRef.current = ticket?.rowId ?? null;
   }, [replyBody, subjectSuffix, ccDraft, bccDraft, newAdminNote, ticket?.rowId]);
+
+  useEffect(() => {
+    replyAttachmentsCountRef.current = replyAttachments.length;
+  }, [replyAttachments.length]);
 
   useEffect(() => {
     onThreadUpdateRef.current = onThreadUpdate;
@@ -387,7 +430,9 @@ export function TicketDetail({
       const ticketRowId = ticket.rowId;
       const rowNumber = ticket.rowNumber;
       const storedGmailUrl = ticket.gmailOpenUrl;
-      setThreadLoading(true);
+      if (reason !== "timer") {
+        setThreadLoading(true);
+      }
       const params = new URLSearchParams({
         email: ticket.requesterEmail,
         subject: ticket.subject,
@@ -440,9 +485,16 @@ export function TicketDetail({
           logCrmTiming("Thread sync", duration, detail);
         }
 
-        const loadedMessages = data.messages ?? [];
-        setMessages(loadedMessages);
-        if (loadedMessages.length > 0) {
+        const loadedMessages = (data.messages ?? []) as ThreadMessage[];
+        // Avoid rewriting conversation DOM while the agent is selecting text (timer sync),
+        // and skip setState when content is unchanged so selection doesn't jump.
+        const selectingConversation = isSelectingInside(conversationPanelRef.current);
+        if (!(reason === "timer" && selectingConversation)) {
+          setMessages((prev) =>
+            threadMessagesLookEqual(prev, loadedMessages) ? prev : loadedMessages
+          );
+        }
+        if (loadedMessages.length > 0 && !(reason === "timer" && selectingConversation)) {
           const threadCc = deriveThreadCcRecipients(loadedMessages, {
             requesterEmail: ticket.requesterEmail,
           });
@@ -480,6 +532,7 @@ export function TicketDetail({
 
   useLayoutEffect(() => {
     threadLoadGenerationRef.current += 1;
+    shouldScrollConversationToNewestRef.current = true;
     setMessages([]);
     setThreadLoading(Boolean(ticket?.rowId));
   }, [ticket?.rowId]);
@@ -628,16 +681,31 @@ export function TicketDetail({
     if (!ticket) return;
 
     function flushDraftsToStorage() {
-      replyEditorRef.current?.flush();
+      // Prefer live editor HTML — React replyBodyRef can lag behind contentEditable.
+      const flushed = replyEditorRef.current?.flush();
+      const body = normalizeDraftHtml(flushed ?? replyBodyRef.current);
+      replyBodyRef.current = body;
       const rowId = ticketRowIdRef.current;
       if (!rowId) return;
       saveReplyDraft(rowId, {
-        body: normalizeDraftHtml(replyBodyRef.current),
+        body,
         subject: buildEmailSubject(subjectSuffixRef.current),
         cc: ccDraftRef.current,
         bcc: bccDraftRef.current,
       });
       saveAdminNoteDraft(rowId, newAdminNoteRef.current);
+    }
+
+    function hasUnsavedComposeWork(): boolean {
+      const flushed = replyEditorRef.current?.flush();
+      const body = normalizeDraftHtml(flushed ?? replyBodyRef.current);
+      replyBodyRef.current = body;
+      return (
+        !isRichTextEmpty(body) ||
+        replyAttachmentsCountRef.current > 0 ||
+        Boolean(ccDraftRef.current.trim()) ||
+        Boolean(bccDraftRef.current.trim())
+      );
     }
 
     function onPageHide() {
@@ -648,10 +716,20 @@ export function TicketDetail({
       if (document.visibilityState === "hidden") flushDraftsToStorage();
     }
 
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      flushDraftsToStorage();
+      if (!hasUnsavedComposeWork()) return;
+      // Browser shows a generic leave confirmation (Sheets-style).
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
     window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [ticket?.rowId]);
@@ -697,6 +775,32 @@ export function TicketDetail({
     if (ticket?.contactReason.trim()) options.add(ticket.contactReason.trim());
     return [...options].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [contactReasonOptions, ticket?.contactReason]);
+
+  useLayoutEffect(() => {
+    if (!shouldScrollConversationToNewestRef.current) return;
+    if (threadLoading) return;
+    const container = conversationPanelRef.current;
+    if (!container) {
+      shouldScrollConversationToNewestRef.current = false;
+      return;
+    }
+    const lastId = messages[messages.length - 1]?.id;
+    const escaped = lastId
+      ? typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(lastId)
+        : lastId.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      : null;
+    const target = escaped
+      ? container.querySelector<HTMLElement>(`[data-thread-msg-id="${escaped}"]`)
+      : container.querySelector<HTMLElement>("[data-original-request]");
+    if (target) {
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = target.getBoundingClientRect();
+      const nextTop = container.scrollTop + (elementRect.top - containerRect.top);
+      container.scrollTo({ top: Math.max(0, nextTop), behavior: "auto" });
+    }
+    shouldScrollConversationToNewestRef.current = false;
+  }, [messages, threadLoading, ticket?.rowId]);
 
   if (!ticket) {
     return (
@@ -1125,7 +1229,25 @@ export function TicketDetail({
     setComposePanelView("split");
   }
 
+  function saveCurrentReplyDraft() {
+    const rowId = ticketRowIdRef.current;
+    if (!rowId) return;
+
+    // Conversation fullscreen unmounts the editor. Save the editor's live DOM
+    // synchronously instead of relying on React's pending state update.
+    const body = normalizeDraftHtml(replyEditorRef.current?.flush() ?? replyBodyRef.current);
+    replyBodyRef.current = body;
+    setReplyBody(body);
+    saveReplyDraft(rowId, {
+      body,
+      subject: buildEmailSubject(subjectSuffixRef.current),
+      cc: ccDraftRef.current,
+      bcc: bccDraftRef.current,
+    });
+  }
+
   function openConversationExpanded() {
+    saveCurrentReplyDraft();
     setComposePanelView("conversation-full");
   }
 
@@ -1160,6 +1282,48 @@ export function TicketDetail({
   function collapseRecipientFields() {
     setCcFieldOpen(false);
     setBccFieldOpen(false);
+  }
+
+  function alignMessageToConversationTop(
+    element: HTMLElement,
+    behavior: ScrollBehavior = "smooth"
+  ) {
+    const container = conversationPanelRef.current;
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const nextTop = container.scrollTop + (elementRect.top - containerRect.top);
+    container.scrollTo({ top: Math.max(0, nextTop), behavior });
+  }
+
+  function findThreadMessageElement(messageId: string): HTMLElement | null {
+    const container = conversationPanelRef.current;
+    if (!container) return null;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(messageId)
+        : messageId.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return container.querySelector<HTMLElement>(`[data-thread-msg-id="${escaped}"]`);
+  }
+
+  function scrollConversationToOldest(behavior: ScrollBehavior = "smooth") {
+    const container = conversationPanelRef.current;
+    if (!container) return;
+    const firstId = messages[0]?.id;
+    const target = firstId
+      ? findThreadMessageElement(firstId)
+      : container.querySelector<HTMLElement>("[data-original-request]");
+    if (target) alignMessageToConversationTop(target, behavior);
+  }
+
+  function scrollConversationToNewest(behavior: ScrollBehavior = "smooth") {
+    const container = conversationPanelRef.current;
+    if (!container) return;
+    const lastId = messages[messages.length - 1]?.id;
+    const target = lastId
+      ? findThreadMessageElement(lastId)
+      : container.querySelector<HTMLElement>("[data-original-request]");
+    if (target) alignMessageToConversationTop(target, behavior);
   }
 
   function toggleReplyDraftExpanded() {
@@ -2271,32 +2435,58 @@ export function TicketDetail({
               <span className="text-[10px] font-semibold uppercase text-zendesk-muted">
                 Conversation
               </span>
-              <button
-                type="button"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  toggleConversationExpanded();
-                }}
-                title={
-                  composePanelView === "conversation-full"
-                    ? "Show email draft"
-                    : "Expand conversation"
-                }
-                aria-label={
-                  composePanelView === "conversation-full"
-                    ? "Show email draft"
-                    : "Expand conversation"
-                }
-                className="ml-auto rounded p-1 text-zendesk-muted hover:bg-white/80 hover:text-zendesk-navy"
-              >
-                {composePanelView === "conversation-full" ? (
-                  <Minimize2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-              </button>
+              <div className="ml-auto flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    scrollConversationToOldest();
+                  }}
+                  title="Jump to oldest message"
+                  aria-label="Jump to oldest message"
+                  className="rounded p-1 text-zendesk-muted hover:bg-white/80 hover:text-zendesk-navy"
+                >
+                  <ArrowUpToLine className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    scrollConversationToNewest();
+                  }}
+                  title="Jump to newest message"
+                  aria-label="Jump to newest message"
+                  className="rounded p-1 text-zendesk-muted hover:bg-white/80 hover:text-zendesk-navy"
+                >
+                  <ArrowDownToLine className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    toggleConversationExpanded();
+                  }}
+                  title={
+                    composePanelView === "conversation-full"
+                      ? "Show email draft"
+                      : "Expand conversation"
+                  }
+                  aria-label={
+                    composePanelView === "conversation-full"
+                      ? "Show email draft"
+                      : "Expand conversation"
+                  }
+                  className="rounded p-1 text-zendesk-muted hover:bg-white/80 hover:text-zendesk-navy"
+                >
+                  {composePanelView === "conversation-full" ? (
+                    <Minimize2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+            <div ref={conversationPanelRef} className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
             {awaitingNewGmailThread && (
               <div className="mb-2 rounded border border-violet-300 bg-violet-50 px-3 py-2 text-xs text-violet-950">
                 <p className="font-medium">Next send starts a new Gmail thread</p>
@@ -2306,7 +2496,10 @@ export function TicketDetail({
                 </p>
               </div>
             )}
-            <div className="mb-2 rounded border border-zendesk-border bg-white p-2.5">
+            <div
+              data-original-request
+              className="mb-2 rounded border border-zendesk-border bg-white p-2.5"
+            >
               <p className="text-xs font-semibold text-zendesk-muted">Original request</p>
               <p className="mt-2 whitespace-pre-wrap text-sm">{ticket.description}</p>
               <p className="mt-2 text-xs text-zendesk-muted">{ticket.timestamp}</p>
@@ -2319,6 +2512,7 @@ export function TicketDetail({
                 return (
                   <div
                     key={msg.id}
+                    data-thread-msg-id={msg.id}
                     className="mb-2 rounded border border-amber-300 bg-amber-50 p-2.5"
                   >
                     <div className="flex justify-between gap-2 text-xs font-semibold text-amber-900">
@@ -2348,6 +2542,7 @@ export function TicketDetail({
                 return (
                   <div
                     key={msg.id}
+                    data-thread-msg-id={msg.id}
                     className="mb-2 rounded border border-amber-200 bg-amber-50 p-2.5"
                   >
                     <div className="flex justify-between gap-2 text-xs font-semibold text-amber-900">
@@ -2363,6 +2558,7 @@ export function TicketDetail({
                 return (
                   <div
                     key={msg.id}
+                    data-thread-msg-id={msg.id}
                     className="mb-2 rounded border border-violet-200 bg-violet-50 p-2.5"
                   >
                     <div className="flex justify-between gap-2 text-xs text-zendesk-muted">
@@ -2402,6 +2598,7 @@ export function TicketDetail({
               return (
                 <div
                   key={msg.id}
+                  data-thread-msg-id={msg.id}
                   className={`mb-2 rounded border p-2.5 ${
                     msg.direction === "outbound"
                       ? "ml-4 border-zendesk-border bg-blue-50"
@@ -2424,6 +2621,7 @@ export function TicketDetail({
                   )}
                   {msg.attachments && msg.attachments.length > 0 && (
                     <ThreadAttachmentList
+                      rowNumber={ticket.rowNumber}
                       items={msg.attachments.map((att) => ({
                         id: att.id,
                         filename: att.filename,
@@ -2460,16 +2658,17 @@ export function TicketDetail({
             })}
             </div>
           </div>
-          {composePanelView !== "conversation-full" && (
           <div
             className={
-              composePanelView === "draft-full"
-                ? "absolute inset-0 z-40 flex min-h-0 flex-col overflow-hidden border border-zendesk-border bg-white shadow-[0_-8px_24px_rgba(23,73,77,0.12)]"
-                : `flex min-h-0 flex-1 flex-col overflow-hidden border-t bg-white ${
-                    composeFieldError
-                      ? "crm-field-required-missing border-red-300"
-                      : "border-zendesk-border"
-                  }`
+              composePanelView === "conversation-full"
+                ? "hidden"
+                : composePanelView === "draft-full"
+                  ? "absolute inset-0 z-40 flex min-h-0 flex-col overflow-hidden border border-zendesk-border bg-white shadow-[0_-8px_24px_rgba(23,73,77,0.12)]"
+                  : `flex min-h-0 flex-1 flex-col overflow-hidden border-t bg-white ${
+                      composeFieldError
+                        ? "crm-field-required-missing border-red-300"
+                        : "border-zendesk-border"
+                    }`
             }
           >
             <div className="relative z-10 flex shrink-0 items-center border-b border-zendesk-border bg-slate-100 px-2.5">
@@ -2557,7 +2756,6 @@ export function TicketDetail({
               </div>
             </div>
           </div>
-          )}
         </div>
 
         {internalToolsCollapsed ? (
@@ -2782,7 +2980,6 @@ export function TicketDetail({
           </div>
 
           <MixmaxTemplatePicker
-            key={ticket.rowId}
             templateContext={{
               fullName: ticket.requesterName,
               email: ticket.requesterEmail,

@@ -1,11 +1,79 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Paperclip, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Paperclip, X } from "lucide-react";
 import { formatFileSize } from "@/lib/gmail-attachments";
+import {
+  rowAttachmentFolderName,
+  saveBlobToAttachmentFolder,
+} from "@/lib/attachment-download-folder";
 
 const attachmentRowClass =
   "flex items-center gap-2 rounded border border-amber-200 bg-white px-2 py-1.5 text-xs";
+
+interface ThreadAttachmentItem {
+  id: string;
+  filename: string;
+  sizeBytes: number;
+  downloadHref: string;
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string): void {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename || "attachment";
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+  }
+}
+
+async function downloadThreadAttachment(
+  item: ThreadAttachmentItem,
+  rowNumber: number
+): Promise<"folder" | "browser"> {
+  const res = await fetch(item.downloadHref, {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data.error?.trim()) message = data.error.trim();
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(message);
+  }
+
+  const blob = await res.blob();
+  const filename = item.filename || "attachment";
+
+  try {
+    const saved = await saveBlobToAttachmentFolder({
+      rowNumber,
+      filename,
+      blob,
+    });
+    if (saved) return "folder";
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not save to attachment folder";
+    // Fall back so the agent still gets the file, but surface the folder issue.
+    triggerBrowserDownload(blob, filename);
+    throw new Error(`${message} File was downloaded to the browser Downloads folder instead.`);
+  }
+
+  triggerBrowserDownload(blob, filename);
+  return "browser";
+}
 
 interface ComposeAttachmentItem {
   id: string;
@@ -97,18 +165,69 @@ export function ComposeAttachmentList({
   );
 }
 
-interface ThreadAttachmentItem {
-  id: string;
-  filename: string;
-  sizeBytes: number;
-  downloadHref: string;
-}
-
 interface ThreadAttachmentListProps {
   items: ThreadAttachmentItem[];
+  rowNumber: number;
 }
 
-export function ThreadAttachmentList({ items }: ThreadAttachmentListProps) {
+function ThreadAttachmentDownloadButton({
+  item,
+  rowNumber,
+}: {
+  item: ThreadAttachmentItem;
+  rowNumber: number;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const rowFolder = rowAttachmentFolderName(rowNumber);
+
+  async function handleClick() {
+    if (busy) return;
+    setBusy(true);
+    setSaved(false);
+    try {
+      const mode = await downloadThreadAttachment(item, rowNumber);
+      if (mode === "folder") {
+        setSaved(true);
+        window.setTimeout(() => setSaved(false), 2000);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to download attachment";
+      window.alert(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleClick()}
+      disabled={busy}
+      title={
+        busy
+          ? "Downloading…"
+          : saved
+            ? `Saved to ${rowFolder}`
+            : `Download ${item.filename} (saves to ${rowFolder} when a folder is set in Preferences)`
+      }
+      className="inline-flex w-full items-center gap-1.5 rounded border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-70"
+    >
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+      ) : saved ? (
+        <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+      ) : (
+        <Paperclip className="h-3.5 w-3.5 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1 truncate text-left">{item.filename}</span>
+      <span className="shrink-0 text-zendesk-muted">({formatFileSize(item.sizeBytes)})</span>
+    </button>
+  );
+}
+
+export function ThreadAttachmentList({ items, rowNumber }: ThreadAttachmentListProps) {
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
 
@@ -120,15 +239,7 @@ export function ThreadAttachmentList({ items }: ThreadAttachmentListProps) {
           Attachments
         </li>
         <li>
-          <a
-            href={item.downloadHref}
-            download={item.filename}
-            className="inline-flex items-center gap-1.5 rounded border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
-          >
-            <Paperclip className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{item.filename}</span>
-            <span className="text-zendesk-muted">({formatFileSize(item.sizeBytes)})</span>
-          </a>
+          <ThreadAttachmentDownloadButton item={item} rowNumber={rowNumber} />
         </li>
       </ul>
     );
@@ -159,17 +270,7 @@ export function ThreadAttachmentList({ items }: ThreadAttachmentListProps) {
         <ul className="space-y-1">
           {items.map((item) => (
             <li key={item.id}>
-              <a
-                href={item.downloadHref}
-                download={item.filename}
-                className="inline-flex w-full items-center gap-1.5 rounded border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
-              >
-                <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{item.filename}</span>
-                <span className="shrink-0 text-zendesk-muted">
-                  ({formatFileSize(item.sizeBytes)})
-                </span>
-              </a>
+              <ThreadAttachmentDownloadButton item={item} rowNumber={rowNumber} />
             </li>
           ))}
         </ul>

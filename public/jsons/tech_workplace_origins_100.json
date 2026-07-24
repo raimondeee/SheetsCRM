@@ -1,0 +1,506 @@
+{
+    "title": "100 Tech & Workplace Origin Stories",
+    "count": 100,
+    "stories": [
+        {
+            "id": 1,
+            "topic": "Post-it Notes",
+            "fact": "Invented by accident in 1968 at 3M when Spencer Silver tried to make a super-strong adhesive, but created a weak, reusable one instead."
+        },
+        {
+            "id": 2,
+            "topic": "Slack",
+            "fact": "Slack started as an internal chat tool built by Stewart Butterfield's team while they were developing a failed video game called 'Glitch'."
+        },
+        {
+            "id": 3,
+            "topic": "Computer Mouse",
+            "fact": "The first computer mouse was invented in 1964 by Douglas Engelbart and was carved out of a block of wood with two metallic wheels."
+        },
+        {
+            "id": 4,
+            "topic": "QWERTY Keyboard",
+            "fact": "Designed by Christopher Sholes in 1873 to slow typists down slightly and prevent mechanical typewriter arms from jamming together."
+        },
+        {
+            "id": 5,
+            "topic": "Wi-Fi Name",
+            "fact": "The term 'Wi-Fi' does not stand for 'Wireless Fidelity'; it was created purely as a catchy marketing name by Interbrand in 1999."
+        },
+        {
+            "id": 6,
+            "topic": "Free Domain Names",
+            "fact": "Before 1995, registering domain names on the internet was completely free."
+        },
+        {
+            "id": 7,
+            "topic": "Bluetooth",
+            "fact": "Named after King Harald 'Bluetooth' Gormsson, a 10th-century Scandinavian king who united Scandinavia, just as Bluetooth unites tech devices."
+        },
+        {
+            "id": 8,
+            "topic": "First Email",
+            "fact": "Sent in 1971 by Ray Tomlinson to himself, introducing the '@' symbol to separate the user name from the host computer name."
+        },
+        {
+            "id": 9,
+            "topic": "Bubble Wrap",
+            "fact": "Invented in 1957 by Alfred Fielding and Marc Chavannes as textured 3D plastic wallpaper before finding its purpose in packaging."
+        },
+        {
+            "id": 10,
+            "topic": "40-Hour Work Week",
+            "fact": "Popularized in 1926 by Henry Ford, who reduced hours from 48 to 40 after discovering well-rested workers produced more without safety errors."
+        },
+        {
+            "id": 11,
+            "topic": "Nintendo",
+            "fact": "Founded in 1889 by Fusajiro Yamauchi as a handmade playing card (Hanafuda) company in Kyoto, Japan."
+        },
+        {
+            "id": 12,
+            "topic": "Webcam",
+            "fact": "The world's first webcam was created at Cambridge University in 1991 simply to monitor whether the Trojan Room coffee pot was full or empty."
+        },
+        {
+            "id": 13,
+            "topic": "YouTube",
+            "fact": "Originally launched on Valentine's Day in 2005 as a video-based online dating site before pivoting to general video sharing."
+        },
+        {
+            "id": 14,
+            "topic": "Twitter / X",
+            "fact": "Twitter was born out of a day-long brainstorming session at Odeo, a podcasting company trying to reinvent itself when iTunes launched."
+        },
+        {
+            "id": 15,
+            "topic": "Spotify",
+            "fact": "Created in 2006 by Daniel Ek and Martin Lorentzon in Sweden as a legal alternative to music piracy like Napster and Pirate Bay."
+        },
+        {
+            "id": 16,
+            "topic": "Microwave Oven",
+            "fact": "Discovered accidentally in 1945 when Percy Spencer noticed a radar magnetron melted a chocolate candy bar in his pocket."
+        },
+        {
+            "id": 17,
+            "topic": "PayPal",
+            "fact": "Originally named Confinity in 1998, it was designed to transfer money via Palm Pilots before focusing on Web transactions."
+        },
+        {
+            "id": 18,
+            "topic": "Silly Putty",
+            "fact": "Created during WWII when James Wright tried to invent a synthetic rubber substitute for the US government using silicone oil."
+        },
+        {
+            "id": 19,
+            "topic": "Instagram",
+            "fact": "Started as 'Burbn', a complex check-in app with gaming features, before the creators stripped away everything except photo-sharing with filters."
+        },
+        {
+            "id": 20,
+            "topic": "Amazon",
+            "fact": "Jeff Bezos originally considered naming the company 'Cadabra' (as in Incantations), but his lawyer misheard it as 'Cadaver'."
+        },
+        {
+            "id": 21,
+            "topic": "Java Programming Language",
+            "fact": "Originally named 'Oak' after an oak tree that stood outside creator James Gosling's office at Sun Microsystems."
+        },
+        {
+            "id": 22,
+            "topic": "Google",
+            "fact": "Named after 'googol' (1 followed by 100 zeros), but misspelling it on a domain registration check stuck as the permanent name."
+        },
+        {
+            "id": 23,
+            "topic": "Open-Plan Offices",
+            "fact": "Originated in Germany in the 1950s as 'B\u00fcrolandschaft' (office landscape), intended to break down social hierarchies and foster organic interaction."
+        },
+        {
+            "id": 24,
+            "topic": "The Cubicle",
+            "fact": "Designed by Robert Propst in 1964 as the 'Action Office' to give workers privacy, but later mass-produced into rigid corporate pods."
+        },
+        {
+            "id": 25,
+            "topic": "404 Error Code",
+            "fact": "Myth says it was named after Room 404 at CERN where the World Wide Web originated, but 404 was simply a standard HTTP response code."
+        },
+        {
+            "id": 26,
+            "topic": "The Spam Email Name",
+            "fact": "Derived from the famous 1970 Monty Python sketch where characters endlessly repeat 'Spam', symbolizing annoying, repetitive noise."
+        },
+        {
+            "id": 27,
+            "topic": "Capctha",
+            "fact": "Developed at Carnegie Mellon in 2000 to prevent bot spam, later repurposed (reCAPTCHA) to digitize scanned books using human efforts."
+        },
+        {
+            "id": 28,
+            "topic": "Computer Bug",
+            "fact": "Popularized in 1947 when Grace Hopper found a real moth stuck in a relay of the Harvard Mark II computer, taping it into the logbook."
+        },
+        {
+            "id": 29,
+            "topic": "Siri",
+            "fact": "Developed as a standalone iOS app at SRI International before Apple acquired it in 2010; 'Siri' means 'beautiful woman who leads you to victory' in Norwegian."
+        },
+        {
+            "id": 30,
+            "topic": "The First Apple Logo",
+            "fact": "Features Sir Isaac Newton sitting under an apple tree, drawn by Apple co-founder Ronald Wayne in 1976."
+        },
+        {
+            "id": 31,
+            "topic": "Sony",
+            "fact": "Originally named 'Tokyo Tsushin Kogyo', the company changed its name to Sony in 1958, blending Latin 'sonus' (sound) and slang 'sonny' (boy)."
+        },
+        {
+            "id": 32,
+            "topic": "Nokia",
+            "fact": "Founded in 1865 as a single wood pulp mill on the banks of the Nokianvirta river in Finland, long before telecommunications."
+        },
+        {
+            "id": 33,
+            "topic": "Android",
+            "fact": "Originally founded in 2003 to build a smart operating system for digital cameras before pivoting to compete with Symbian and Windows Mobile."
+        },
+        {
+            "id": 34,
+            "topic": "Hashtag",
+            "fact": "Suggested for Twitter in 2007 by Chris Messina to group related messages, though Twitter initially rejected the idea as 'too nerdy'."
+        },
+        {
+            "id": 35,
+            "topic": "Casual Fridays",
+            "fact": "Originated in Hawaii in 1966 when the Hawaiian Fashion Guild promoted 'Aloha Fridays' to encourage wearing local shirts to work."
+        },
+        {
+            "id": 36,
+            "topic": "Water Cooler Gossip",
+            "fact": "Popularized in the 1930s after the invention of the electric water cooler, which became the natural gathering spot for office workers."
+        },
+        {
+            "id": 37,
+            "topic": "Photoshop",
+            "fact": "Created in 1987 by brothers Thomas and John Knoll as a display program called 'Display' to view grayscale images on a Mac."
+        },
+        {
+            "id": 38,
+            "topic": "Netflix",
+            "fact": "Co-founder Reed Hastings got the idea after paying a $40 late fee for a rented copy of 'Apollo 13' from Blockbuster."
+        },
+        {
+            "id": 39,
+            "topic": "Airbnb",
+            "fact": "Started when founders Brian Chesky and Joe Gebbia put air mattresses in their living room to help pay rent during a San Francisco design conference."
+        },
+        {
+            "id": 40,
+            "topic": "LinkedIn",
+            "fact": "Launched out of Reid Hoffman's living room in late 2002 with a mission to connect the world's professionals."
+        },
+        {
+            "id": 41,
+            "topic": "Ebay",
+            "fact": "Originally named 'AuctionWeb' in 1995; the first item ever sold was a broken laser pointer for $14.83 to a collector of broken lasers."
+        },
+        {
+            "id": 42,
+            "topic": "Pillsbury Doughboy",
+            "fact": "Conceived in 1965 by copywriter Rudy Perz, who imagined a little flour character popping out of a crescent roll can."
+        },
+        {
+            "id": 43,
+            "topic": "Logitech",
+            "fact": "Founded in Switzerland in 1981; the name comes from 'logiciel', the French word for software."
+        },
+        {
+            "id": 44,
+            "topic": "Asana",
+            "fact": "Created by Facebook co-founder Dustin Moskovitz and engineer Justin Rosenstein to streamline Facebook's internal workflow and eliminate meetings."
+        },
+        {
+            "id": 45,
+            "topic": "Zoom",
+            "fact": "Founded in 2011 by Eric Yuan, who grew frustrated while working at Cisco WebEx because the video system was clunky and customer satisfaction was low."
+        },
+        {
+            "id": 46,
+            "topic": "Trello",
+            "fact": "Created by Fog Creek Software in 2011, inspired by physical Kanban whiteboards used in manufacturing plants."
+        },
+        {
+            "id": 47,
+            "topic": "Coffee Break",
+            "fact": "Institutionalized during WWII in factories, and legally recognized in 1952 when the Pan-American Coffee Bureau launched a massive advertising campaign."
+        },
+        {
+            "id": 48,
+            "topic": "The Employee ID Badge",
+            "fact": "Gained massive adoption during WWII at defense plants like DuPont and Boeing to protect military manufacturing secrets."
+        },
+        {
+            "id": 49,
+            "topic": "Python",
+            "fact": "Created by Guido van Rossum in 1989, who named the language after the British comedy troupe 'Monty Python's Flying Circus'."
+        },
+        {
+            "id": 50,
+            "topic": "Linux",
+            "fact": "Created in 1991 by Finnish university student Linus Torvalds as a free, personal hobby project that grew into the world's largest open-source OS."
+        },
+        {
+            "id": 51,
+            "topic": "HP (Hewlett-Packard)",
+            "fact": "Bill Hewlett and Dave Packard flipped a coin in 1939 to decide whether their company would be named Hewlett-Packard or Packard-Hewlett."
+        },
+        {
+            "id": 52,
+            "topic": "The Whiteboard",
+            "fact": "Invented in the late 1950s by Martin Heit, a photographer who realized he could write on film negatives with a marker and wipe them clean."
+        },
+        {
+            "id": 53,
+            "topic": "Correction Fluid (Liquid Paper)",
+            "fact": "Invented in 1956 by typist Bette Nesmith Graham in her kitchen using tempera water paint to hide typing errors."
+        },
+        {
+            "id": 54,
+            "topic": "Pencil Erasers",
+            "fact": "Before rubber erasers were patented in 1770, people used rolled-up pieces of white bread to erase pencil marks."
+        },
+        {
+            "id": 55,
+            "topic": "The Ballpoint Pen",
+            "fact": "Invented by Hungarian journalist L\u00e1szl\u00f3 B\u00edr\u00f3 in 1931 because fountain pen ink smudged easily and took too long to dry on newsprint."
+        },
+        {
+            "id": 56,
+            "topic": "The Paperclip",
+            "fact": "The ubiquitous 'Gem' paperclip was never patented, but gained dominance in the late 1890s because it held paper without tearing it."
+        },
+        {
+            "id": 57,
+            "topic": "Typewriter Shift Key",
+            "fact": "Introduced on the Remington No. 2 typewriter in 1878, allowing a single key to alternate between lowercase and uppercase letters."
+        },
+        {
+            "id": 58,
+            "topic": "Word Processor",
+            "fact": "The phrase 'word processing' was coined by IBM in the late 1960s to market their magnetic tape typewriters."
+        },
+        {
+            "id": 59,
+            "topic": "Kevlar",
+            "fact": "Synthesized in 1965 by Stephanie Kwolek at DuPont while searching for a lightweight fiber for strong, fuel-efficient tires."
+        },
+        {
+            "id": 60,
+            "topic": "Velcro",
+            "fact": "Invented in 1941 by George de Mestral after noticing burrs sticking to his clothing and dog's fur after a hunting trip."
+        },
+        {
+            "id": 61,
+            "topic": "Teflon",
+            "fact": "Accidentally discovered in 1938 by Roy J. Plunkett while researching refrigerants at DuPont's Jackson Laboratory."
+        },
+        {
+            "id": 62,
+            "topic": "3D Printing",
+            "fact": "Patented in 1986 by Chuck Hull, who founded 3D Systems and invented Stereolithography (SLA)."
+        },
+        {
+            "id": 63,
+            "topic": "QR Codes",
+            "fact": "Invented in 1994 by Masahiro Hara at Denso Wave, a Japanese automotive company, to quickly track auto components during assembly."
+        },
+        {
+            "id": 64,
+            "topic": "Barcodes",
+            "fact": "Conceived in 1948 by Norman Joseph Woodland, who drew lines in the sand at the beach to represent Morse code visually."
+        },
+        {
+            "id": 65,
+            "topic": "GPS",
+            "fact": "Developed by the US Department of Defense in 1973 for military navigation, then made fully available for global civilian use in the 1990s."
+        },
+        {
+            "id": 66,
+            "topic": "USB Standard",
+            "fact": "Created in 1996 by a consortium of tech companies led by Intel's Ajay Bhatt to replace cumbersome serial and parallel ports."
+        },
+        {
+            "id": 67,
+            "topic": "Ethernet",
+            "fact": "Developed by Robert Metcalfe at Xerox PARC in 1973, inspired by ALOHANET, an early wireless radio network in Hawaii."
+        },
+        {
+            "id": 68,
+            "topic": "Flash Memory",
+            "fact": "Invented by Fujio Masuoka at Toshiba in 1980; the name 'flash' was suggested because the erasure process resembled a camera flash."
+        },
+        {
+            "id": 69,
+            "topic": "The Floppy Disk",
+            "fact": "Created by IBM in 1967 as an 8-inch disk, designed to load microcode into mainframe systems cheaply."
+        },
+        {
+            "id": 70,
+            "topic": "Laser Jet Printing",
+            "fact": "Invented by Gary Starkweather at Xerox PARC in 1969 by modifying an existing xerographic copier with a laser beam."
+        },
+        {
+            "id": 71,
+            "topic": "The Hard Drive",
+            "fact": "IBM created the first hard drive in 1956 (RAMAC 305); it was the size of two refrigerators and stored 5 Megabytes of data."
+        },
+        {
+            "id": 72,
+            "topic": "SMS Text Messaging",
+            "fact": "The first SMS was sent on December 3, 1992, by engineer Neil Papworth, reading 'Merry Christmas' from a PC to an Orbitel 901 phone."
+        },
+        {
+            "id": 73,
+            "topic": "The GIF",
+            "fact": "Created in 1987 by Steve Wilhite at CompuServe as a color image format that wouldn't consume massive bandwidth over dial-up."
+        },
+        {
+            "id": 74,
+            "topic": "PNG Image Format",
+            "fact": "Designed in 1995 as an open-source replacement for GIF after Unisys announced it would enforce patents on the LZW compression algorithm."
+        },
+        {
+            "id": 75,
+            "topic": "JavaScript",
+            "fact": "Created in just 10 days in May 1995 by Brendan Eich while working at Netscape Communications."
+        },
+        {
+            "id": 76,
+            "topic": "CSS",
+            "fact": "Proposed by H\u00e5kon Wium Lie in 1994 while working with Tim Berners-Lee at CERN to separate content from design on web pages."
+        },
+        {
+            "id": 77,
+            "topic": "The World Wide Web",
+            "fact": "Invented in 1989 by Sir Tim Berners-Lee at CERN to facilitate automated information sharing between scientists worldwide."
+        },
+        {
+            "id": 78,
+            "topic": "Mozilla",
+            "fact": "The codename 'Mozilla' was created at Netscape in 1994 as a combination of 'Mosaic killer' and 'Godzilla'."
+        },
+        {
+            "id": 79,
+            "topic": "Red Hat Linux",
+            "fact": "Named after co-founder Marc Ewing's red Cornell University lacrosse cap, which he wore while assisting students with computer problems."
+        },
+        {
+            "id": 80,
+            "topic": "Raspberry Pi",
+            "fact": "Created in 2012 by Eben Upton's team at Cambridge to inspire basic computer science education for young students with an affordable $25 board."
+        },
+        {
+            "id": 81,
+            "topic": "Arduino",
+            "fact": "Created in 2005 in Ivrea, Italy, to provide design students with a low-cost microcontroller platform; named after a local pub where the founders met."
+        },
+        {
+            "id": 82,
+            "topic": "SaaS (Software as a Service)",
+            "fact": "Pioneered in the late 1990s by Salesforce, which launched a famous 'End of Software' marketing campaign with anti-software protest rallies."
+        },
+        {
+            "id": 83,
+            "topic": "Agile Software Development",
+            "fact": "Created in 2001 when 17 software developers gathered at a ski resort in Utah to write the 'Agile Manifesto' for lighter project management."
+        },
+        {
+            "id": 84,
+            "topic": "Scrum Framework",
+            "fact": "Developed by Jeff Sutherland and Ken Schwaber in 1993; the term 'Scrum' was borrowed from a 1986 Harvard Business Review article about rugby."
+        },
+        {
+            "id": 85,
+            "topic": "Stand-up Meetings",
+            "fact": "Popularized by Extreme Programming (XP) in the 1990s, forcing attendees to remain standing to keep status updates short and focused."
+        },
+        {
+            "id": 86,
+            "topic": "Employee Assistance Programs (EAPs)",
+            "fact": "Originated in the 1940s as occupational alcohol programs to reduce absenteeism in manufacturing plants."
+        },
+        {
+            "id": 87,
+            "topic": "Performance Reviews",
+            "fact": "Systematized during WWI by the US Military as merit rating systems to identify candidates for promotion."
+        },
+        {
+            "id": 88,
+            "topic": "The Resum\u00e9",
+            "fact": "Attributed to Leonardo da Vinci in 1482, who wrote a letter to the Duke of Milan highlighting his military engineering skills."
+        },
+        {
+            "id": 89,
+            "topic": "Headhunting / Executive Search",
+            "fact": "Emerged after WWII as US companies expanded rapidly and required external specialists to recruit high-level management talent."
+        },
+        {
+            "id": 90,
+            "topic": "Flex Time",
+            "fact": "Invented in 1967 by Christel Kammerer in Germany to help working mothers balance employment with family commitments."
+        },
+        {
+            "id": 91,
+            "topic": "Remote Work / Telecommuting",
+            "fact": "Coined by Jack Nilles in 1973 during the OPEC oil crisis as a solution to reduce long commuting times and conserve fuel."
+        },
+        {
+            "id": 92,
+            "topic": "Co-Working Spaces",
+            "fact": "The first modern co-working space, 'Spiralf\u00f6rmig', was opened in Berlin in 1995 by hackers who shared physical workspace and internet costs."
+        },
+        {
+            "id": 93,
+            "topic": "The Ergonomic Chair",
+            "fact": "Designed by Bill Stumpf and Don Chadwick for Herman Miller in 1994, resulting in the iconic Aeron chair based on human physiology."
+        },
+        {
+            "id": 94,
+            "topic": "The Standing Desk",
+            "fact": "Used historically by figures like Thomas Jefferson and Ernest Hemingway, but modern adoption surged in the 2010s due to sedentary health studies."
+        },
+        {
+            "id": 95,
+            "topic": "Glassdoor",
+            "fact": "Founded in 2007 by Robert Hohman, Rich Barton, and Tim Besse after Hohman accidentally printed employee feedback and salary data on a shared office printer."
+        },
+        {
+            "id": 96,
+            "topic": "Canva",
+            "fact": "Started by Melanie Perkins in Australia in 2013 after she spent years teaching university students complex graphic design tools and realizing a simpler solution was needed."
+        },
+        {
+            "id": 97,
+            "topic": "Notion",
+            "fact": "Founded by Ivan Zhao and Simon Last in 2013, but rebuilt completely from scratch in Kyoto, Japan, in 2015 after initial app crashes."
+        },
+        {
+            "id": 98,
+            "topic": "Duolingo",
+            "fact": "Created in 2011 by Luis von Ahn and Severin Hacker to provide free language education while crowdsourcing translation for news articles."
+        },
+        {
+            "id": 99,
+            "topic": "Dropbox",
+            "fact": "Conceived by Drew Houston in 2007 while sitting on a bus ride from Boston to New York, realized he had forgotten his USB thumb drive at home."
+        },
+        {
+            "id": 100,
+            "topic": "Figma",
+            "fact": "Started in 2012 by Dylan Field and Evan Wallace while studying at Brown University, aiming to build browser-based design tools using WebGL."
+        }
+    ]
+}

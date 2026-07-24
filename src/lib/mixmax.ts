@@ -41,6 +41,35 @@ interface MixmaxSnippetsResponse {
 
 const MIXMAX_API_BASE = "https://api.mixmax.com/v1";
 
+/** Short in-memory TTL so expand/search doesn't always hit Mixmax. */
+const MIXMAX_SERVER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type CacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
+const templatesListCache = new Map<string, CacheEntry<MixmaxSnippet[]>>();
+const templateByIdCache = new Map<string, CacheEntry<MixmaxSnippet>>();
+
+function readCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function writeCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  cache.set(key, { value, expiresAt: Date.now() + MIXMAX_SERVER_CACHE_TTL_MS });
+}
+
+function listCacheKey(search?: string): string {
+  return buildOwnedTemplatesSearch(search).trim().toLowerCase();
+}
+
 export function getMixmaxApiToken(): string | null {
   const token = process.env.MIXMAX_API_TOKEN?.trim();
   return token || null;
@@ -103,12 +132,22 @@ async function fetchMixmaxSnippetRaw(id: string): Promise<MixmaxSnippetRaw> {
 }
 
 export async function fetchMixmaxTemplateById(id: string): Promise<MixmaxSnippet> {
-  return mapMixmaxSnippet(await fetchMixmaxSnippetRaw(id));
+  const cacheKey = id.trim();
+  const cached = readCache(templateByIdCache, cacheKey);
+  if (cached) return cached;
+
+  const mapped = mapMixmaxSnippet(await fetchMixmaxSnippetRaw(cacheKey));
+  writeCache(templateByIdCache, cacheKey, mapped);
+  return mapped;
 }
 
 export async function fetchMixmaxTemplates(search?: string): Promise<MixmaxSnippet[]> {
   const token = getMixmaxApiToken();
   if (!token) return [];
+
+  const cacheKey = listCacheKey(search);
+  const cached = readCache(templatesListCache, cacheKey);
+  if (cached) return cached;
 
   const params = new URLSearchParams({
     limit: "100",
@@ -129,7 +168,15 @@ export async function fetchMixmaxTemplates(search?: string): Promise<MixmaxSnipp
   }
 
   const data = (await res.json()) as MixmaxSnippetsResponse;
-  return (data.results ?? []).map(mapMixmaxSnippet);
+  const mapped = (data.results ?? []).map(mapMixmaxSnippet);
+  writeCache(templatesListCache, cacheKey, mapped);
+
+  // Warm per-id cache from list results for faster attachment apply.
+  for (const snippet of mapped) {
+    writeCache(templateByIdCache, snippet.id, snippet);
+  }
+
+  return mapped;
 }
 
 /** Ask Mixmax to sync a Gmail draft (used to resolve cloud attachment bytes via Gmail). */

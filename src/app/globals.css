@@ -16,6 +16,38 @@ body {
   box-sizing: border-box;
 }
 
+@media print {
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+
+  /*
+   * Native Chrome dashboard printing. Keep only the report root visible so
+   * Chrome renders Recharts SVG/canvas directly rather than through the
+   * html-to-image raster-export path.
+   */
+  body.crm-print-dashboard * {
+    visibility: hidden !important;
+  }
+
+  body.crm-print-dashboard [data-print-dashboard-root],
+  body.crm-print-dashboard [data-print-dashboard-root] * {
+    visibility: visible !important;
+  }
+
+  body.crm-print-dashboard [data-print-dashboard-root] {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  body.crm-print-dashboard [data-print-dashboard-root] [data-export-exclude="true"] {
+    display: none !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

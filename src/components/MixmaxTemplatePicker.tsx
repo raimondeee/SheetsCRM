@@ -12,27 +12,20 @@ import {
 } from "lucide-react";
 import { prepareMixmaxTemplateHtml } from "@/lib/html-utils";
 import {
+  getCachedMixmaxTemplates,
+  getStaleCachedMixmaxTemplates,
+  setCachedMixmaxTemplates,
+} from "@/lib/mixmax-templates-cache";
+import {
   loadMixmaxStarredTemplateIds,
   saveMixmaxStarredTemplateIds,
   sortMixmaxTemplatesWithStarred,
 } from "@/lib/mixmax-starred";
 import { resolveMixmaxVariables, type MixmaxTemplateContext } from "@/lib/mixmax-variables";
 import { base64ToFile } from "@/lib/outbound-attachments";
+import type { MixmaxSnippet } from "@/lib/mixmax";
 
-export interface MixmaxTemplate {
-  id: string;
-  name: string;
-  title: string;
-  source: string;
-  customShortcut?: string;
-  attachments: Array<{
-    name: string;
-    type: string;
-    size: number;
-    key: string;
-    location?: string;
-  }>;
-}
+export type MixmaxTemplate = MixmaxSnippet;
 
 export interface MixmaxTemplateApplyPayload {
   subject?: string;
@@ -90,12 +83,17 @@ export function MixmaxTemplatePicker({
   onApply,
   onExpandedChange,
 }: MixmaxTemplatePickerProps) {
+  const initialCache = getCachedMixmaxTemplates("") ?? getStaleCachedMixmaxTemplates("");
   const [expanded, setExpanded] = useState(false);
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [templates, setTemplates] = useState<MixmaxTemplate[]>([]);
+  const [enabled, setEnabled] = useState<boolean | null>(() =>
+    initialCache ? initialCache.enabled : null
+  );
+  const [templates, setTemplates] = useState<MixmaxTemplate[]>(
+    () => initialCache?.templates ?? []
+  );
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => initialCache?.error ?? null);
   const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
   const [starredIds, setStarredIds] = useState<Set<string>>(() => loadMixmaxStarredTemplateIds());
 
@@ -122,22 +120,69 @@ export function MixmaxTemplatePicker({
     });
   }
 
-  const loadTemplates = useCallback(async (query?: string) => {
-    setLoading(true);
+  const loadTemplates = useCallback(async (query?: string, options?: { force?: boolean }) => {
+    const searchQuery = query ?? "";
+    const fresh = getCachedMixmaxTemplates(searchQuery);
+    if (fresh && !options?.force) {
+      setEnabled(fresh.enabled);
+      setTemplates(fresh.templates);
+      setError(fresh.error);
+      setLoading(false);
+      return;
+    }
+
+    const stale = getStaleCachedMixmaxTemplates(searchQuery);
+    if (stale) {
+      setEnabled(stale.enabled);
+      setTemplates(stale.templates);
+      setError(stale.error);
+      // Soft refresh in background — keep showing cached rows.
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (query?.trim()) params.set("search", query.trim());
+      if (searchQuery.trim()) params.set("search", searchQuery.trim());
       const res = await fetch(`/api/mixmax/templates?${params.toString()}`, {
         cache: "no-store",
       });
       const data = await res.json();
-      setEnabled(Boolean(data.enabled));
-      setTemplates(data.templates ?? []);
-      if (data.error) setError(data.error);
+      const nextEnabled = Boolean(data.enabled);
+      const nextTemplates = (data.templates ?? []) as MixmaxTemplate[];
+      const nextError = typeof data.error === "string" ? data.error : null;
+
+      // Don't cache failures — Mixmax auth/plan errors are often transient and
+      // sticky error cache made this morning's "not authorized" linger.
+      if (!res.ok || nextError) {
+        setEnabled(nextEnabled);
+        if (stale?.templates.length) {
+          setTemplates(stale.templates);
+        } else {
+          setTemplates(nextTemplates);
+        }
+        setError(nextError || "Could not load templates");
+        return;
+      }
+
+      setEnabled(nextEnabled);
+      setTemplates(nextTemplates);
+      setError(null);
+      setCachedMixmaxTemplates(searchQuery, {
+        enabled: nextEnabled,
+        templates: nextTemplates,
+        error: null,
+      });
     } catch {
-      setError("Could not load templates");
-      setEnabled(false);
+      if (!stale) {
+        setError("Could not load templates");
+        setEnabled(false);
+      } else if (!stale.error) {
+        // Keep last good list; show a soft warning.
+        setError("Could not refresh templates (showing last loaded list)");
+      }
     } finally {
       setLoading(false);
     }
@@ -146,7 +191,9 @@ export function MixmaxTemplatePicker({
   useEffect(() => {
     if (!expanded) return;
     const delay = search.trim() ? 300 : 0;
-    const timeout = setTimeout(() => loadTemplates(search), delay);
+    const timeout = setTimeout(() => {
+      void loadTemplates(search);
+    }, delay);
     return () => clearTimeout(timeout);
   }, [search, loadTemplates, expanded]);
 

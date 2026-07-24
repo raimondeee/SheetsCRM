@@ -2,6 +2,7 @@ import { toCanvas } from "html-to-image";
 import { jsPDF } from "jspdf";
 
 export type PdfRenderProfile = "download" | "email";
+export type DashboardImageCaptureMode = "current-layout" | "export-layout";
 
 const PROFILE_SETTINGS: Record<
   PdfRenderProfile,
@@ -17,12 +18,19 @@ const MAX_SINGLE_PAGE_HEIGHT_MM = 2800;
 const MAX_SLICE_CONTENT_MM = 281;
 const CAPTURE_BACKGROUND = "#f9fafb";
 const CAPTURE_BG_RGB = { r: 249, g: 250, b: 251 };
-/** Match agent dashboard `xl:` breakpoint so PDF layout matches on-screen 4-column grid. */
+/** Match team/agent dashboard wide layout so capture uses the multi-column grid. */
 const DASHBOARD_CAPTURE_MIN_WIDTH = 1280;
 
 function sanitizePdfFilename(filename: string): string {
   const base = filename.replace(/\.pdf$/i, "").replace(/[^a-z0-9._-]+/gi, "-");
   return `${base}.pdf`;
+}
+
+function sanitizePngFilename(filename: string): string {
+  const base = filename
+    .replace(/\.(pdf|png|jpe?g)$/i, "")
+    .replace(/[^a-z0-9._-]+/gi, "-");
+  return `${base}.png`;
 }
 
 type StyleRestore = () => void;
@@ -102,6 +110,10 @@ function resolveResponsiveGridColumns(className: string, captureWidth: number): 
     const xlMatch = className.match(/\bxl:grid-cols-(\d+)\b/);
     if (xlMatch) return Number(xlMatch[1]);
   }
+  if (captureWidth >= 1024) {
+    const lgMatch = className.match(/\blg:grid-cols-(\d+)\b/);
+    if (lgMatch) return Number(lgMatch[1]);
+  }
   if (captureWidth >= 768) {
     const mdMatch = className.match(/\bmd:grid-cols-(\d+)\b/);
     if (mdMatch) return Number(mdMatch[1]);
@@ -146,16 +158,20 @@ function forceDashboardLayoutForCapture(root: HTMLElement): StyleRestore {
     );
   }
 
-  root.querySelectorAll<HTMLElement>("[class*='xl:col-span-']").forEach((node) => {
-    if (isExportExcluded(node)) return;
-    const spanMatch = node.className.match(/\bxl:col-span-(\d+)\b/);
-    if (!spanMatch) return;
-    restores.push(
-      patchStyle(node, {
-        gridColumn: `span ${spanMatch[1]} / span ${spanMatch[1]}`,
-      })
-    );
-  });
+  root.querySelectorAll<HTMLElement>("[class*='xl:col-span-'], [class*='lg:col-span-']").forEach(
+    (node) => {
+      if (isExportExcluded(node)) return;
+      const spanMatch =
+        node.className.match(/\bxl:col-span-(\d+)\b/) ??
+        node.className.match(/\blg:col-span-(\d+)\b/);
+      if (!spanMatch) return;
+      restores.push(
+        patchStyle(node, {
+          gridColumn: `span ${spanMatch[1]} / span ${spanMatch[1]}`,
+        })
+      );
+    }
+  );
 
   root.querySelectorAll<HTMLElement>("section, .recharts-responsive-container, .recharts-wrapper").forEach(
     (node) => {
@@ -163,6 +179,29 @@ function forceDashboardLayoutForCapture(root: HTMLElement): StyleRestore {
       restores.push(patchStyle(node, { overflow: "visible" }));
     }
   );
+
+  // Expand scrollable legends / panels so PDF/PNG capture is not clipped.
+  root.querySelectorAll<HTMLElement>("*").forEach((node) => {
+    if (isExportExcluded(node)) return;
+    const computed = window.getComputedStyle(node);
+    if (
+      computed.overflowY !== "auto" &&
+      computed.overflowY !== "scroll" &&
+      computed.overflow !== "auto" &&
+      computed.overflow !== "scroll"
+    ) {
+      return;
+    }
+    restores.push(
+      patchStyle(node, {
+        overflow: "visible",
+        overflowX: "visible",
+        overflowY: "visible",
+        maxHeight: "none",
+        height: "auto",
+      })
+    );
+  });
 
   return () => restores.forEach((restore) => restore());
 }
@@ -200,7 +239,7 @@ function clampChartContainers(root: HTMLElement): StyleRestore {
   const restores: StyleRestore[] = [];
   root.querySelectorAll<HTMLElement>(".recharts-responsive-container").forEach((node) => {
     const parent = node.parentElement;
-    const height = Math.min(Math.max(parent?.clientHeight ?? 220, 180), 320);
+    const height = Math.min(Math.max(parent?.clientHeight ?? 280, 220), 360);
     restores.push(
       patchStyle(node, {
         height: `${height}px`,
@@ -254,6 +293,14 @@ function prepareElementForCapture(element: HTMLElement): StyleRestore {
   return () => restores.forEach((restore) => restore());
 }
 
+function prepareCurrentLayoutForCapture(element: HTMLElement): StyleRestore {
+  const restores: StyleRestore[] = [];
+  for (const node of element.querySelectorAll<HTMLElement>('[data-export-exclude="true"]')) {
+    restores.push(patchStyle(node, { display: "none" }));
+  }
+  return () => restores.forEach((restore) => restore());
+}
+
 function readCaptureDimensions(element: HTMLElement): { width: number; height: number } {
   return {
     width: measureVisibleContentWidth(element),
@@ -298,21 +345,35 @@ function trimCanvasBottom(canvas: HTMLCanvasElement): HTMLCanvasElement {
   return trimmed;
 }
 
-async function captureElementCanvas(element: HTMLElement, profile: PdfRenderProfile) {
+async function captureElementCanvas(
+  element: HTMLElement,
+  profile: PdfRenderProfile,
+  mode: DashboardImageCaptureMode = "export-layout"
+) {
   const { pixelRatio } = PROFILE_SETTINGS[profile];
 
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
 
-  const restoreCapture = prepareElementForCapture(element);
+  const restoreCapture =
+    mode === "export-layout"
+      ? prepareElementForCapture(element)
+      : prepareCurrentLayoutForCapture(element);
 
   try {
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     });
 
-    const { width, height } = readCaptureDimensions(element);
+    const rect = element.getBoundingClientRect();
+    const { width, height } =
+      mode === "current-layout"
+        ? {
+            width: Math.max(1, Math.ceil(rect.width)),
+            height: Math.max(1, Math.ceil(rect.height)),
+          }
+        : readCaptureDimensions(element);
 
     const rawCanvas = await toCanvas(element, {
       cacheBust: true,
@@ -326,7 +387,7 @@ async function captureElementCanvas(element: HTMLElement, profile: PdfRenderProf
 
     return trimCanvasBottom(rawCanvas);
   } finally {
-    restoreCapture();
+    restoreCapture?.();
   }
 }
 
@@ -443,9 +504,47 @@ export async function exportElementToPdf(
   pdf.save(sanitizePdfFilename(filename));
 }
 
+export async function exportElementToPng(
+  element: HTMLElement,
+  filename: string,
+  profile: PdfRenderProfile = "download"
+): Promise<void> {
+  const canvas = await captureElementCanvas(element, profile);
+  const href = canvas.toDataURL("image/png");
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = sanitizePngFilename(filename);
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+export async function renderElementToPngBlob(
+  element: HTMLElement,
+  mode: DashboardImageCaptureMode = "current-layout"
+): Promise<Blob> {
+  const canvas = await captureElementCanvas(element, "download", mode);
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Could not encode dashboard image"));
+      },
+      "image/png"
+    );
+  });
+}
+
 export function resolvePdfFilename(csvFilename: string, pdfFilename?: string): string {
   return sanitizePdfFilename(
     pdfFilename ?? csvFilename.replace(/\.csv$/i, ".pdf").replace(/[^a-z0-9._-]+/gi, "-")
+  );
+}
+
+export function resolvePngFilename(csvFilename: string, pdfFilename?: string): string {
+  return sanitizePngFilename(
+    pdfFilename ?? csvFilename.replace(/\.csv$/i, ".png").replace(/[^a-z0-9._-]+/gi, "-")
   );
 }
 

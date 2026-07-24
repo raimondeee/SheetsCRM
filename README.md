@@ -36,19 +36,47 @@ Word and rich-text copies of this guide are available at:
 | Requirement | Notes |
 |-------------|--------|
 | **macOS** (recommended) | Double-click launcher works out of the box. Windows/Linux: use [Manual install](#manual-install). |
-| **Node.js 20+ (LTS)** | [https://nodejs.org](https://nodejs.org) — includes `npm`. |
+| **Homebrew** (macOS) | Package manager used to install Node.js. See [Install Homebrew and Node.js](#install-homebrew-and-nodejs) below. |
+| **Node.js 20+ (LTS)** | Install with Homebrew (`brew install node`), or from [https://nodejs.org](https://nodejs.org). Includes `npm`. |
 | **Google account** | Same account you use to view the intake sheet in Chrome. |
 | **Sheet access** | Viewer or Editor on the team intake Google Sheet. |
 | **Google Cloud project** | One-time OAuth setup (≈10–15 min). See [Google sign-in setup](#google-sign-in-setup). |
 
 You do **not** need to deploy to a server. Everything runs at `http://localhost:3000` on your machine.
 
+### Install Homebrew and Node.js
+
+On a Mac that does not already have Node.js, install Homebrew first, then Node:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Follow any on-screen steps Homebrew prints (on Apple Silicon it often asks you to add Homebrew to your `PATH`).
+
+Then install Node.js:
+
+```bash
+brew install node
+```
+
+Confirm both tools are available:
+
+```bash
+brew -v
+node -v
+npm -v
+```
+
+`node -v` should report **v20** or newer.
+
 ---
 
 ## Quick start (macOS)
 
-1. Clone or copy the `SheetsCRM` project folder to your Mac (e.g. `~/Desktop/projects/SheetsCRM`).
-2. Double-click **`Open SheetsCRM.command`** in the project root.
+1. Install [Homebrew and Node.js](#install-homebrew-and-nodejs) if you have not already.
+2. Clone or copy the `SheetsCRM` project folder to your Mac (e.g. `~/Desktop/projects/SheetsCRM`).
+3. Double-click **`Open SheetsCRM.command`** in the project root.
    - First launch runs `npm install` automatically (may take a minute).
    - One Terminal window starts the server, opens your browser when ready, then minimizes itself to the Dock.
    - Leave that Terminal window running while you use the CRM. Press **Ctrl+C** to stop the server.
@@ -60,6 +88,8 @@ If macOS blocks the launcher (“unidentified developer”), right-click → **O
 ## Manual install
 
 Use this on any OS, or if you prefer the terminal.
+
+**macOS:** install Homebrew and Node.js first (see [Install Homebrew and Node.js](#install-homebrew-and-nodejs)).
 
 ```bash
 cd /path/to/SheetsCRM
@@ -256,6 +286,49 @@ Use **Team coverage** when you temporarily cover another coordinator’s intake 
 
 Cover configuration is stored in SQLite (`overlay.db`), not as a separate JSON file.
 
+### Team Dashboard regional source sheets
+
+Use **Team Dashboard reporting sources** to choose the teammate sheets included in the
+**Team Dashboard**. This is separate from cover sheets: reporting sources contribute
+read-only metrics and do **not** add tickets to your inbox.
+
+1. Open the **gear icon** → **Team coverage**.
+2. Under **Team dashboard reporting sources**, click **Configure reporting sources**.
+3. Review the prefilled sources, then enable only the teams that should contribute to reporting.
+4. Click **Save sources**, then refresh the Team Dashboard to load the updated sources.
+
+The first time this panel opens, it displays the CRM's existing regional dashboard sources.
+They remain the fallback unless you save a change, so opening the panel alone does not replace
+your current local configuration.
+
+For each source, complete these fields:
+
+| Field | What to enter |
+|-------|---------------|
+| **Include in Team Dashboard** | Check this only when the sheet/tab should contribute to Team Dashboard metrics. Disabled sources are not read. |
+| **Team / region name** | The reporting label shown for that source, such as `West Coast and Beach` or `Marin — Adventure and Rocky Mountain`. Use the same label on related language sources when they should roll up together. |
+| **Direct Google Sheet link** | Paste the full URL of the teammate's Google Sheet, for example `https://docs.google.com/spreadsheets/d/.../edit`. The CRM extracts the spreadsheet ID (and tab gid when present) and only reads its values. The signed-in Google account must already have access. |
+| **Sheet tab name** | The exact visible tab name within that Google Sheet, such as `Form Responses 1`. This is required because the dashboard reads one tab at a time. |
+| **Tab gid** | Optional numeric tab ID from the URL (`...gid=123`). It is filled automatically when supplied in the direct link and helps identify a renamed tab. |
+| **Source id** | A stable, unique internal name such as `west-coast` or `mx-es`. Keep an existing id when editing a source; use a new unique id for a new source. |
+| **Timestamp col** | The spreadsheet column letter containing the ticket/intake timestamp used for the reporting period, for example `A`. |
+| **Status col** | The column letter containing the ticket status or outcome, for example `N`. |
+| **Owner col** | The column letter containing the teammate, coordinator, or owner name, for example `G`. |
+| **Category col** | The column letter containing the contact reason or reporting category, for example `K`. |
+| **Default spreadsheet ID** | Legacy fallback used only by a source without its own direct Google Sheet link. Leave it unchanged for existing sources; use direct links for new teammate sheets. |
+
+#### Teams with multiple language imports
+
+The dashboard reads the values in the configured **tab**, not an `IMPORTRANGE` formula itself.
+If two language imports are combined into one output tab (for example the existing
+`Sheet36 BOTH` source), configure that combined tab once. If each language lands in a different
+tab or a different teammate sheet, add two sources with unique source ids (for example `mx-en`
+and `mx-es`) and the same **Team / region name** to roll them up together.
+
+Regional source configuration is saved locally in
+`data/team-dashboard-sources.json` (or `TEAM_DASHBOARD_SOURCES_PATH` when configured). This
+file is intentionally gitignored because it can contain private Google Sheet links.
+
 ### Market Manager directory
 
 1. **Gear icon** → **Market managers** tab.
@@ -304,7 +377,7 @@ Click the **sliders icon** in the header. Settings are saved in **`data/overlay.
 | **Gmail thread tools** | Link / append threads, import history (backfill), redact a message in CRM only, or unlink & start a new thread on next send |
 | **Conversation export** | Copy the thread for clipboard / Glean-style prompts |
 | **Dashboards** | Personal intake charts, service metrics, team dashboard, review escalations, and quality appeals |
-| **Report export / email** | From the dashboard menu: CSV, copy HTML/plain, PDF sections, or email a report via Gmail |
+| **Report export / email** | From the dashboard menu: CSV, copy HTML/plain, dashboard image ZIP, native Print / Save PDF, or email a report via Gmail |
 | **CRM ticket log** | Per-ticket timeline of CRM events |
 
 Review escalations and quality appeals tabs read shared Google Sheets (defaults are built into the app; see `.env.example` comments for related URL notes).
@@ -315,7 +388,8 @@ Review escalations and quality appeals tabs read shared Google Sheets (defaults 
 
 Use this after install:
 
-- [ ] Node.js installed (`node -v` in Terminal)
+- [ ] Homebrew installed (`brew -v` in Terminal)
+- [ ] Node.js installed via Homebrew (`brew install node`, then `node -v` — v20+)
 - [ ] `.env` configured (UI or file) with Google Client ID + Secret
 - [ ] Google Cloud APIs enabled: Sheets, Gmail, Calendar, People
 - [ ] `USE_MOCK_DATA=false` for live data
@@ -424,6 +498,17 @@ If Google adds new OAuth scopes in an update, **sign out and sign in again** so 
 ---
 
 ## Troubleshooting
+
+### `brew` or `node` not found
+
+On macOS, install Homebrew, then Node.js:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install node
+```
+
+After Homebrew installs on Apple Silicon, run the “Next steps” commands it prints (they add Homebrew to your `PATH`), then open a **new** Terminal window and retry `brew -v` / `node -v`.
 
 ### “Sign in with Google” does nothing or errors
 

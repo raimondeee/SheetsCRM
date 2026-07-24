@@ -1,0 +1,506 @@
+{
+    "title": "100 Interesting Facts",
+    "count": 100,
+    "facts": [
+        {
+            "id": 1,
+            "category": "Space",
+            "fact": "Honey never spoils; archaeologists have found 3,000-year-old edible honey in Egyptian tombs."
+        },
+        {
+            "id": 2,
+            "category": "Space",
+            "fact": "A day on Venus is longer than a year on Venus."
+        },
+        {
+            "id": 3,
+            "category": "Nature",
+            "fact": "Bananas are naturally slightly radioactive because they contain high levels of potassium-40."
+        },
+        {
+            "id": 4,
+            "category": "Animals",
+            "fact": "Octopuses have three hearts and blue blood."
+        },
+        {
+            "id": 5,
+            "category": "History",
+            "fact": "The short war in history was between Britain and Zanzibar in 1896, lasting just 38 minutes."
+        },
+        {
+            "id": 6,
+            "category": "Science",
+            "fact": "Water can boil and freeze at the same time in a phenomenon known as the 'triple point'."
+        },
+        {
+            "id": 7,
+            "category": "Animals",
+            "fact": "Wombat feces are cube-shaped, which stops them from rolling away."
+        },
+        {
+            "id": 8,
+            "category": "Human Body",
+            "fact": "Your heart beats about 100,000 times a day."
+        },
+        {
+            "id": 9,
+            "category": "Geography",
+            "fact": "Canada has more lakes than all other countries in the world combined."
+        },
+        {
+            "id": 10,
+            "category": "Technology",
+            "fact": "The first computer virus was created in 1983 and was called the 'Creeper program'."
+        },
+        {
+            "id": 11,
+            "category": "Animals",
+            "fact": "Flamingos are born grey or white; their pink color comes from eating brine shrimp and algae."
+        },
+        {
+            "id": 12,
+            "category": "Space",
+            "fact": "There are more trees on Earth than stars in the Milky Way galaxy."
+        },
+        {
+            "id": 13,
+            "category": "Human Body",
+            "fact": "Human teeth are the only part of the body that cannot heal themselves."
+        },
+        {
+            "id": 14,
+            "category": "History",
+            "fact": "Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid of Giza."
+        },
+        {
+            "id": 15,
+            "category": "Food",
+            "fact": "Apples, peaches, and raspberries are all members of the rose family (Rosaceae)."
+        },
+        {
+            "id": 16,
+            "category": "Animals",
+            "fact": "Crows can remember human faces and hold grudges against specific people."
+        },
+        {
+            "id": 17,
+            "category": "Space",
+            "fact": "Neutron stars are so dense that a single teaspoon of their material would weigh about 6 billion tons."
+        },
+        {
+            "id": 18,
+            "category": "Nature",
+            "fact": "Lightning strikes the Earth about 100 times every second."
+        },
+        {
+            "id": 19,
+            "category": "Language",
+            "fact": "The word 'synonym' is one of the few words in English without a true, direct synonym."
+        },
+        {
+            "id": 20,
+            "category": "Animals",
+            "fact": "Sea otters hold hands while sleeping so they don't drift away from each other."
+        },
+        {
+            "id": 21,
+            "category": "Human Body",
+            "fact": "The human brain generates enough electricity to power a small lightbulb."
+        },
+        {
+            "id": 22,
+            "category": "History",
+            "fact": "Oxford University is older than the Aztec Empire."
+        },
+        {
+            "id": 23,
+            "category": "Geography",
+            "fact": "Russia has a larger surface area than the planet Pluto."
+        },
+        {
+            "id": 24,
+            "category": "Animals",
+            "fact": "Sloths can hold their breath underwater longer than dolphins can (up to 40 minutes)."
+        },
+        {
+            "id": 25,
+            "category": "Science",
+            "fact": "Glass is actually an amorphous solid, not a slow-moving liquid as commonly rumored."
+        },
+        {
+            "id": 26,
+            "category": "Food",
+            "fact": "White chocolate isn't technically chocolate because it contains no cocoa solids."
+        },
+        {
+            "id": 27,
+            "category": "Space",
+            "fact": "If two pieces of the same type of metal touch in space, they will permanently bond together (cold welding)."
+        },
+        {
+            "id": 28,
+            "category": "Human Body",
+            "fact": "Corneas are the only tissues in the human body that do not contain blood vessels."
+        },
+        {
+            "id": 29,
+            "category": "Animals",
+            "fact": "Cows have best friends and experience stress when they are separated from them."
+        },
+        {
+            "id": 30,
+            "category": "Geography",
+            "fact": "Sudan has more pyramids than Egypt."
+        },
+        {
+            "id": 31,
+            "category": "History",
+            "fact": "Ancient Romans used human urine as a mouthwash and detergent because of its ammonia content."
+        },
+        {
+            "id": 32,
+            "category": "Nature",
+            "fact": "A single strand of spider silk is stronger than a steel wire of the same thickness."
+        },
+        {
+            "id": 33,
+            "category": "Animals",
+            "fact": "Butterflies taste food with their feet."
+        },
+        {
+            "id": 34,
+            "category": "Space",
+            "fact": "Jupiter is so large that all other planets in our solar system could fit inside it at once."
+        },
+        {
+            "id": 35,
+            "category": "Human Body",
+            "fact": "You produce enough saliva in your lifetime to fill two average-sized swimming pools."
+        },
+        {
+            "id": 36,
+            "category": "Food",
+            "fact": "Honeybees must visit roughly 2 million flowers to produce one pound of honey."
+        },
+        {
+            "id": 37,
+            "category": "Geography",
+            "fact": "Iceland has no native mosquitoes due to its rapid freezing and thawing climate cycles."
+        },
+        {
+            "id": 38,
+            "category": "Animals",
+            "fact": "Pigeons can be trained to recognize human faces and even distinguish between different art styles."
+        },
+        {
+            "id": 39,
+            "category": "Technology",
+            "fact": "The total weight of all electricity running the global internet at any given moment is roughly 50 grams."
+        },
+        {
+            "id": 40,
+            "category": "Science",
+            "fact": "Sound travels about four times faster in water than it does through air."
+        },
+        {
+            "id": 41,
+            "category": "Animals",
+            "fact": "Koala fingerprints are so similar to human fingerprints that they have confused crime scene investigators."
+        },
+        {
+            "id": 42,
+            "category": "History",
+            "fact": "Carrots were originally purple and yellow; orange carrots were bred by Dutch growers in the 16th century."
+        },
+        {
+            "id": 43,
+            "category": "Human Body",
+            "fact": "Your nose can remember up to 50,000 different scents."
+        },
+        {
+            "id": 44,
+            "category": "Space",
+            "fact": "Footprints left on the Moon by Apollo astronauts will stay there for at least 100 million years."
+        },
+        {
+            "id": 45,
+            "category": "Nature",
+            "fact": "The world's largest living organism is a fungus in Oregon that spans over 2,200 acres."
+        },
+        {
+            "id": 46,
+            "category": "Food",
+            "fact": "Pineapples take nearly two years to grow from planting to harvest."
+        },
+        {
+            "id": 47,
+            "category": "Animals",
+            "fact": "A mantis shrimp can punch with the force of a .22 caliber bullet, boiling the surrounding water instantly."
+        },
+        {
+            "id": 48,
+            "category": "Geography",
+            "fact": "Reno, Nevada is farther west than Los Angeles, California."
+        },
+        {
+            "id": 49,
+            "category": "Human Body",
+            "fact": "Your skeleton completely replaces itself every 10 years through cellular regeneration."
+        },
+        {
+            "id": 50,
+            "category": "Science",
+            "fact": "Helium is the only element on Earth that was discovered in space before it was found on Earth."
+        },
+        {
+            "id": 51,
+            "category": "Animals",
+            "fact": "Reindeer eyes turn blue in the winter to help them capture more light during dark polar months."
+        },
+        {
+            "id": 52,
+            "category": "History",
+            "fact": "Napoleon Bonaparte was once attacked by a swarm of thousands of domestic rabbits."
+        },
+        {
+            "id": 53,
+            "category": "Space",
+            "fact": "Saturn's density is low enough that the planet would float if placed in a massive body of water."
+        },
+        {
+            "id": 54,
+            "category": "Geography",
+            "fact": "The dead sea is so salty that people easily float in it without swimming."
+        },
+        {
+            "id": 55,
+            "category": "Language",
+            "fact": "The dot over the letter 'i' or 'j' is called a 'tittle'."
+        },
+        {
+            "id": 56,
+            "category": "Animals",
+            "fact": "Dolphins give each other unique names through distinct vocal whistles."
+        },
+        {
+            "id": 57,
+            "category": "Food",
+            "fact": "Ketchup was originally sold in the 1830s as a patent medicine to treat stomach ailments."
+        },
+        {
+            "id": 58,
+            "category": "Human Body",
+            "fact": "In total, human blood vessels span about 60,000 miles\u2014enough to circle the Earth more than twice."
+        },
+        {
+            "id": 59,
+            "category": "Nature",
+            "fact": "Bamboo can grow up to 35 inches (90 cm) in a single 24-hour period under optimal conditions."
+        },
+        {
+            "id": 60,
+            "category": "Science",
+            "fact": "Diamond and graphite are both made purely of carbon atoms, just arranged differently."
+        },
+        {
+            "id": 61,
+            "category": "Animals",
+            "fact": "Sharks existed before trees; sharks appeared ~400M years ago, trees ~350M years ago."
+        },
+        {
+            "id": 62,
+            "category": "History",
+            "fact": "Nintendo was founded in 1889 as a playing card company in Japan."
+        },
+        {
+            "id": 63,
+            "category": "Space",
+            "fact": "The Sun accounts for 99.86% of all the mass in our solar system."
+        },
+        {
+            "id": 64,
+            "category": "Human Body",
+            "fact": "Your stomach produces a new layer of mucus every two weeks so it doesn't digest itself."
+        },
+        {
+            "id": 65,
+            "category": "Geography",
+            "fact": "Africa is the only continent that spans all four geographic hemispheres (North, South, East, West)."
+        },
+        {
+            "id": 66,
+            "category": "Animals",
+            "fact": "Hummingbirds are the only birds capable of flying backwards."
+        },
+        {
+            "id": 67,
+            "category": "Food",
+            "fact": "Ripe cranberries bounce like rubber balls when dropped."
+        },
+        {
+            "id": 68,
+            "category": "Technology",
+            "fact": "The domain name 'symbolics.com' was the first registered .com domain on March 15, 1985."
+        },
+        {
+            "id": 69,
+            "category": "Science",
+            "fact": "Pure gold is so malleable that an ounce can be beaten into a sheet covering 100 square feet."
+        },
+        {
+            "id": 70,
+            "category": "Animals",
+            "fact": "Starfish do not have brains or blood."
+        },
+        {
+            "id": 71,
+            "category": "History",
+            "fact": "Great Britain once placed a tax on daylight, charging homeowners based on the number of windows on their house."
+        },
+        {
+            "id": 72,
+            "category": "Human Body",
+            "fact": "Goosebumps evolved to make our ancestors' hair stand up, making them look larger to predators."
+        },
+        {
+            "id": 73,
+            "category": "Space",
+            "fact": "Sunset on Mars appears blue due to the way fine dust in the atmosphere scatters red light."
+        },
+        {
+            "id": 74,
+            "category": "Nature",
+            "fact": "Clouds look weightless, but an average cumulus cloud weighs about 1.1 million pounds (500,000 kg)."
+        },
+        {
+            "id": 75,
+            "category": "Animals",
+            "fact": "Giraffes have the same number of neck vertebrae (7) as human beings."
+        },
+        {
+            "id": 76,
+            "category": "Geography",
+            "fact": "The Amazon River holds roughly 20% of the world's total river flow into oceans."
+        },
+        {
+            "id": 77,
+            "category": "Food",
+            "fact": "Nutmeg is a hallucinogen if consumed in large quantities due to a compound called myristicin."
+        },
+        {
+            "id": 78,
+            "category": "History",
+            "fact": "Albert Einstein was offered the presidency of Israel in 1952, but he politely declined."
+        },
+        {
+            "id": 79,
+            "category": "Human Body",
+            "fact": "Your body contains enough iron to forge a 3-inch metal nail."
+        },
+        {
+            "id": 80,
+            "category": "Animals",
+            "fact": "Electric eels can generate a shock of up to 860 volts, enough to knock down a horse."
+        },
+        {
+            "id": 81,
+            "category": "Space",
+            "fact": "Olympus Mons on Mars is the solar system's tallest volcano, standing 3 times higher than Mount Everest."
+        },
+        {
+            "id": 82,
+            "category": "Language",
+            "fact": "The sentence 'The quick brown fox jumps over the lazy dog' uses every letter in the English alphabet."
+        },
+        {
+            "id": 83,
+            "category": "Nature",
+            "fact": "Permafrost in Siberia contains ancient frozen viruses that are tens of thousands of years old."
+        },
+        {
+            "id": 84,
+            "category": "Animals",
+            "fact": "Chameleons change colors primarily to regulate body temperature and communicate, not for camouflage."
+        },
+        {
+            "id": 85,
+            "category": "Technology",
+            "fact": "The world's first webcam was set up at Cambridge University to monitor the status of a coffee pot."
+        },
+        {
+            "id": 86,
+            "category": "Food",
+            "fact": "Honey is the only food that contains all the substances necessary to sustain life, including enzymes and water."
+        },
+        {
+            "id": 87,
+            "category": "History",
+            "fact": "The Eiffel Tower can grow up to 6 inches taller during the summer due to the thermal expansion of iron."
+        },
+        {
+            "id": 88,
+            "category": "Geography",
+            "fact": "Australia is wider than the Moon's diameter (Australia ~4,000km, Moon ~3,400km)."
+        },
+        {
+            "id": 89,
+            "category": "Human Body",
+            "fact": "Small intestines are about 20 feet long, while large intestines are wider but only about 5 feet long."
+        },
+        {
+            "id": 90,
+            "category": "Animals",
+            "fact": "Woodpeckers' tongues wrap around their brains to cushion them from impact while pecking."
+        },
+        {
+            "id": 91,
+            "category": "Science",
+            "fact": "Water expands when it freezes, which is unusual since most substances contract when solidifying."
+        },
+        {
+            "id": 92,
+            "category": "Space",
+            "fact": "Full space suits made by NASA cost around $12 million each."
+        },
+        {
+            "id": 93,
+            "category": "Nature",
+            "fact": "The smell of freshly cut grass is actually a plant distress signal released as chemical compounds."
+        },
+        {
+            "id": 94,
+            "category": "Animals",
+            "fact": "Grizzly bear bites are strong enough to crush a bowling ball."
+        },
+        {
+            "id": 95,
+            "category": "Food",
+            "fact": "Vanilla flavor often originates from vanilla orchid pods, which must be hand-pollinated within hours of opening."
+        },
+        {
+            "id": 96,
+            "category": "History",
+            "fact": "Bread was used as an eraser for pencil lead before rubber erasers were invented in 1770."
+        },
+        {
+            "id": 97,
+            "category": "Geography",
+            "fact": "Mount Chimborazo in Ecuador is the farthest point from the Earth's center due to the equatorial bulge."
+        },
+        {
+            "id": 98,
+            "category": "Human Body",
+            "fact": "The surface area of human lungs is roughly equivalent to the size of a tennis court."
+        },
+        {
+            "id": 99,
+            "category": "Animals",
+            "fact": "Beavers have orange teeth because their enamel contains iron to make them strong enough to chew wood."
+        },
+        {
+            "id": 100,
+            "category": "Science",
+            "fact": "At absolute zero (-273.15\u00b0C or 0 Kelvin), all atomic motion theoretically ceases completely."
+        }
+    ]
+}

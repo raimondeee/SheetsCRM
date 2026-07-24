@@ -1651,21 +1651,49 @@ export function replaceMessageAttachments(params: {
   attachments: MessageAttachmentInput[];
 }): void {
   const db = getDb();
-  db.prepare(`DELETE FROM message_attachments WHERE thread_message_id = ?`).run(
-    params.threadMessageId
+
+  // Preserve row IDs across syncs so in-memory download links stay valid.
+  // (Thread UI equality skips attachment ids; regenerating UUIDs caused 404 downloads.)
+  const existing = db
+    .prepare(
+      `SELECT id, gmail_attachment_id FROM message_attachments WHERE thread_message_id = ?`
+    )
+    .all(params.threadMessageId) as Array<{ id: string; gmail_attachment_id: string }>;
+  const existingByGmailId = new Map(
+    existing.map((row) => [row.gmail_attachment_id, row.id])
   );
 
-  if (params.attachments.length === 0) return;
-
+  const keepIds: string[] = [];
   const insert = db.prepare(
     `INSERT INTO message_attachments
       (id, thread_message_id, ticket_row_id, gmail_message_id, gmail_attachment_id, filename, mime_type, size_bytes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const update = db.prepare(
+    `UPDATE message_attachments
+     SET ticket_row_id = ?, gmail_message_id = ?, filename = ?, mime_type = ?, size_bytes = ?
+     WHERE id = ? AND thread_message_id = ?`
+  );
 
   for (const att of params.attachments) {
+    const existingId = existingByGmailId.get(att.gmailAttachmentId);
+    if (existingId) {
+      update.run(
+        params.ticketRowId,
+        params.gmailMessageId,
+        att.filename,
+        att.mimeType,
+        att.sizeBytes,
+        existingId,
+        params.threadMessageId
+      );
+      keepIds.push(existingId);
+      continue;
+    }
+
+    const id = uuidv4();
     insert.run(
-      uuidv4(),
+      id,
       params.threadMessageId,
       params.ticketRowId,
       params.gmailMessageId,
@@ -1674,9 +1702,22 @@ export function replaceMessageAttachments(params: {
       att.mimeType,
       att.sizeBytes
     );
+    keepIds.push(id);
   }
-}
 
+  if (keepIds.length === 0) {
+    db.prepare(`DELETE FROM message_attachments WHERE thread_message_id = ?`).run(
+      params.threadMessageId
+    );
+    return;
+  }
+
+  const placeholders = keepIds.map(() => "?").join(",");
+  db.prepare(
+    `DELETE FROM message_attachments
+     WHERE thread_message_id = ? AND id NOT IN (${placeholders})`
+  ).run(params.threadMessageId, ...keepIds);
+}
 export function getMessageAttachmentById(
   attachmentId: string,
   ticketRowId: string

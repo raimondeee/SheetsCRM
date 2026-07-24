@@ -9,12 +9,7 @@ import {
 import { withWorkspaceHolidays } from "./business-holidays";
 import { loadPauseIntervalsMap } from "./business-time-pauses";
 import type { DashboardPeriod } from "./dashboard-period";
-import {
-  calendarMonthKeyFromPeriod,
-  dashboardPeriodDays,
-  dashboardPeriodLabel,
-  parseCalendarMonthKey,
-} from "./dashboard-period";
+import { dashboardPeriodLabel, dateMatchesDashboardPeriod } from "./dashboard-period";
 import { getOverlayDb } from "./overlay-db";
 import { getServiceMetricsEpoch } from "./service-metrics-epoch";
 import { shortMarketManagerLabel } from "./dashboard-stats";
@@ -182,37 +177,13 @@ function resolveResolvedAt(rowId: string, overlay: OverlayRow | undefined): Date
 }
 
 function ticketMatchesCreatedPeriod(ticket: Ticket, period: DashboardPeriod): boolean {
-  const monthKey = calendarMonthKeyFromPeriod(period);
   const intake = parseSheetTimestamp(ticket.timestamp);
   if (!intake) return false;
-  if (monthKey) {
-    const parsed = parseCalendarMonthKey(monthKey);
-    if (!parsed) return false;
-    return intake.getFullYear() === parsed.year && intake.getMonth() === parsed.month;
-  }
-  const days = dashboardPeriodDays(period);
-  if (days === null) return true;
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - days);
-  return intake >= cutoff;
+  return dateMatchesDashboardPeriod(intake, period);
 }
 
 function matchesResolvedPeriod(resolvedAt: Date, period: DashboardPeriod): boolean {
-  const monthKey = calendarMonthKeyFromPeriod(period);
-  if (monthKey) {
-    const parsed = parseCalendarMonthKey(monthKey);
-    if (!parsed) return false;
-    return (
-      resolvedAt.getFullYear() === parsed.year && resolvedAt.getMonth() === parsed.month
-    );
-  }
-  const days = dashboardPeriodDays(period);
-  if (days === null) return true;
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - days);
-  return resolvedAt >= cutoff;
+  return dateMatchesDashboardPeriod(resolvedAt, period);
 }
 
 function filterMarketManager(ticket: Ticket, marketManager: string | "all"): boolean {

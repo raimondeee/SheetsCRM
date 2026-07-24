@@ -563,14 +563,17 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       if (!html && !text) return;
 
       event.preventDefault();
-      ensureEditorFocus();
+      // Keep the browser's paste caret — do not restoreSelection() here (that jumps
+      // the insertion point and also breaks Cmd/Ctrl+Z for the paste).
 
       const toInsert =
         html && looksLikeHtml(html) ? sanitizeDraftPasteHtml(html) : plainTextToHtml(text);
       if (!toInsert) return;
 
-      if (!insertHtmlFragment(toInsert)) {
-        document.execCommand("insertHTML", false, toInsert);
+      // insertHTML participates in the contentEditable undo stack; DOM insertNode does not.
+      const inserted = document.execCommand("insertHTML", false, toInsert);
+      if (!inserted) {
+        insertHtmlFragment(toInsert);
       }
       syncContent();
     }
@@ -741,6 +744,11 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
 
       const href = anchor.getAttribute("href")?.trim();
       if (!href || href.startsWith("#")) return;
+
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && selection.toString()) {
+        return;
+      }
 
       event.preventDefault();
       window.open(href, "_blank", "noopener,noreferrer");

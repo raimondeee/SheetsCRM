@@ -1,6 +1,6 @@
-/** Built-in and custom notification sounds for inbound alerts and outbound sends. */
+/** Built-in and custom notification sounds for inbound, outbound, and calendar alerts. */
 
-export type SoundChannel = "inbound" | "outbound";
+export type SoundChannel = "inbound" | "outbound" | "calendar";
 
 export type BuiltinSoundOption = {
   id: string;
@@ -21,6 +21,8 @@ export type CustomSoundRecord = {
 /** Special preference values (not file-backed). */
 export const SOUND_OFF_ID = "off";
 export const SOUND_CLASSIC_ID = "classic";
+/** Three-tone Web Audio chime (optional alternate for calendar reminders). */
+export const SOUND_CALENDAR_ID = "calendar";
 
 export const MAX_CUSTOM_SOUND_BYTES = 512 * 1024; // 512 KB
 export const MAX_CUSTOM_SOUNDS = 10;
@@ -95,17 +97,71 @@ export const BUILTIN_OUTBOUND_SOUNDS: BuiltinSoundOption[] = [
   },
 ];
 
+export const BUILTIN_CALENDAR_SOUNDS: BuiltinSoundOption[] = [
+  {
+    id: "builtin:calendar:calendar001",
+    label: "Calendar 1",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar001.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar002",
+    label: "Calendar 2",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar002.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar003",
+    label: "Calendar 3",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar003.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar004",
+    label: "Calendar 4",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar004.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar005",
+    label: "Calendar 5",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar005.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar006",
+    label: "Calendar 6",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar006.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar007",
+    label: "Calendar 7",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar007.mp3",
+  },
+  {
+    id: "builtin:calendar:calendar008",
+    label: "Calendar 8",
+    channel: "calendar",
+    src: "/sounds/calendar/calendar008.mp3",
+  },
+];
+
 export const DEFAULT_INBOUND_SOUND_ID = BUILTIN_INBOUND_SOUNDS[0]!.id;
 export const DEFAULT_OUTBOUND_SOUND_ID = BUILTIN_OUTBOUND_SOUNDS[0]!.id;
+export const DEFAULT_CALENDAR_SOUND_ID = BUILTIN_CALENDAR_SOUNDS[0]!.id;
 
 export type NotificationSoundPreferences = {
   inboundSoundId: string;
   outboundSoundId: string;
+  calendarSoundId: string;
 };
 
 export const DEFAULT_NOTIFICATION_SOUND_PREFERENCES: NotificationSoundPreferences = {
   inboundSoundId: DEFAULT_INBOUND_SOUND_ID,
   outboundSoundId: DEFAULT_OUTBOUND_SOUND_ID,
+  calendarSoundId: DEFAULT_CALENDAR_SOUND_ID,
 };
 
 function isCustomSoundId(id: string): boolean {
@@ -113,7 +169,11 @@ function isCustomSoundId(id: string): boolean {
 }
 
 function builtinById(id: string): BuiltinSoundOption | undefined {
-  return [...BUILTIN_INBOUND_SOUNDS, ...BUILTIN_OUTBOUND_SOUNDS].find((s) => s.id === id);
+  return [
+    ...BUILTIN_INBOUND_SOUNDS,
+    ...BUILTIN_OUTBOUND_SOUNDS,
+    ...BUILTIN_CALENDAR_SOUNDS,
+  ].find((s) => s.id === id);
 }
 
 export function customSoundSrc(id: string): string {
@@ -126,7 +186,7 @@ export function resolveSoundSrc(
   customSounds: CustomSoundRecord[] = []
 ): string | null {
   if (!soundId || soundId === SOUND_OFF_ID) return null;
-  if (soundId === SOUND_CLASSIC_ID) return null;
+  if (soundId === SOUND_CLASSIC_ID || soundId === SOUND_CALENDAR_ID) return null;
   const builtin = builtinById(soundId);
   if (builtin) return builtin.src;
   if (isCustomSoundId(soundId)) {
@@ -147,10 +207,11 @@ export function normalizeSoundId(
   if (typeof value !== "string" || !value.trim()) return fallback;
   const id = value.trim();
   if (id === SOUND_OFF_ID || id === SOUND_CLASSIC_ID) return id;
+  if (id === SOUND_CALENDAR_ID) return id;
   if (isCustomSoundId(id)) return id;
   const builtin = builtinById(id);
   if (builtin) return builtin.id;
-  // Allow using an inbound builtin for outbound and vice versa if id is valid
+  // Allow using an inbound builtin for outbound/calendar and vice versa if id is valid
   void channel;
   return fallback;
 }
@@ -168,6 +229,11 @@ export function normalizeNotificationSoundPreferences(
       partial?.outboundSoundId,
       "outbound",
       DEFAULT_OUTBOUND_SOUND_ID
+    ),
+    calendarSoundId: normalizeSoundId(
+      partial?.calendarSoundId,
+      "calendar",
+      DEFAULT_CALENDAR_SOUND_ID
     ),
   };
 }
@@ -221,37 +287,47 @@ function stopActiveAudio(): void {
   activeAudio = null;
 }
 
-/** Plays a classic two-tone chime via Web Audio (no file). */
-export function playClassicChime(): void {
+function playWebAudioChime(tones: number[], options?: {
+  type?: OscillatorType;
+  step?: number;
+  noteDuration?: number;
+  peakGain?: number;
+  fadeMs?: number;
+}): void {
   if (typeof window === "undefined") return;
   const AudioCtx =
     window.AudioContext ??
     (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) return;
 
+  const type = options?.type ?? "sine";
+  const step = options?.step ?? 0.09;
+  const noteDuration = options?.noteDuration ?? 0.45;
+  const peakGain = options?.peakGain ?? 0.12;
+  const fadeMs = options?.fadeMs ?? 800;
+
   const ctx = new AudioCtx();
   const startTones = () => {
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+    gain.gain.exponentialRampToValueAtTime(peakGain, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + fadeMs / 1000);
     gain.connect(ctx.destination);
 
-    const tones = [880, 1174.66];
     for (let i = 0; i < tones.length; i += 1) {
-      const start = now + i * 0.09;
+      const start = now + i * step;
       const osc = ctx.createOscillator();
-      osc.type = "sine";
+      osc.type = type;
       osc.frequency.setValueAtTime(tones[i]!, start);
       osc.connect(gain);
       osc.start(start);
-      osc.stop(start + 0.45);
+      osc.stop(start + noteDuration);
     }
 
     window.setTimeout(() => {
       void ctx.close();
-    }, 800);
+    }, fadeMs + 50);
   };
 
   if (ctx.state === "suspended") {
@@ -259,6 +335,22 @@ export function playClassicChime(): void {
   } else {
     startTones();
   }
+}
+
+/** Plays a classic two-tone chime via Web Audio (no file). */
+export function playClassicChime(): void {
+  playWebAudioChime([880, 1174.66]);
+}
+
+/** Three-tone alert for upcoming calendar events (no file). */
+export function playCalendarChime(): void {
+  playWebAudioChime([659.25, 880, 1046.5], {
+    type: "triangle",
+    step: 0.12,
+    noteDuration: 0.35,
+    peakGain: 0.18,
+    fadeMs: 900,
+  });
 }
 
 export async function playSoundById(
@@ -270,6 +362,11 @@ export async function playSoundById(
 
   if (soundId === SOUND_CLASSIC_ID) {
     playClassicChime();
+    return;
+  }
+
+  if (soundId === SOUND_CALENDAR_ID) {
+    playCalendarChime();
     return;
   }
 
@@ -293,4 +390,8 @@ export function playInboundNotificationSound(): void {
 
 export function playOutboundSendSound(): void {
   void playSoundById(configuredSounds.outboundSoundId);
+}
+
+export function playCalendarReminderSound(): void {
+  void playSoundById(configuredSounds.calendarSoundId);
 }

@@ -1,0 +1,506 @@
+{
+    "title": "100 Bizarre & Funny Laws Around the World",
+    "count": 100,
+    "laws": [
+        {
+            "id": 1,
+            "location": "Scotland",
+            "law": "It is legally required to allow anyone who knocks on your door into your home if they need to use the bathroom."
+        },
+        {
+            "id": 2,
+            "location": "Milan, Italy",
+            "law": "It is an ancient legal requirement for citizens to smile at all times, except during funerals or hospital visits."
+        },
+        {
+            "id": 3,
+            "location": "Switzerland",
+            "law": "It is illegal to own just one guinea pig because they are social animals and get lonely."
+        },
+        {
+            "id": 4,
+            "location": "Gainesville, Georgia, USA",
+            "law": "It is illegal to eat fried chicken with anything other than your hands."
+        },
+        {
+            "id": 5,
+            "location": "Samoa",
+            "law": "It is considered a crime to forget your wife's birthday."
+        },
+        {
+            "id": 6,
+            "location": "France",
+            "law": "It is illegal to name a pig 'Napoleon'."
+        },
+        {
+            "id": 7,
+            "location": "Melbourne, Australia",
+            "law": "It is illegal for a man to dress up in a strapless dress in public, though other styles are permitted under old vagrancy laws."
+        },
+        {
+            "id": 8,
+            "location": "Singapore",
+            "law": "The import and sale of chewing gum has been strictly banned since 1992 to maintain public cleanliness."
+        },
+        {
+            "id": 9,
+            "location": "Venice, Italy",
+            "law": "Feeding pigeons in St. Mark's Square is strictly banned and subject to heavy fines."
+        },
+        {
+            "id": 10,
+            "location": "Canada",
+            "law": "Canadian law dictates that 35% of all radio broadcast content must be produced by Canadian artists."
+        },
+        {
+            "id": 11,
+            "location": "Greece",
+            "law": "Wearing high heels is banned at ancient historic monuments to protect marble floors from damage."
+        },
+        {
+            "id": 12,
+            "location": "Turkmenistan",
+            "law": "Black cars were banned from the capital city of Ashgabat because white cars are believed to bring good luck."
+        },
+        {
+            "id": 13,
+            "location": "Thailand",
+            "law": "It is illegal to leave your house without wearing underwear."
+        },
+        {
+            "id": 14,
+            "location": "Sri Lanka",
+            "law": "Taking a selfie with your back turned to a statue of Buddha is considered disrespectful and can lead to arrest."
+        },
+        {
+            "id": 15,
+            "location": "Victoria, Australia",
+            "law": "It is illegal to change a lightbulb yourself unless you are a licensed electrician."
+        },
+        {
+            "id": 16,
+            "location": "United Kingdom",
+            "law": "It is illegal to handle a salmon under suspicious circumstances under the Salmon Act of 1986."
+        },
+        {
+            "id": 17,
+            "location": "Quito, Ecuador",
+            "law": "It is illegal to paint your house any color other than white without municipal permission."
+        },
+        {
+            "id": 18,
+            "location": "Japan",
+            "law": "The Metabo Law requires adults aged 40-74 to have their waistlines measured annually to curb obesity."
+        },
+        {
+            "id": 19,
+            "location": "Portugal",
+            "law": "It is illegal to pee in the ocean, though enforcement remains tricky."
+        },
+        {
+            "id": 20,
+            "location": "Capri, Italy",
+            "law": "Wearing noisy footwear, including wooden clogs and loud flip-flops, is banned on the island."
+        },
+        {
+            "id": 21,
+            "location": "Germany",
+            "law": "It is illegal to run out of gas on the Autobahn highway system."
+        },
+        {
+            "id": 22,
+            "location": "Florence, Italy",
+            "law": "Eating food while sitting on church steps or near public monuments in the historic center is banned."
+        },
+        {
+            "id": 23,
+            "location": "United Kingdom",
+            "law": "Under ancient law, all mute swans in open water belong to the ruling Monarch."
+        },
+        {
+            "id": 24,
+            "location": "Ericeira, Portugal",
+            "law": "Drying your laundry outside where it is visible from the street is illegal in certain historic coastal areas."
+        },
+        {
+            "id": 25,
+            "location": "Sarpourenx, France",
+            "law": "It was made illegal to die within city limits unless you had already purchased a spot in the local cemetery."
+        },
+        {
+            "id": 26,
+            "location": "Longyearbyen, Norway",
+            "law": "Dying is effectively banned on the island because the permafrost prevents bodies from decomposing."
+        },
+        {
+            "id": 27,
+            "location": "San Francisco, California, USA",
+            "law": "It is illegal to walk a elephant down Market Street unless it is on a leash."
+        },
+        {
+            "id": 28,
+            "location": "Alabama, USA",
+            "law": "Driving blindfolded is strictly illegal across the state."
+        },
+        {
+            "id": 29,
+            "location": "Arizona, USA",
+            "law": "Cutting down a protected Saguaro cactus can carry a prison sentence of up to 25 years."
+        },
+        {
+            "id": 30,
+            "location": "Arkansas, USA",
+            "law": "It is illegal to mispronounce the name of the state of Arkansas under official state code."
+        },
+        {
+            "id": 31,
+            "location": "Boulder, Colorado, USA",
+            "law": "It is illegal to couch-surf or sleep on public property within city limits without a permit."
+        },
+        {
+            "id": 32,
+            "location": "Connecticut, USA",
+            "law": "For a pickle to be officially recognized as a pickle, it must be able to bounce."
+        },
+        {
+            "id": 33,
+            "location": "Delaware, USA",
+            "law": "It is illegal to sell or wear garments made from dog or cat hair."
+        },
+        {
+            "id": 34,
+            "location": "Florida, USA",
+            "law": "It is illegal to sing in public while wearing a swimsuit in certain areas."
+        },
+        {
+            "id": 35,
+            "location": "Idaho, USA",
+            "law": "Giving your sweetheart a box of candy that weighs more than 50 pounds is illegal."
+        },
+        {
+            "id": 36,
+            "location": "Illinois, USA",
+            "law": "It is illegal for minors to drink alcohol unless they are participating in a culinary program or religious service."
+        },
+        {
+            "id": 37,
+            "location": "Indiana, USA",
+            "law": "Mustaches are legally prohibited if the bearer has a tendency to habitually kiss other humans."
+        },
+        {
+            "id": 38,
+            "location": "Iowa, USA",
+            "law": "It is illegal for a man with a mustache to kiss a woman in public."
+        },
+        {
+            "id": 39,
+            "location": "Kansas, USA",
+            "law": "It is illegal to throw snowballs in certain towns because they are classified as missiles."
+        },
+        {
+            "id": 40,
+            "location": "Kentucky, USA",
+            "law": "It is illegal to dye a duckling blue and offer it for sale unless at least six are sold together."
+        },
+        {
+            "id": 41,
+            "location": "Louisiana, USA",
+            "law": "Ordering a pizza to be delivered to an unsuspecting friend without their consent can incur a $500 fine."
+        },
+        {
+            "id": 42,
+            "location": "Maryland, USA",
+            "law": "It is illegal to take a lion to the cinema in Baltimore."
+        },
+        {
+            "id": 43,
+            "location": "Massachusetts, USA",
+            "law": "Snoring is illegal unless all bedroom windows are closed and securely locked."
+        },
+        {
+            "id": 44,
+            "location": "Michigan, USA",
+            "law": "A woman's hair legally belongs to her husband, requiring his permission to cut it under old laws."
+        },
+        {
+            "id": 45,
+            "location": "Minnesota, USA",
+            "law": "A person may not cross state lines with a duck on their head."
+        },
+        {
+            "id": 46,
+            "location": "Mississippi, USA",
+            "law": "Using profane or vulgar language in a public place can result in a fine or up to thirty days in jail."
+        },
+        {
+            "id": 47,
+            "location": "Missouri, USA",
+            "law": "It is illegal to drive with an un-caged bear inside your vehicle."
+        },
+        {
+            "id": 48,
+            "location": "Montana, USA",
+            "law": "It is illegal to leave a sheep un-tended in the cab of a truck."
+        },
+        {
+            "id": 49,
+            "location": "Nebraska, USA",
+            "law": "Doughnut holes may not legally be sold within city limits in certain municipalities."
+        },
+        {
+            "id": 50,
+            "location": "Nevada, USA",
+            "law": "It is illegal to ride a camel on the highway."
+        },
+        {
+            "id": 51,
+            "location": "New Hampshire, USA",
+            "law": "It is illegal to collect seaweed off the beach at night."
+        },
+        {
+            "id": 52,
+            "location": "New Jersey, USA",
+            "law": "Drivers are legally prohibited from pumping their own gasoline at retail gas stations."
+        },
+        {
+            "id": 53,
+            "location": "New Mexico, USA",
+            "law": "It is illegal for performers to dance in public while wearing revealing costumes."
+        },
+        {
+            "id": 54,
+            "location": "New York, USA",
+            "law": "Slippers are legally forbidden from being worn in public after 10:00 PM."
+        },
+        {
+            "id": 55,
+            "location": "North Carolina, USA",
+            "law": "It is illegal to hold a meeting where attendees are dressed in masks or disguises."
+        },
+        {
+            "id": 56,
+            "location": "North Dakota, USA",
+            "law": "It is illegal to fall asleep with your shoes on."
+        },
+        {
+            "id": 57,
+            "location": "Ohio, USA",
+            "law": "It is illegal to get a whale drunk in the state of Ohio."
+        },
+        {
+            "id": 58,
+            "location": "Oklahoma, USA",
+            "law": "It is illegal to make ugly faces at a dog, as you can be fined or jailed."
+        },
+        {
+            "id": 59,
+            "location": "Oregon, USA",
+            "law": "It is illegal to hunt canned corn while fishing in state waters."
+        },
+        {
+            "id": 60,
+            "location": "Pennsylvania, USA",
+            "law": "It is illegal to sleep on top of a refrigerator outdoors."
+        },
+        {
+            "id": 61,
+            "location": "Rhode Island, USA",
+            "law": "It is illegal to bite off another person's leg."
+        },
+        {
+            "id": 62,
+            "location": "South Carolina, USA",
+            "law": "It is illegal to keep horses in a bathtub."
+        },
+        {
+            "id": 63,
+            "location": "South Dakota, USA",
+            "law": "It is illegal to fall asleep in a cheese factory."
+        },
+        {
+            "id": 64,
+            "location": "Tennessee, USA",
+            "law": "Stealing crawfish from a commercial farm is a felony offense."
+        },
+        {
+            "id": 65,
+            "location": "Texas, USA",
+            "law": "It is illegal to sell one's eye under Texas state law."
+        },
+        {
+            "id": 66,
+            "location": "Utah, USA",
+            "law": "It is illegal NOT to drink milk on public school property."
+        },
+        {
+            "id": 67,
+            "location": "Vermont, USA",
+            "law": "Women must obtain written permission from their husbands to wear false teeth."
+        },
+        {
+            "id": 68,
+            "location": "Virginia, USA",
+            "law": "Tickling a woman is strictly illegal under old disorderly conduct statutes."
+        },
+        {
+            "id": 69,
+            "location": "Washington, USA",
+            "law": "It is illegal to pretend that one's parents are rich."
+        },
+        {
+            "id": 70,
+            "location": "West Virginia, USA",
+            "law": "Whistling underwater is strictly forbidden."
+        },
+        {
+            "id": 71,
+            "location": "Wisconsin, USA",
+            "law": "Butter substitutes are illegal to serve in public schools unless requested by a doctor."
+        },
+        {
+            "id": 72,
+            "location": "Wyoming, USA",
+            "law": "It is illegal to take a picture of a rabbit between January and June without a permit."
+        },
+        {
+            "id": 73,
+            "location": "South Korea",
+            "law": "Traffic police are required by law to report all bribes they are offered by drivers."
+        },
+        {
+            "id": 74,
+            "location": "Madrid, Spain",
+            "law": "Begging with a dog in public transit stations is banned under municipal codes."
+        },
+        {
+            "id": 75,
+            "location": "South Africa",
+            "law": "It is illegal to buy or sell adult wild animals without a specialized permit."
+        },
+        {
+            "id": 76,
+            "location": "Dubai, UAE",
+            "law": "Swearing or making offensive gestures in public or on social media can lead to deportation."
+        },
+        {
+            "id": 77,
+            "location": "Swaziland (Eswatini)",
+            "law": "Witches are legally banned from flying their broomsticks higher than 150 meters."
+        },
+        {
+            "id": 78,
+            "location": "Maldives",
+            "law": "Importing or carrying religious idols or non-Islamic religious books into the country is illegal."
+        },
+        {
+            "id": 79,
+            "location": "Iceland",
+            "law": "It was illegal to own a dog as a pet in the capital city of Reykjav\u00edk from 1924 to 1984."
+        },
+        {
+            "id": 80,
+            "location": "Dominican Republic",
+            "law": "It is illegal to produce or watch animated cartoons that portray political leaders unfavorably."
+        },
+        {
+            "id": 81,
+            "location": "Bolivia",
+            "law": "Married women are legally restricted to drinking only one glass of wine in public settings."
+        },
+        {
+            "id": 82,
+            "location": "Paraguay",
+            "law": "Dueling is legal, provided both participants are registered blood donors."
+        },
+        {
+            "id": 83,
+            "location": "Chile",
+            "law": "All households are legally required to display the Chilean national flag during national holidays."
+        },
+        {
+            "id": 84,
+            "location": "Argentina",
+            "law": "All radio stations must play the national anthem at midnight every single night."
+        },
+        {
+            "id": 85,
+            "location": "Mexico",
+            "law": "Bicyclists are legally prohibited from lifting both feet off the pedals while riding."
+        },
+        {
+            "id": 86,
+            "location": "Fiji",
+            "law": "Sunbathing topless on public beaches is strictly illegal across all non-resort islands."
+        },
+        {
+            "id": 87,
+            "location": "Papua New Guinea",
+            "law": "It is illegal to use witchcraft or sorcery to commit a crime under local penal codes."
+        },
+        {
+            "id": 88,
+            "location": "New Zealand",
+            "law": "All high schools are permitted to keep up to one pound of uranium for educational nuclear experiments."
+        },
+        {
+            "id": 89,
+            "location": "Bermuda",
+            "law": "Bermuda shorts worn in public offices must be worn with knee-high socks and sit no more than 6 inches above the knee."
+        },
+        {
+            "id": 90,
+            "location": "Bahamas",
+            "law": "It is illegal to play firearms or fireworks within 200 yards of a church service."
+        },
+        {
+            "id": 91,
+            "location": "Trinidad and Tobago",
+            "law": "Wearing camouflage clothing is illegal for anyone not in the military force."
+        },
+        {
+            "id": 92,
+            "location": "Jamaica",
+            "law": "It is illegal to sell alcohol to anyone who is visibly intoxicated."
+        },
+        {
+            "id": 93,
+            "location": "Barbados",
+            "law": "Camouflage clothing is strictly reserved for military personnel and illegal for civilians."
+        },
+        {
+            "id": 94,
+            "location": "Malta",
+            "law": "Drying washing outside on balconies facing main streets is banned in historical towns."
+        },
+        {
+            "id": 95,
+            "location": "Monaco",
+            "law": "Citizens of Monaco are legally forbidden from gambling inside the famous Monte Carlo Casino."
+        },
+        {
+            "id": 96,
+            "location": "Vatican City",
+            "law": "Divorce is strictly illegal under civil law."
+        },
+        {
+            "id": 97,
+            "location": "San Marino",
+            "law": "It is illegal to keep animals in cages that do not allow them to stand up and turn around completely."
+        },
+        {
+            "id": 98,
+            "location": "Andorra",
+            "law": "Lawyers are legally forbidden from charging fees based on winning a case outcome."
+        },
+        {
+            "id": 99,
+            "location": "Luxembourg",
+            "law": "All public transport (busses, trains, and trams) is legally required to be free of charge for residents and tourists."
+        },
+        {
+            "id": 100,
+            "location": "Liechtenstein",
+            "law": "It is illegal to hold a protest or political rally without notifying the police at least 48 hours in advance."
+        }
+    ]
+}

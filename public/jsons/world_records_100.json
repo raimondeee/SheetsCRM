@@ -1,0 +1,506 @@
+{
+    "title": "100 World Records & Feats",
+    "count": 100,
+    "records": [
+        {
+            "id": 1,
+            "record": "Oldest Living Tree",
+            "fact": "Methuselah, a Great Basin bristlecone pine in California, is over 4,850 years old."
+        },
+        {
+            "id": 2,
+            "record": "Loudest Animal Sound",
+            "fact": "The sperm whale can emit vocalizations up to 230 decibels, making it louder than a jet engine."
+        },
+        {
+            "id": 3,
+            "record": "Deepest Scuba Dive",
+            "fact": "Ahmed Gabr set the record for the deepest scuba dive in the Red Sea, reaching a depth of 332.35 meters (1,090 feet)."
+        },
+        {
+            "id": 4,
+            "record": "Fastest Land Animal",
+            "fact": "The cheetah can accelerate from 0 to 60 mph in just 3 seconds, reaching top speeds of around 70 mph."
+        },
+        {
+            "id": 5,
+            "record": "Longest Hiccuping Spree",
+            "fact": "Charles Osborne hiccuped continuously for 68 years from 1922 to 1990."
+        },
+        {
+            "id": 6,
+            "record": "Largest Pizza Ever Made",
+            "fact": "The world's largest gluten-free pizza spanned over 13,000 square feet and was baked in Rome, Italy."
+        },
+        {
+            "id": 7,
+            "record": "Tallest Wooden Building",
+            "fact": "Mj\u00f8st\u00e5rnet in Norway stands at 85.4 meters (280 feet) tall, constructed entirely of engineered timber."
+        },
+        {
+            "id": 8,
+            "record": "Most Dominoes Toppled",
+            "fact": "A team in the Netherlands successfully fell 4,491,863 dominoes in a single line."
+        },
+        {
+            "id": 9,
+            "record": "Longest-Running TV Show",
+            "fact": "The Simpsons is the longest-running prime-time scripted animated series in television history."
+        },
+        {
+            "id": 10,
+            "record": "Fastest Marathon in Full Suit",
+            "fact": "A runner completed the London Marathon in 2 hours and 58 minutes while wearing a full three-piece business suit."
+        },
+        {
+            "id": 11,
+            "record": "Fastest 100m Sprint",
+            "fact": "Usain Bolt set the world record for the 100-meter dash at 9.58 seconds at the 2009 World Athletics Championships in Berlin."
+        },
+        {
+            "id": 12,
+            "record": "Tallest Man in History",
+            "fact": "Robert Wadlow measured 8 feet 11.1 inches (2.72 meters) tall at his last recorded measurement in 1940."
+        },
+        {
+            "id": 13,
+            "record": "Deepest Point on Earth",
+            "fact": "The Challenger Deep in the Mariana Trench reaches a depth of approximately 10,994 meters (36,070 feet)."
+        },
+        {
+            "id": 14,
+            "record": "Largest Living Organism",
+            "fact": "A single specimen of Armillaria ostoyae (honey fungus) in Oregon spans over 2,200 acres (8.9 square kilometers)."
+        },
+        {
+            "id": 15,
+            "record": "Highest Freefall Jump",
+            "fact": "Alan Eustace jumped from a height of 135,890 feet (41.41 km) in a space suit, reaching supersonic speeds."
+        },
+        {
+            "id": 16,
+            "record": "Fastest Human Space Flight",
+            "fact": "The crew of Apollo 10 achieved the highest speed relative to Earth ever attained by humans at 24,791 mph (39,897 km/h)."
+        },
+        {
+            "id": 17,
+            "record": "Most Olympic Gold Medals",
+            "fact": "Michael Phelps holds the record with 23 Olympic gold medals in swimming."
+        },
+        {
+            "id": 18,
+            "record": "Largest Structure Built by Living Organisms",
+            "fact": "The Great Barrier Reef stretches over 2,300 kilometers (1,400 miles) and can be seen from space."
+        },
+        {
+            "id": 19,
+            "record": "Longest Non-Stop Flight by a Bird",
+            "fact": "A bar-tailed godwit flew non-stop for 11 days from Alaska to Australia, covering over 8,400 miles (13,500 km) without landing."
+        },
+        {
+            "id": 20,
+            "record": "Fastest Roller Coaster",
+            "fact": "Formula Rossa at Ferrari World in Abu Dhabi accelerates to a top speed of 149.1 mph (240 km/h) in 4.9 seconds."
+        },
+        {
+            "id": 21,
+            "record": "Longest Monopoly Game",
+            "fact": "The longest recorded game of Monopoly played continuously lasted 70 days straight."
+        },
+        {
+            "id": 22,
+            "record": "Most Grand Slam Tennis Titles (Men's)",
+            "fact": "Novak Djokovic holds the record for the most Grand Slam singles titles in men's tennis history."
+        },
+        {
+            "id": 23,
+            "record": "Longest Road Trip",
+            "fact": "Emil and Liliana Schmid traveled over 740,000 kilometers across more than 180 countries in the same Toyota Land Cruiser."
+        },
+        {
+            "id": 24,
+            "record": "Hotested Temperature Recorded on Earth",
+            "fact": "Furnace Creek in Death Valley, California recorded a temperature of 134\u00b0F (56.7\u00b0C) in July 1913."
+        },
+        {
+            "id": 25,
+            "record": "Coldest Temperature Recorded on Earth",
+            "fact": "Vostok Station in Antarctica recorded a bone-chilling temperature of -128.6\u00b0F (-89.2\u00b0C) in July 1983."
+        },
+        {
+            "id": 26,
+            "record": "Largest Castle in the World",
+            "fact": "Malbork Castle in Poland is the world's largest castle by land area, covering roughly 52 acres."
+        },
+        {
+            "id": 27,
+            "record": "Highest Waterfall",
+            "fact": "Angel Falls in Venezuela plunges uninterrupted for 979 meters (3,212 feet)."
+        },
+        {
+            "id": 28,
+            "record": "Most Words Spoken Per Minute",
+            "fact": "Fran Capo holds the record for the fastest female talker, speaking at 603.32 words per minute."
+        },
+        {
+            "id": 29,
+            "record": "Longest Paper Airplane Flight Time",
+            "fact": "Takuo Toda set a world record by keeping a paper airplane airborne for 29.2 seconds."
+        },
+        {
+            "id": 30,
+            "record": "Fastest Time to Solve a Rubik's Cube",
+            "fact": "Max Park solved a standard 3x3x3 Rubik's Cube in a staggering 3.13 seconds."
+        },
+        {
+            "id": 31,
+            "record": "Largest Hot Air Balloon Festival",
+            "fact": "The International Balloon Fiesta in Albuquerque, New Mexico features over 500 hot air balloons annually."
+        },
+        {
+            "id": 32,
+            "record": "Most Consecutive Push-Ups",
+            "fact": "Minoru Yoshida completed 10,507 non-stop push-ups without taking a single break."
+        },
+        {
+            "id": 33,
+            "record": "Most Planets Discovered by a Space Telescope",
+            "fact": "NASA's Kepler Space Telescope discovered over 2,600 confirmed exoplanets during its mission."
+        },
+        {
+            "id": 34,
+            "record": "Longest Plank Position",
+            "fact": "Daniel Scali held a abdominal plank position for 9 hours, 30 minutes, and 1 second."
+        },
+        {
+            "id": 35,
+            "record": "Most Oscars Won by a Single Film",
+            "fact": "Ben-Hur, Titanic, and The Lord of the Rings: The Return of the King share the record with 11 Academy Awards each."
+        },
+        {
+            "id": 36,
+            "record": "Largest Desert on Earth",
+            "fact": "Antarctica is technically the largest desert on Earth, covering 5.5 million square miles."
+        },
+        {
+            "id": 37,
+            "record": "Fastest Speed Achieved by a Solar Powered Vehicle",
+            "fact": "The Sunswift 7 team achieved an average speed of 84.17 km/h over 1,000 km on a single solar charge."
+        },
+        {
+            "id": 38,
+            "record": "Highest Altitude Sighted Bird",
+            "fact": "A R\u00fcppell's vulture collided with a commercial aircraft at an altitude of 37,000 feet (11,300 meters)."
+        },
+        {
+            "id": 39,
+            "record": "Most Views for a Video on YouTube",
+            "fact": "The 'Baby Shark Dance' video became the first video to surpass 10 billion views on YouTube."
+        },
+        {
+            "id": 40,
+            "record": "Smallest Man in History",
+            "fact": "Chandra Bahadur Dangi of Nepal measured just 21.5 inches (54.6 cm) tall."
+        },
+        {
+            "id": 41,
+            "record": "Longest Breath Held Underwater",
+            "fact": "Budimir \u0160obat held his breath voluntarily underwater for 24 minutes and 37 seconds."
+        },
+        {
+            "id": 42,
+            "record": "Largest Maze in the World",
+            "fact": "The Yancheng Daphne Maze in China covers an area of over 35,000 square meters."
+        },
+        {
+            "id": 43,
+            "record": "Fastest Flying Bird in Horizontal Flight",
+            "fact": "The common swift can reach speeds of 69 mph (111.6 km/h) in level powered flight."
+        },
+        {
+            "id": 44,
+            "record": "Fastest Diving Creature",
+            "fact": "The peregrine falcon reaches diving speeds of over 240 mph (389 km/h) when hunting prey."
+        },
+        {
+            "id": 45,
+            "record": "Highest Unassisted Jump by a Human",
+            "fact": "Christopher Spell achieved a standing vertical jump height of 67 inches (1.70 meters)."
+        },
+        {
+            "id": 46,
+            "record": "Longest Tunnel in the World",
+            "fact": "The Gotthard Base Tunnel in Switzerland stretches 57 kilometers (35.5 miles) through the Alps."
+        },
+        {
+            "id": 47,
+            "record": "Most Expensive Painting Ever Sold",
+            "fact": "Leonardo da Vinci's 'Salvator Mundi' sold at auction for $450.3 million."
+        },
+        {
+            "id": 48,
+            "record": "Largest Cave Room by Volume",
+            "fact": "The Miao Room in the Gebihe cave system in China has a volume of 10.78 million cubic meters."
+        },
+        {
+            "id": 49,
+            "record": "Longest Lightning Flash",
+            "fact": "A megaflash over the southern United States covered a distance of 477 miles (768 km) in 2020."
+        },
+        {
+            "id": 50,
+            "record": "Most Books Written by a Single Author",
+            "fact": "L. Ron Hubbard holds the world record with 1,084 published works."
+        },
+        {
+            "id": 51,
+            "record": "Longest Standing Ovation in Cinema History",
+            "fact": "Guillermo del Toro's film 'Pan's Labyrinth' received a 22-minute standing ovation at the Cannes Film Festival."
+        },
+        {
+            "id": 52,
+            "record": "Fastest Transatlantic Crossing by Rowing Boat",
+            "fact": "A crew of four rowed across the Atlantic Ocean in 29 days, 14 hours, and 34 minutes."
+        },
+        {
+            "id": 53,
+            "record": "Largest Natural Bridge",
+            "fact": "The Xianren Bridge in China has a span of approximately 400 feet (122 meters)."
+        },
+        {
+            "id": 54,
+            "record": "Longest Distance Run in 24 Hours",
+            "fact": "Aleksandr Sorokin ran a record distance of 319.614 kilometers (198.59 miles) in 24 hours."
+        },
+        {
+            "id": 55,
+            "record": "Most People Assembled in Costume",
+            "fact": "Over 15,000 people dressed as Santa Claus gathered in Kerala, India."
+        },
+        {
+            "id": 56,
+            "record": "Deepest Hole Ever Dug by Humans",
+            "fact": "The Kola Superdeep Borehole in Russia reached a depth of 12,262 meters (40,230 feet)."
+        },
+        {
+            "id": 57,
+            "record": "Longest Piercing Recorded on a Body",
+            "fact": "Rolf Buchholz holds the world record for the most body modifications, including over 450 piercings."
+        },
+        {
+            "id": 58,
+            "record": "Fastest Golf Drive",
+            "fact": "Ryan Winther hit a golf drive recorded at a speed of 217.1 mph (349.38 km/h)."
+        },
+        {
+            "id": 59,
+            "record": "Largest Solar Power Plant",
+            "fact": "Bhadla Solar Park in Rajasthan, India spans over 14,000 acres with a total capacity of 2.25 GW."
+        },
+        {
+            "id": 60,
+            "record": "Most Steps Climbed in One Hour",
+            "fact": "David Rush climbed 3,895 steps up a stadium staircase in 60 minutes."
+        },
+        {
+            "id": 61,
+            "record": "Longest Beard on a Living Person",
+            "fact": "Sarwan Singh holds the record for a living male with a beard measuring over 8 feet 2.5 inches."
+        },
+        {
+            "id": 62,
+            "record": "Fastest Vehicle on Land",
+            "fact": "ThrustSSC achieved a top speed of 763.035 mph (1,227.98 km/h), breaking the sound barrier on land in 1997."
+        },
+        {
+            "id": 63,
+            "record": "Largest Gathering of Twins",
+            "fact": "The Twins Days Festival in Twinsburg, Ohio gathers thousands of pairs of identical and fraternal twins annually."
+        },
+        {
+            "id": 64,
+            "record": "Most Earthquakes Survived",
+            "fact": "A woman in Japan lived through 18 distinct earthquake disasters over her lifetime without severe injury."
+        },
+        {
+            "id": 65,
+            "record": "Longest Juggling Performance",
+            "fact": "David Sleight juggled three balls continuously for 12 hours and 5 minutes."
+        },
+        {
+            "id": 66,
+            "record": "Fastest Time to Type the Alphabet",
+            "fact": "Abhishek Thakur typed the entire alphabet on a touch screen smartphone in just 1.84 seconds."
+        },
+        {
+            "id": 67,
+            "record": "Largest Aquarium in the World",
+            "fact": "Chimelong Ocean Kingdom in Hengqin, China holds over 12.87 million gallons of water."
+        },
+        {
+            "id": 68,
+            "record": "Highest Altitude Landed by a Helicopter",
+            "fact": "Didier Delsalle landed a Eurocopter AS350 B3 on the summit of Mount Everest at 8,848 meters (29,029 ft)."
+        },
+        {
+            "id": 69,
+            "record": "Most Dominoes Stacked on a Single Standing Domino",
+            "fact": "Alexander Bendikov balanced 1,030 dominoes on top of a single vertical domino."
+        },
+        {
+            "id": 70,
+            "record": "Longest Continuous Drumming Solo",
+            "fact": "Steven Gaul played drums continuously for 134 hours and 5 minutes."
+        },
+        {
+            "id": 71,
+            "record": "Most Spaceflights by an Astronaut",
+            "fact": "Franklin Chang-D\u00edaz and Jerry L. Ross share the record for the most spaceflights, with 7 missions each."
+        },
+        {
+            "id": 72,
+            "record": "Most Consecutive Backflips",
+            "fact": "Zama Mofokeng performed 34 consecutive backflips using only one hand."
+        },
+        {
+            "id": 73,
+            "record": "Largest Lego Structure Ever Built",
+            "fact": "A life-sized replica of a Star Wars X-Wing fighter was built using over 5.3 million Lego bricks."
+        },
+        {
+            "id": 74,
+            "record": "Oldest Living Land Animal",
+            "fact": "Jonathan, a Seychelles giant tortoise living on Saint Helena, was born circa 1832 and is over 190 years old."
+        },
+        {
+            "id": 75,
+            "record": "Fastest Time to Eat a 12-Inch Pizza",
+            "fact": "Kelvin Medina devoured a full 12-inch pizza in just 23.62 seconds."
+        },
+        {
+            "id": 76,
+            "record": "Most Lightning Strikes Survived",
+            "fact": "Roy Sullivan, a US park ranger, was struck by lightning on seven different occasions and survived every one."
+        },
+        {
+            "id": 77,
+            "record": "Largest Pumpkin Ever Grown",
+            "fact": "Travis Gienger grew a record-breaking pumpkin weighing 2,749 pounds (1,247 kg) in Minnesota."
+        },
+        {
+            "id": 78,
+            "record": "Longest Fingernails on a Single Hand",
+            "fact": "Shridhar Chillal grew the fingernails on his left hand for 66 years, reaching a combined length of 29 feet 10 inches."
+        },
+        {
+            "id": 79,
+            "record": "Highest Musical Concert Ever Performed",
+            "fact": "A band performed a live concert at an altitude of 6,482 meters (21,266 ft) on Mera Peak in Nepal."
+        },
+        {
+            "id": 80,
+            "record": "Fastest Solar System Planet Revolution",
+            "fact": "Mercury orbits the Sun in just 88 Earth days at an average speed of 29 miles per second."
+        },
+        {
+            "id": 81,
+            "record": "Most Consecutive Skip Ropes in One Minute",
+            "fact": "Daisuke Mimura achieved 248 skips over a rope in 60 seconds."
+        },
+        {
+            "id": 82,
+            "record": "Largest Concert Audience",
+            "fact": "Rod Stewart performed a free New Year's Eve concert on Copacabana Beach in Rio de Janeiro to 3.5 million attendees."
+        },
+        {
+            "id": 83,
+            "record": "Most Tattoos on a Person",
+            "fact": "Lucky Diamond Rich is 100% covered in tattoos, including his eyelids, ears, and gums."
+        },
+        {
+            "id": 84,
+            "record": "Fastest Time to Assemble a 1,000 Piece Jigsaw Puzzle",
+            "fact": "A team of three people completed a 1,000-piece puzzle in 42 minutes and 18 seconds."
+        },
+        {
+            "id": 85,
+            "record": "Largest Recorded Snowflakes",
+            "fact": "Fort Keogh, Montana reported giant snowflakes that measured 15 inches (38 cm) wide during an 1887 snowstorm."
+        },
+        {
+            "id": 86,
+            "record": "Longest Solo Kayak Journey",
+            "fact": "Oskar Speck kayaked from Germany to Australia, covering 50,000 kilometers over 7 years from 1932 to 1939."
+        },
+        {
+            "id": 87,
+            "record": "Fastest Tennis Serve",
+            "fact": "Sam Groth hit a serve clocked at 163.7 mph (263.4 km/h) at a Challenger event in Busan."
+        },
+        {
+            "id": 88,
+            "record": "Most Languages Spoken by a Person",
+            "fact": "Ziad Fazah claims fluency in 59 languages, undergoing multiple international comprehension tests."
+        },
+        {
+            "id": 89,
+            "record": "Largest Sandcastle Ever Built",
+            "fact": "A sandcastle built in Denmark measured 21.16 meters (69.4 feet) tall."
+        },
+        {
+            "id": 90,
+            "record": "Most Consecutive Double-Centuries in Test Cricket",
+            "fact": "Don Bradman scored 12 double-centuries in his Test cricket career, maintaining an unprecedented batting average of 99.94."
+        },
+        {
+            "id": 91,
+            "record": "Longest Train Journey on a Single Line",
+            "fact": "The Trans-Siberian Railway covers 9,289 kilometers (5,772 miles) from Moscow to Vladivostok over 7 days."
+        },
+        {
+            "id": 92,
+            "record": "Fastest Time to Blow Up 10 Balloons",
+            "fact": "Hunter Ewen blew up and popped 10 rubber balloons using only his lungs in 45.62 seconds."
+        },
+        {
+            "id": 93,
+            "record": "Highest City in the World",
+            "fact": "La Rinconada in Peru sits at an altitude of 5,100 meters (16,700 feet) above sea level."
+        },
+        {
+            "id": 94,
+            "record": "Largest Collection of Video Games",
+            "fact": "Antonio Monteiro owns over 20,100 video games across multiple console generations."
+        },
+        {
+            "id": 95,
+            "record": "Most Pull-Ups in 24 Hours",
+            "fact": "Truett Hanes completed 8,100 pull-ups in a single 24-hour period."
+        },
+        {
+            "id": 96,
+            "record": "Longest Career as a Flight Attendant",
+            "fact": "Bette Nash served as a flight attendant for Eastern Air Lines and American Airlines for over 65 years."
+        },
+        {
+            "id": 97,
+            "record": "Fastest Unassisted Solo Trek to the South Pole",
+            "fact": "Preet Chandi completed a solo, unassisted trek across Antarctica covering 700 miles in 31 days."
+        },
+        {
+            "id": 98,
+            "record": "Largest Maze of Ice",
+            "fact": "The Ice Maze at the Buffalo Powder Park measured over 31,000 square feet, made completely of ice blocks."
+        },
+        {
+            "id": 99,
+            "record": "Most Consecutive Days Running a Marathon",
+            "fact": "Erchana Murray-Bartlett ran 150 consecutive marathons in 150 days across Australia."
+        },
+        {
+            "id": 100,
+            "record": "Fastest Baseball Pitch",
+            "fact": "Aroldis Chapman threw a fastball clocked at 105.1 mph (169.1 km/h) in a game against the San Diego Padres."
+        }
+    ]
+}

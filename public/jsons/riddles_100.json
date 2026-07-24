@@ -1,0 +1,506 @@
+{
+    "title": "100 Riddles",
+    "count": 100,
+    "riddles": [
+        {
+            "id": 1,
+            "riddle": "I have a head and a tail, but no body. What am I?",
+            "answer": "A coin"
+        },
+        {
+            "id": 2,
+            "riddle": "What comes once in a minute, twice in a moment, but never in a thousand years?",
+            "answer": "The letter M"
+        },
+        {
+            "id": 3,
+            "riddle": "What belongs to you, but other people use it far more often than you do?",
+            "answer": "Your name"
+        },
+        {
+            "id": 4,
+            "riddle": "What kind of room has no doors, no windows, and cannot be entered?",
+            "answer": "A mushroom"
+        },
+        {
+            "id": 5,
+            "riddle": "I am full of holes, yet I can hold water. What am I?",
+            "answer": "A sponge"
+        },
+        {
+            "id": 6,
+            "riddle": "I can travel all around the world while staying stuck in one single corner. What am I?",
+            "answer": "A postage stamp"
+        },
+        {
+            "id": 7,
+            "riddle": "I am so fragile that if you say my name, you break me. What am I?",
+            "answer": "Silence"
+        },
+        {
+            "id": 8,
+            "riddle": "The more of me you take, the more you leave behind. What am I?",
+            "answer": "Footsteps"
+        },
+        {
+            "id": 9,
+            "riddle": "I have keys, but no locks. I have space, but no room. You can enter, but you can\u2019t go outside. What am I?",
+            "answer": "A keyboard"
+        },
+        {
+            "id": 10,
+            "riddle": "I am always following you around and copying your every move, but you can never touch me or catch me. What am I?",
+            "answer": "Your shadow"
+        },
+        {
+            "id": 11,
+            "riddle": "What has a neck but no head?",
+            "answer": "A bottle"
+        },
+        {
+            "id": 12,
+            "riddle": "What gets wetter and wetter the more it dries?",
+            "answer": "A towel"
+        },
+        {
+            "id": 13,
+            "riddle": "Which weighs more: a pound of feathers or a pound of bricks?",
+            "answer": "Neither, they both weigh one pound"
+        },
+        {
+            "id": 14,
+            "riddle": "If a plane crashes on the border of the US and Canada, where do they bury the survivors?",
+            "answer": "You don't bury survivors"
+        },
+        {
+            "id": 15,
+            "riddle": "The more you take away from me, the larger I become. What am I?",
+            "answer": "A hole"
+        },
+        {
+            "id": 16,
+            "riddle": "What has hands, but cannot clap?",
+            "answer": "A clock"
+        },
+        {
+            "id": 17,
+            "riddle": "What has an eye, but cannot see?",
+            "answer": "A needle"
+        },
+        {
+            "id": 18,
+            "riddle": "What has to be broken before you can use it?",
+            "answer": "An egg"
+        },
+        {
+            "id": 19,
+            "riddle": "I\u2019m tall when I\u2019m young, and I\u2019m short when I\u2019m old. What am I?",
+            "answer": "A candle"
+        },
+        {
+            "id": 20,
+            "riddle": "What goes up but never comes down?",
+            "answer": "Your age"
+        },
+        {
+            "id": 21,
+            "riddle": "What can you break, even if you never pick it up or touch it?",
+            "answer": "A promise"
+        },
+        {
+            "id": 22,
+            "riddle": "What goes through cities and fields, but never moves?",
+            "answer": "A road"
+        },
+        {
+            "id": 23,
+            "riddle": "I have lakes with no water, mountains with no stone, and cities with no buildings. What am I?",
+            "answer": "A map"
+        },
+        {
+            "id": 24,
+            "riddle": "What can travel faster than the speed of light?",
+            "answer": "Darkness (or imagination)"
+        },
+        {
+            "id": 25,
+            "riddle": "What has teeth, but cannot bite?",
+            "answer": "A comb"
+        },
+        {
+            "id": 26,
+            "riddle": "What has many legs, but cannot walk?",
+            "answer": "A pair of trousers"
+        },
+        {
+            "id": 27,
+            "riddle": "What has a thumb and four fingers, but is not alive?",
+            "answer": "A glove"
+        },
+        {
+            "id": 28,
+            "riddle": "What can you catch, but not throw?",
+            "answer": "A cold"
+        },
+        {
+            "id": 29,
+            "riddle": "What gets bigger the more you take away?",
+            "answer": "A hole"
+        },
+        {
+            "id": 30,
+            "riddle": "Where does today come before yesterday?",
+            "answer": "In the dictionary"
+        },
+        {
+            "id": 31,
+            "riddle": "What has one horn and gives milk?",
+            "answer": "A milk truck"
+        },
+        {
+            "id": 32,
+            "riddle": "What goes up and down but doesn't move?",
+            "answer": "Stairs"
+        },
+        {
+            "id": 33,
+            "riddle": "What has legs, but doesn't walk?",
+            "answer": "A table"
+        },
+        {
+            "id": 34,
+            "riddle": "What runs all around a backyard, yet never moves?",
+            "answer": "A fence"
+        },
+        {
+            "id": 35,
+            "riddle": "What can fill a room but takes up no space?",
+            "answer": "Light"
+        },
+        {
+            "id": 36,
+            "riddle": "If you drop me I\u2019m sure to crack, but give me a smile and I\u2019ll always smile back. What am I?",
+            "answer": "A mirror"
+        },
+        {
+            "id": 37,
+            "riddle": "What has a spine, but no bones?",
+            "answer": "A book"
+        },
+        {
+            "id": 38,
+            "riddle": "What word is spelled wrong in every dictionary?",
+            "answer": "Wrong"
+        },
+        {
+            "id": 39,
+            "riddle": "What comes down but never goes up?",
+            "answer": "Rain"
+        },
+        {
+            "id": 40,
+            "riddle": "What has many keys but can't open a single lock?",
+            "answer": "A piano"
+        },
+        {
+            "id": 41,
+            "riddle": "What is light as a feather, yet the strongest person can't hold it for much longer than a minute?",
+            "answer": "Breath"
+        },
+        {
+            "id": 42,
+            "riddle": "What builds up castles, tears down mountains, makes some blind, helps others to see?",
+            "answer": "Sand"
+        },
+        {
+            "id": 43,
+            "riddle": "I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?",
+            "answer": "An echo"
+        },
+        {
+            "id": 44,
+            "riddle": "You measure my life in hours and I serve you by expiring. I\u2019m quick when I\u2019m thin and slow when I\u2019m fat. What am I?",
+            "answer": "A candle"
+        },
+        {
+            "id": 45,
+            "riddle": "What is always in front of you but can\u2019t be seen?",
+            "answer": "The future"
+        },
+        {
+            "id": 46,
+            "riddle": "There\u2019s a one-story house in which everything is yellow. What color are the stairs?",
+            "answer": "There are no stairs (it's a one-story house)"
+        },
+        {
+            "id": 47,
+            "riddle": "What can you keep after giving it to someone?",
+            "answer": "Your word"
+        },
+        {
+            "id": 48,
+            "riddle": "I have no voice, but I can tell you stories. I have no legs, but I can take you on journeys. What am I?",
+            "answer": "A book"
+        },
+        {
+            "id": 49,
+            "riddle": "What loses its head in the morning and gets it back at night?",
+            "answer": "A pillow"
+        },
+        {
+            "id": 50,
+            "riddle": "What has a heart that doesn\u2019t beat?",
+            "answer": "An artichoke"
+        },
+        {
+            "id": 51,
+            "riddle": "What tastes better than it smells?",
+            "answer": "A tongue"
+        },
+        {
+            "id": 52,
+            "riddle": "What leaves room in a house but takes up space in a town?",
+            "answer": "A street"
+        },
+        {
+            "id": 53,
+            "riddle": "What has many rings, but no fingers?",
+            "answer": "A tree"
+        },
+        {
+            "id": 54,
+            "riddle": "What begins with T, ends with T, and has T in it?",
+            "answer": "A teapot"
+        },
+        {
+            "id": 55,
+            "riddle": "What kind of coat is best put on wet?",
+            "answer": "A coat of paint"
+        },
+        {
+            "id": 56,
+            "riddle": "What has a bed but never sleeps, and runs but never walks?",
+            "answer": "A river"
+        },
+        {
+            "id": 57,
+            "riddle": "What ends everything?",
+            "answer": "The letter G"
+        },
+        {
+            "id": 58,
+            "riddle": "I am an odd number. Take away a letter and I become even. What number am I?",
+            "answer": "Seven (remove 's' to make 'even')"
+        },
+        {
+            "id": 59,
+            "riddle": "If two's a company, and three's a crowd, what are four and five?",
+            "answer": "Nine"
+        },
+        {
+            "id": 60,
+            "riddle": "What umbrella does a king use when it rains?",
+            "answer": "A wet one"
+        },
+        {
+            "id": 61,
+            "riddle": "What runs, but has no legs?",
+            "answer": "Water"
+        },
+        {
+            "id": 62,
+            "riddle": "What kind of band never plays music?",
+            "answer": "A rubber band"
+        },
+        {
+            "id": 63,
+            "riddle": "What has a head, a tail, is brown, and has no legs?",
+            "answer": "A penny"
+        },
+        {
+            "id": 64,
+            "riddle": "What passes before the sun without casting a shadow?",
+            "answer": "The wind"
+        },
+        {
+            "id": 65,
+            "riddle": "What goes up when rain comes down?",
+            "answer": "An umbrella"
+        },
+        {
+            "id": 66,
+            "riddle": "What gets sharper the more you use it?",
+            "answer": "Your brain"
+        },
+        {
+            "id": 67,
+            "riddle": "What four-letter word can be written forward, backward, or upside down, and can still be read from left to right?",
+            "answer": "NOON"
+        },
+        {
+            "id": 68,
+            "riddle": "What can you hold in your right hand, but never in your left hand?",
+            "answer": "Your left elbow"
+        },
+        {
+            "id": 69,
+            "riddle": "What asks no questions but requires many answers?",
+            "answer": "A doorbell"
+        },
+        {
+            "id": 70,
+            "riddle": "What has branches, but no fruit, trunk or leaves?",
+            "answer": "A bank"
+        },
+        {
+            "id": 71,
+            "riddle": "What can you hear, but not see or touch, even though you can control it?",
+            "answer": "Your voice"
+        },
+        {
+            "id": 72,
+            "riddle": "What never asks questions, but is often answered?",
+            "answer": "A phone"
+        },
+        {
+            "id": 73,
+            "riddle": "What is born in the ocean and dies in a teapot?",
+            "answer": "Tea leaves (or sea salt)"
+        },
+        {
+            "id": 74,
+            "riddle": "What has words, but never speaks?",
+            "answer": "A book"
+        },
+        {
+            "id": 75,
+            "riddle": "What flies without wings?",
+            "answer": "Time"
+        },
+        {
+            "id": 76,
+            "riddle": "What goes around the world, but stays in a corner?",
+            "answer": "A stamp"
+        },
+        {
+            "id": 77,
+            "riddle": "What has thousands of needles but cannot sew?",
+            "answer": "A porcupine (or a pine tree)"
+        },
+        {
+            "id": 78,
+            "riddle": "If I have it, I don\u2019t share it. If I share it, I don\u2019t have it. What is it?",
+            "answer": "A secret"
+        },
+        {
+            "id": 79,
+            "riddle": "What can you break without touch?",
+            "answer": "A promise"
+        },
+        {
+            "id": 80,
+            "riddle": "What is so delicate that saying its name breaks it?",
+            "answer": "Silence"
+        },
+        {
+            "id": 81,
+            "riddle": "I am not alive, but I grow; I don't have lungs, but I need air; I don't have a mouth, but water kills me. What am I?",
+            "answer": "Fire"
+        },
+        {
+            "id": 82,
+            "riddle": "What five-letter word becomes shorter when you add two letters to it?",
+            "answer": "Short"
+        },
+        {
+            "id": 83,
+            "riddle": "What has a face and two hands but no arms or legs?",
+            "answer": "A clock"
+        },
+        {
+            "id": 84,
+            "riddle": "What was the highest mountain on Earth before Mount Everest was discovered?",
+            "answer": "Mount Everest (it just hadn't been discovered yet)"
+        },
+        {
+            "id": 85,
+            "riddle": "What is red and smells like blue paint?",
+            "answer": "Red paint"
+        },
+        {
+            "id": 86,
+            "riddle": "What travels faster: heat or cold?",
+            "answer": "Heat, because you can easily catch a cold"
+        },
+        {
+            "id": 87,
+            "riddle": "What has a thumb, but no fingers?",
+            "answer": "A mitten"
+        },
+        {
+            "id": 88,
+            "riddle": "What is black when you buy it, red when you use it, and gray when you throw it away?",
+            "answer": "Charcoal"
+        },
+        {
+            "id": 89,
+            "riddle": "What can you throw out when you want to use it, and take in when you're done?",
+            "answer": "An anchor"
+        },
+        {
+            "id": 90,
+            "riddle": "What can run but never walks, has a mouth but never talks, has a head but never weeps, has a bed but never sleeps?",
+            "answer": "A river"
+        },
+        {
+            "id": 91,
+            "riddle": "What has a ring, but no finger?",
+            "answer": "A telephone"
+        },
+        {
+            "id": 92,
+            "riddle": "Where can you find cities, towns, shops, and streets but no people?",
+            "answer": "On a map"
+        },
+        {
+            "id": 93,
+            "riddle": "What has 13 hearts, but no other organs?",
+            "answer": "A deck of cards"
+        },
+        {
+            "id": 94,
+            "riddle": "What word in the dictionary is spelled incorrectly?",
+            "answer": "Incorrectly"
+        },
+        {
+            "id": 95,
+            "riddle": "I have cities, but no houses. I have mountains, but no trees. I have water, but no fish. What am I?",
+            "answer": "A map"
+        },
+        {
+            "id": 96,
+            "riddle": "What comes at the end of everything?",
+            "answer": "The letter G"
+        },
+        {
+            "id": 97,
+            "riddle": "What key can\u2019t open any door?",
+            "answer": "A donkey (or a monkey / turkey / piano key)"
+        },
+        {
+            "id": 98,
+            "riddle": "What can fill an entire room without taking up any space?",
+            "answer": "Light"
+        },
+        {
+            "id": 99,
+            "riddle": "What gets bigger the more you take away from it?",
+            "answer": "A hole"
+        },
+        {
+            "id": 100,
+            "riddle": "What belongs to you, but everyone else uses it more than you?",
+            "answer": "Your name"
+        }
+    ]
+}

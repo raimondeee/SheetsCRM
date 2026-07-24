@@ -7,6 +7,7 @@ import { createDefaultCoverSheetEntries } from "@/lib/cover-sheets";
 import { prepareSheetConfig } from "@/lib/ui-field-slots";
 import { ChevronDown } from "lucide-react";
 import { mergeAnalyzedSheetConfig, SheetMappingPanel } from "./SheetMappingPanel";
+import { TeamSourcesPanel } from "./TeamSourcesPanel";
 
 interface EntryDraft {
   sheetUrl: string;
@@ -40,6 +41,7 @@ export function CoverSheetsPanel({ onSaved }: { onSaved?: () => void }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [teamDashboardSourcesOpen, setTeamDashboardSourcesOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -188,6 +190,20 @@ export function CoverSheetsPanel({ onSaved }: { onSaved?: () => void }) {
           {enabledCount} of {entries.length} slots enabled.
         </p>
       </div>
+      <section className="rounded border border-zendesk-border bg-gray-50 p-3">
+        <h4 className="text-sm font-semibold text-zendesk-navy">Team dashboard reporting sources</h4>
+        <p className="mt-1 text-xs text-zendesk-muted">
+          Choose the teammate sheets included in Team Dashboard reporting. These sources are read
+          only and do not affect inbox coverage below.
+        </p>
+        <button
+          type="button"
+          onClick={() => setTeamDashboardSourcesOpen(true)}
+          className="mt-3 rounded border border-zendesk-border bg-white px-3 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50"
+        >
+          Configure reporting sources
+        </button>
+      </section>
 
       <div className="space-y-2">
         {entries.map((entry) => {
@@ -283,6 +299,11 @@ export function CoverSheetsPanel({ onSaved }: { onSaved?: () => void }) {
           {saving ? "Saving…" : "Save team coverage"}
         </button>
       </div>
+      <TeamSourcesPanel
+        open={teamDashboardSourcesOpen}
+        onClose={() => setTeamDashboardSourcesOpen(false)}
+        onSaved={onSaved}
+      />
     </div>
   );
 }

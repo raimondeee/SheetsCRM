@@ -9,6 +9,7 @@
     "lint": "next lint",
     "db:migrate": "node scripts/init-db.mjs",
     "share:export": "bash scripts/create-shareable-copy.sh",
+    "share:team-dashboard": "bash scripts/create-team-dashboard-share.sh",
     "docs:richtext": "node scripts/export-docs-richtext.mjs"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "googleapis": "^144.0.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
     "next": "^15.1.0",
     "react": "^19.0.0",

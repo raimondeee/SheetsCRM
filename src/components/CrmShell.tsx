@@ -23,6 +23,8 @@ import { PreferencesModal } from "./PreferencesModal";
 import { CrmDebugLogPanel } from "./CrmDebugLogPanel";
 import { CalendarReminderToast } from "./CalendarReminderToast";
 import { CalendarReminderModal } from "./CalendarReminderModal";
+import { WellnessContentModal } from "./WellnessContentModal";
+import { PomodoroBreakModal } from "./PomodoroBreakModal";
 import { UnreadInboxModal } from "./UnreadInboxModal";
 import { HelpOverlay } from "./HelpOverlay";
 import { appendAdminNoteToText } from "@/lib/admin-notes";
@@ -43,6 +45,8 @@ import { usePendingSendQueue } from "@/hooks/usePendingSendQueue";
 import { usePersistedWidth, useResponsivePanelMax } from "@/hooks/usePersistedWidth";
 import { useRefreshCountdown } from "@/hooks/useRefreshCountdown";
 import { useCalendarReminders } from "@/hooks/useCalendarReminders";
+import { useCaseBreakWellness } from "@/hooks/useCaseBreakWellness";
+import { usePomodoroBreakReminders } from "@/hooks/usePomodoroBreakReminders";
 import { useTicketChimeUnlock } from "@/hooks/useTicketChime";
 import {
   configureNotificationSounds,
@@ -178,6 +182,21 @@ export function CrmShell() {
   const [externalTools, setExternalTools] = useState(DEFAULT_USER_PREFERENCES.externalTools);
   const [calendarReminderFullscreen, setCalendarReminderFullscreen] = useState(
     DEFAULT_USER_PREFERENCES.calendarReminderFullscreen
+  );
+  const [caseBreaksEnabled, setCaseBreaksEnabled] = useState(
+    DEFAULT_USER_PREFERENCES.caseBreaksEnabled
+  );
+  const [caseBreakThreshold, setCaseBreakThreshold] = useState(
+    DEFAULT_USER_PREFERENCES.caseBreakThreshold
+  );
+  const [wellnessContentIds, setWellnessContentIds] = useState(
+    DEFAULT_USER_PREFERENCES.wellnessContentIds
+  );
+  const [pomodoroBreaksEnabled, setPomodoroBreaksEnabled] = useState(
+    DEFAULT_USER_PREFERENCES.pomodoroBreaksEnabled
+  );
+  const [pomodoroScheduleId, setPomodoroScheduleId] = useState(
+    DEFAULT_USER_PREFERENCES.pomodoroScheduleId
   );
   const [countdownResetKey, setCountdownResetKey] = useState(0);
   const sourceRef = useRef(source);
@@ -321,6 +340,17 @@ export function CrmShell() {
     calendarReminderFullscreen ? "fullscreen" : "toast"
   );
 
+  const caseBreakWellness = useCaseBreakWellness({
+    enabled: caseBreaksEnabled,
+    threshold: caseBreakThreshold,
+    contentIds: wellnessContentIds,
+  });
+
+  const pomodoroBreaks = usePomodoroBreakReminders({
+    enabled: pomodoroBreaksEnabled,
+    scheduleId: pomodoroScheduleId,
+  });
+
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -345,6 +375,11 @@ export function CrmShell() {
       setInitialResponseHours(prefs.initialResponseHours);
       setExternalTools(prefs.externalTools);
       setCalendarReminderFullscreen(prefs.calendarReminderFullscreen);
+      setCaseBreaksEnabled(prefs.caseBreaksEnabled);
+      setCaseBreakThreshold(prefs.caseBreakThreshold);
+      setWellnessContentIds(prefs.wellnessContentIds);
+      setPomodoroBreaksEnabled(prefs.pomodoroBreaksEnabled);
+      setPomodoroScheduleId(prefs.pomodoroScheduleId);
       setPrefsLoaded(true);
     })();
     return () => {
@@ -553,6 +588,11 @@ export function CrmShell() {
     setInitialResponseHours(prefs.initialResponseHours);
     setExternalTools(prefs.externalTools);
     setCalendarReminderFullscreen(prefs.calendarReminderFullscreen);
+    setCaseBreaksEnabled(prefs.caseBreaksEnabled);
+    setCaseBreakThreshold(prefs.caseBreakThreshold);
+    setWellnessContentIds(prefs.wellnessContentIds);
+    setPomodoroBreaksEnabled(prefs.pomodoroBreaksEnabled);
+    setPomodoroScheduleId(prefs.pomodoroScheduleId);
     setPreferencesOpen(false);
     void loadTickets({ silent: true, reason: "manual" });
   }
@@ -769,6 +809,9 @@ export function CrmShell() {
     onShowInboxVictory: showInboxVictory,
     onRestoreSentTicket: restoreSentTicket,
     onThreadUpdate: handleThreadUpdate,
+    onSendSucceeded: () => {
+      caseBreakWellness.recordSuccessfulSend();
+    },
   });
 
   function handleSelectTicket(rowId: string) {
@@ -1455,6 +1498,21 @@ export function CrmShell() {
             />
           </div>
         ))}
+
+      {caseBreakWellness.overlay && (
+        <WellnessContentModal
+          item={caseBreakWellness.overlay.item}
+          milestoneCount={caseBreakWellness.overlay.milestoneCount}
+          onDismiss={caseBreakWellness.dismiss}
+        />
+      )}
+
+      {pomodoroBreaks.overlay && (
+        <PomodoroBreakModal
+          schedule={pomodoroBreaks.overlay}
+          onDismiss={pomodoroBreaks.dismiss}
+        />
+      )}
 
       {pendingSendQueue.sendError &&
         pendingSendQueue.sendError.rowId !== selected?.rowId && (

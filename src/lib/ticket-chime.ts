@@ -118,8 +118,9 @@ export function playTicketChime(): void {
   }
 }
 
-/** Three-tone alert for upcoming calendar events. */
+/** @deprecated Prefer playCalendarReminderSound from notification-sounds. */
 export function playCalendarReminderSound(): void {
+  // Kept for legacy imports; calendar alerts use configured preference sounds.
   const ctx = getAudioContext();
   if (!ctx || ctx.state !== "running") return;
 

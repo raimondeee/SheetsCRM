@@ -10,22 +10,39 @@ import {
   type ExternalToolLink,
 } from "@/lib/external-tools";
 import {
+  BUILTIN_CALENDAR_SOUNDS,
   BUILTIN_INBOUND_SOUNDS,
   BUILTIN_OUTBOUND_SOUNDS,
+  DEFAULT_CALENDAR_SOUND_ID,
   DEFAULT_INBOUND_SOUND_ID,
   DEFAULT_OUTBOUND_SOUND_ID,
   MAX_CUSTOM_SOUND_BYTES,
   MAX_CUSTOM_SOUNDS,
+  SOUND_CALENDAR_ID,
   SOUND_CLASSIC_ID,
   SOUND_OFF_ID,
   playSoundById,
   type CustomSoundRecord,
+  type SoundChannel,
 } from "@/lib/notification-sounds";
 import {
   DEFAULT_USER_PREFERENCES,
   type UserPreferences,
   saveUserPreferences,
 } from "@/lib/user-preferences";
+import {
+  clearAttachmentDownloadFolder,
+  getAttachmentDownloadFolderInfo,
+  isAttachmentFolderPickerSupported,
+  pickAttachmentDownloadFolder,
+  readAttachmentFolderDisplayName,
+} from "@/lib/attachment-download-folder";
+import {
+  POMODORO_SCHEDULES,
+  WELLNESS_CONTENT_SOURCES,
+  type WellnessContentSourceId,
+} from "@/lib/wellness-content";
+import type { CaseBreakThreshold } from "@/lib/wellness-preferences";
 
 interface PreferencesModalProps {
   preferences: UserPreferences;
@@ -53,6 +70,9 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     preferences.initialResponseHours
   );
   const [defaultSlaHours, setDefaultSlaHours] = useState(preferences.defaultSlaHours);
+  const [resolvedGmailPollHours, setResolvedGmailPollHours] = useState(
+    preferences.resolvedGmailPollHours
+  );
   const [resolvedGmailLinkArchiveDays, setResolvedGmailLinkArchiveDays] = useState(
     preferences.resolvedGmailLinkArchiveDays
   );
@@ -68,11 +88,26 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
   );
   const [inboundSoundId, setInboundSoundId] = useState(preferences.inboundSoundId);
   const [outboundSoundId, setOutboundSoundId] = useState(preferences.outboundSoundId);
+  const [calendarSoundId, setCalendarSoundId] = useState(preferences.calendarSoundId);
+  const [caseBreaksEnabled, setCaseBreaksEnabled] = useState(preferences.caseBreaksEnabled);
+  const [caseBreakThreshold, setCaseBreakThreshold] = useState<CaseBreakThreshold>(
+    preferences.caseBreakThreshold
+  );
+  const [wellnessContentIds, setWellnessContentIds] = useState(preferences.wellnessContentIds);
+  const [pomodoroBreaksEnabled, setPomodoroBreaksEnabled] = useState(
+    preferences.pomodoroBreaksEnabled
+  );
+  const [pomodoroScheduleId, setPomodoroScheduleId] = useState(preferences.pomodoroScheduleId);
   const [customSounds, setCustomSounds] = useState<CustomSoundRecord[]>([]);
   const [soundsLoading, setSoundsLoading] = useState(true);
   const [soundError, setSoundError] = useState<string | null>(null);
   const [uploadingSound, setUploadingSound] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachmentFolderName, setAttachmentFolderName] = useState<string | null>(() =>
+    readAttachmentFolderDisplayName()
+  );
+  const [attachmentFolderBusy, setAttachmentFolderBusy] = useState(false);
+  const [attachmentFolderError, setAttachmentFolderError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +134,52 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     };
   }, []);
 
+  useEffect(() => {
+    if (!isAttachmentFolderPickerSupported()) return;
+    let cancelled = false;
+    void getAttachmentDownloadFolderInfo()
+      .then((info) => {
+        if (!cancelled) setAttachmentFolderName(info?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setAttachmentFolderName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function chooseAttachmentFolder() {
+    setAttachmentFolderError(null);
+    setAttachmentFolderBusy(true);
+    try {
+      const info = await pickAttachmentDownloadFolder();
+      setAttachmentFolderName(info.name);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setAttachmentFolderError(
+        err instanceof Error ? err.message : "Could not choose attachment folder"
+      );
+    } finally {
+      setAttachmentFolderBusy(false);
+    }
+  }
+
+  async function removeAttachmentFolder() {
+    setAttachmentFolderError(null);
+    setAttachmentFolderBusy(true);
+    try {
+      await clearAttachmentDownloadFolder();
+      setAttachmentFolderName(null);
+    } catch (err) {
+      setAttachmentFolderError(
+        err instanceof Error ? err.message : "Could not clear attachment folder"
+      );
+    } finally {
+      setAttachmentFolderBusy(false);
+    }
+  }
+
   async function handleSave() {
     const prefs: UserPreferences = {
       defaultStatusFilter: defaultView,
@@ -110,6 +191,7 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       longtermHoldReopenDays,
       initialResponseHours,
       defaultSlaHours,
+      resolvedGmailPollHours,
       resolvedGmailLinkArchiveDays,
       externalTools,
       calendarReminderFullscreen,
@@ -117,6 +199,12 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       unreadInboxAppendToSelectedEnabled,
       inboundSoundId,
       outboundSoundId,
+      calendarSoundId,
+      caseBreaksEnabled,
+      caseBreakThreshold,
+      wellnessContentIds,
+      pomodoroBreaksEnabled,
+      pomodoroScheduleId,
     };
     setSaving(true);
     setError(null);
@@ -140,6 +228,7 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     setLongtermHoldReopenDays(DEFAULT_USER_PREFERENCES.longtermHoldReopenDays);
     setInitialResponseHours(DEFAULT_USER_PREFERENCES.initialResponseHours);
     setDefaultSlaHours(DEFAULT_USER_PREFERENCES.defaultSlaHours);
+    setResolvedGmailPollHours(DEFAULT_USER_PREFERENCES.resolvedGmailPollHours);
     setResolvedGmailLinkArchiveDays(DEFAULT_USER_PREFERENCES.resolvedGmailLinkArchiveDays);
     setExternalTools(DEFAULT_USER_PREFERENCES.externalTools);
     setCalendarReminderFullscreen(DEFAULT_USER_PREFERENCES.calendarReminderFullscreen);
@@ -147,6 +236,18 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     setUnreadInboxAppendToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled);
     setInboundSoundId(DEFAULT_USER_PREFERENCES.inboundSoundId);
     setOutboundSoundId(DEFAULT_USER_PREFERENCES.outboundSoundId);
+    setCalendarSoundId(DEFAULT_USER_PREFERENCES.calendarSoundId);
+    setCaseBreaksEnabled(DEFAULT_USER_PREFERENCES.caseBreaksEnabled);
+    setCaseBreakThreshold(DEFAULT_USER_PREFERENCES.caseBreakThreshold);
+    setWellnessContentIds(DEFAULT_USER_PREFERENCES.wellnessContentIds);
+    setPomodoroBreaksEnabled(DEFAULT_USER_PREFERENCES.pomodoroBreaksEnabled);
+    setPomodoroScheduleId(DEFAULT_USER_PREFERENCES.pomodoroScheduleId);
+  }
+
+  function toggleWellnessContentId(id: WellnessContentSourceId) {
+    setWellnessContentIds((prev) =>
+      prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]
+    );
   }
 
   function updateExternalTool(index: number, field: keyof ExternalToolLink, value: string) {
@@ -197,22 +298,39 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       const prefId = customPreferenceId(id);
       if (inboundSoundId === prefId) setInboundSoundId(DEFAULT_USER_PREFERENCES.inboundSoundId);
       if (outboundSoundId === prefId) setOutboundSoundId(DEFAULT_USER_PREFERENCES.outboundSoundId);
+      if (calendarSoundId === prefId) setCalendarSoundId(DEFAULT_USER_PREFERENCES.calendarSoundId);
     } catch (err) {
       setSoundError(err instanceof Error ? err.message : "Failed to delete sound");
     }
   }
 
   function renderSoundSelect(
-    channel: "inbound" | "outbound",
+    channel: SoundChannel,
     value: string,
     onChange: (id: string) => void
   ) {
-    const builtins = channel === "inbound" ? BUILTIN_INBOUND_SOUNDS : BUILTIN_OUTBOUND_SOUNDS;
-    const fallback = channel === "inbound" ? DEFAULT_INBOUND_SOUND_ID : DEFAULT_OUTBOUND_SOUND_ID;
+    const builtins =
+      channel === "calendar"
+        ? BUILTIN_CALENDAR_SOUNDS
+        : channel === "inbound"
+          ? BUILTIN_INBOUND_SOUNDS
+          : BUILTIN_OUTBOUND_SOUNDS;
+    const fallback =
+      channel === "calendar"
+        ? DEFAULT_CALENDAR_SOUND_ID
+        : channel === "inbound"
+          ? DEFAULT_INBOUND_SOUND_ID
+          : DEFAULT_OUTBOUND_SOUND_ID;
+    const allBuiltins = [
+      ...BUILTIN_INBOUND_SOUNDS,
+      ...BUILTIN_OUTBOUND_SOUNDS,
+      ...BUILTIN_CALENDAR_SOUNDS,
+    ];
     const known =
       value === SOUND_OFF_ID ||
-      (channel === "inbound" && value === SOUND_CLASSIC_ID) ||
-      builtins.some((s) => s.id === value) ||
+      value === SOUND_CLASSIC_ID ||
+      value === SOUND_CALENDAR_ID ||
+      allBuiltins.some((s) => s.id === value) ||
       customSounds.some((s) => customPreferenceId(s.id) === value);
     const selectValue = known ? value : fallback;
 
@@ -239,7 +357,25 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
               ))}
             </optgroup>
           )}
+          {known &&
+            !builtins.some((s) => s.id === selectValue) &&
+            selectValue !== SOUND_OFF_ID &&
+            selectValue !== SOUND_CLASSIC_ID &&
+            selectValue !== SOUND_CALENDAR_ID &&
+            !customSounds.some((s) => customPreferenceId(s.id) === selectValue) && (
+              <optgroup label="Current">
+                <option value={selectValue}>
+                  {allBuiltins.find((s) => s.id === selectValue)?.label ?? "Saved sound"}
+                </option>
+              </optgroup>
+            )}
           <optgroup label="Other">
+            {channel === "calendar" && (
+              <>
+                <option value={SOUND_CALENDAR_ID}>Generated calendar chime</option>
+                <option value={SOUND_CLASSIC_ID}>Classic chime</option>
+              </>
+            )}
             {channel === "inbound" && (
               <option value={SOUND_CLASSIC_ID}>Classic chime</option>
             )}
@@ -248,8 +384,8 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
         </select>
         <button
           type="button"
-          onClick={() => previewSound(value)}
-          disabled={value === SOUND_OFF_ID}
+          onClick={() => previewSound(selectValue)}
+          disabled={selectValue === SOUND_OFF_ID}
           title="Preview sound"
           aria-label="Preview sound"
           className="inline-flex shrink-0 items-center gap-1.5 rounded border border-zendesk-border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
@@ -287,7 +423,8 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
           <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
             <legend className="px-1 text-sm font-medium">Notification sounds</legend>
             <p className="text-xs text-zendesk-muted">
-              Choose sounds for new inbound tickets and outbound sends. Preview before saving.
+              Choose sounds for inbound tickets, outbound sends, and calendar popups. Preview before
+              saving.
             </p>
 
             {soundError && (
@@ -313,6 +450,16 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
               </p>
               <div className="mt-2">
                 {renderSoundSelect("outbound", outboundSoundId, setOutboundSoundId)}
+              </div>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">Calendar popup</span>
+              <p className="mt-0.5 text-xs text-zendesk-muted">
+                Plays when a calendar reminder toast or full-screen popup appears
+              </p>
+              <div className="mt-2">
+                {renderSoundSelect("calendar", calendarSoundId, setCalendarSoundId)}
               </div>
             </label>
 
@@ -454,6 +601,22 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">Resolved Gmail poll frequency</span>
+              <p className="mt-0.5 text-xs text-zendesk-muted">
+                How often (in hours) to check Gmail for customer replies on Resolved tickets that
+                still have a linked thread (Resolve &amp; Close does not poll)
+              </p>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={resolvedGmailPollHours}
+                onChange={(e) => setResolvedGmailPollHours(Number(e.target.value))}
+                className="mt-2 w-full rounded border border-zendesk-border px-3 py-2 text-sm"
+              />
             </label>
 
             <label className="block text-sm">
@@ -602,6 +765,179 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
                 </p>
               </span>
             </label>
+          </fieldset>
+
+          <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
+            <legend className="px-1 text-sm font-medium">Health & productivity</legend>
+            <p className="text-xs text-zendesk-muted">
+              Optional break prompts after case sends and timed movement reminders (from the office
+              break schedule). All features are off until you enable them.
+            </p>
+
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={caseBreaksEnabled}
+                onChange={(e) => setCaseBreaksEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Case milestone overlays</span>
+                <p className="mt-0.5 text-xs text-zendesk-muted">
+                  After every 5 or 10 successful sends (Send only, Send/Pending, or Send/Resolved),
+                  show a cyan/blue content break. Riddle answers stay hidden until Reveal.
+                </p>
+              </span>
+            </label>
+
+            {caseBreaksEnabled && (
+              <div className="ml-7 space-y-3 border-l border-zendesk-border pl-3">
+                <fieldset className="text-sm">
+                  <legend className="font-medium">Show after</legend>
+                  <div className="mt-2 flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="caseBreakThreshold"
+                        checked={caseBreakThreshold === 5}
+                        onChange={() => setCaseBreakThreshold(5)}
+                      />
+                      5 cases
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="caseBreakThreshold"
+                        checked={caseBreakThreshold === 10}
+                        onChange={() => setCaseBreakThreshold(10)}
+                      />
+                      10 cases
+                    </label>
+                  </div>
+                </fieldset>
+
+                <fieldset className="text-sm">
+                  <legend className="font-medium">Content packs</legend>
+                  <p className="mt-0.5 text-xs text-zendesk-muted">
+                    Choose one or more JSON packs to rotate through. At least one is required for
+                    overlays to appear.
+                  </p>
+                  <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto pr-1">
+                    {WELLNESS_CONTENT_SOURCES.map((source) => (
+                      <li key={source.id}>
+                        <label className="flex cursor-pointer items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={wellnessContentIds.includes(source.id)}
+                            onChange={() => toggleWellnessContentId(source.id)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium">{source.label}</span>
+                            <p className="text-xs text-zendesk-muted">{source.description}</p>
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </fieldset>
+              </div>
+            )}
+
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={pomodoroBreaksEnabled}
+                onChange={(e) => setPomodoroBreaksEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Movement / Pomodoro reminders</span>
+                <p className="mt-0.5 text-xs text-zendesk-muted">
+                  Emerald overlay prompts to stand and move on a work/break schedule. Runs while this
+                  tab is active.
+                </p>
+              </span>
+            </label>
+
+            {pomodoroBreaksEnabled && (
+              <div className="ml-7 space-y-2 border-l border-zendesk-border pl-3">
+                <label className="block text-sm">
+                  <span className="font-medium">Break schedule</span>
+                  <select
+                    value={pomodoroScheduleId}
+                    onChange={(e) =>
+                      setPomodoroScheduleId(
+                        e.target.value as typeof pomodoroScheduleId
+                      )
+                    }
+                    className="mt-2 w-full rounded border border-zendesk-border px-3 py-2 text-sm"
+                  >
+                    {POMODORO_SCHEDULES.map((schedule) => (
+                      <option key={schedule.id} value={schedule.id}>
+                        {schedule.label} — {schedule.nickname} ({schedule.movement})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {POMODORO_SCHEDULES.filter((s) => s.id === pomodoroScheduleId).map((schedule) => (
+                  <p key={schedule.id} className="text-xs text-zendesk-muted">
+                    {schedule.benefit} · {schedule.dailyActivity}
+                  </p>
+                ))}
+              </div>
+            )}
+          </fieldset>
+
+          <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
+            <legend className="px-1 text-sm font-medium">Attachment downloads</legend>
+            <p className="text-xs text-zendesk-muted">
+              Choose a folder on this computer. Ticket attachments save into{" "}
+              <code className="text-[11px]">Row {"{n}"}</code> subfolders (Chrome / Edge). Without
+              a folder, files download normally.
+            </p>
+            {!isAttachmentFolderPickerSupported() ? (
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Folder picker is not available in this browser. Use Chrome or Edge to enable
+                row-folder saves.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  <span className="font-medium">Current folder: </span>
+                  {attachmentFolderName ? (
+                    <span className="font-mono text-xs">{attachmentFolderName}</span>
+                  ) : (
+                    <span className="text-zendesk-muted">None (browser Downloads)</span>
+                  )}
+                </p>
+                {attachmentFolderError && (
+                  <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {attachmentFolderError}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void chooseAttachmentFolder()}
+                    disabled={attachmentFolderBusy}
+                    className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {attachmentFolderName ? "Change folder…" : "Choose folder…"}
+                  </button>
+                  {attachmentFolderName && (
+                    <button
+                      type="button"
+                      onClick={() => void removeAttachmentFolder()}
+                      disabled={attachmentFolderBusy}
+                      className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      Clear folder
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </fieldset>
 
           <fieldset className="space-y-3 rounded border border-zendesk-border p-3">

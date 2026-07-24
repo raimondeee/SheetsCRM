@@ -1,0 +1,17 @@
+{
+  "spreadsheetId": "YOUR_TEAM_SPREADSHEET_ID",
+  "sources": [
+    {
+      "id": "example-region",
+      "region": "Example Region",
+      "sheetName": "Sheet1",
+      "gid": "0",
+      "columns": {
+        "timestamp": "A",
+        "status": "B",
+        "owner": "C",
+        "category": "D"
+      }
+    }
+  ]
+}

@@ -24,6 +24,8 @@ interface UsePendingSendQueueOptions {
   onShowInboxVictory: () => void;
   onRestoreSentTicket: (rowId: string) => void;
   onThreadUpdate: () => void;
+  /** Fires after a successful send (Send only / Pending / Resolved). */
+  onSendSucceeded?: (status: StatusAfterSend) => void;
 }
 
 export function usePendingSendQueue({
@@ -32,6 +34,7 @@ export function usePendingSendQueue({
   onShowInboxVictory,
   onRestoreSentTicket,
   onThreadUpdate,
+  onSendSucceeded,
 }: UsePendingSendQueueOptions) {
   const [pendingSend, setPendingSend] = useState(false);
   const [sending, setSending] = useState(false);
@@ -55,6 +58,7 @@ export function usePendingSendQueue({
   const onShowInboxVictoryRef = useRef(onShowInboxVictory);
   const onRestoreSentTicketRef = useRef(onRestoreSentTicket);
   const onThreadUpdateRef = useRef(onThreadUpdate);
+  const onSendSucceededRef = useRef(onSendSucceeded);
 
   useEffect(() => {
     onTicketSentRef.current = onTicketSent;
@@ -62,7 +66,15 @@ export function usePendingSendQueue({
     onShowInboxVictoryRef.current = onShowInboxVictory;
     onRestoreSentTicketRef.current = onRestoreSentTicket;
     onThreadUpdateRef.current = onThreadUpdate;
-  }, [onTicketSent, onAdvanceAfterSend, onShowInboxVictory, onRestoreSentTicket, onThreadUpdate]);
+    onSendSucceededRef.current = onSendSucceeded;
+  }, [
+    onTicketSent,
+    onAdvanceAfterSend,
+    onShowInboxVictory,
+    onRestoreSentTicket,
+    onThreadUpdate,
+    onSendSucceeded,
+  ]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -124,6 +136,7 @@ export function usePendingSendQueue({
       }
       clearReplyDraft(ticketRowId);
       await onTicketSentRef.current(ticketRowId, statusAfterSend);
+      onSendSucceededRef.current?.(statusAfterSend);
       if (!isMountedRef.current) return;
       onThreadUpdateRef.current();
       if (showVictoryAfterSend) {

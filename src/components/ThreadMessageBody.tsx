@@ -1,11 +1,19 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 import { looksLikeHtml, sanitizeEmailHtml } from "@/lib/html-utils";
 
 interface ThreadMessageBodyProps {
   body: string;
   className?: string;
+}
+
+function hasActiveTextSelection(container: HTMLElement): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+  if (!selection.toString()) return false;
+  const anchor = selection.anchorNode;
+  return Boolean(anchor && container.contains(anchor));
 }
 
 function openThreadLinkInNewTab(event: MouseEvent<HTMLElement>) {
@@ -18,6 +26,8 @@ function openThreadLinkInNewTab(event: MouseEvent<HTMLElement>) {
     return;
   }
   if (event.button !== 0) return;
+  // Selecting text that includes a link must not navigate / clear the selection.
+  if (hasActiveTextSelection(event.currentTarget)) return;
   event.preventDefault();
   window.open(anchor.href, "_blank", "noopener,noreferrer");
 }
@@ -27,7 +37,7 @@ function openThreadLinkInNewTab(event: MouseEvent<HTMLElement>) {
  * HTML bodies keep draft/Gmail spacing + formatting; plain text uses pre-wrap.
  * Links always open in a new tab.
  */
-export function ThreadMessageBody({ body, className = "" }: ThreadMessageBodyProps) {
+function ThreadMessageBodyComponent({ body, className = "" }: ThreadMessageBodyProps) {
   const trimmed = body.trim();
   if (!trimmed) return null;
 
@@ -45,3 +55,5 @@ export function ThreadMessageBody({ body, className = "" }: ThreadMessageBodyPro
     <p className={`mt-2 whitespace-pre-wrap text-sm ${className}`.trim()}>{body}</p>
   );
 }
+
+export const ThreadMessageBody = memo(ThreadMessageBodyComponent);

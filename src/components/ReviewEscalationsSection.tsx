@@ -21,7 +21,10 @@ import {
   formatReviewEscalationReportPlain,
 } from "@/lib/dashboard-report-export";
 import { chartColor } from "@/lib/dashboard-stats";
-import { DashboardReportMenu } from "./DashboardReportMenu";
+import {
+  DashboardReportMenu,
+  type DashboardImageSection,
+} from "./DashboardReportMenu";
 import {
   QualityChartCard,
   QualityEmptyChart,
@@ -56,13 +59,11 @@ export function ReviewEscalationsSection({
   const [error, setError] = useState<string | null>(null);
   const info = reviewEscalationInfoText();
   const sources = qualityReportSourceLinks();
-  const exportRef = useRef<HTMLDivElement>(null);
+  const reviewPrintRef = useRef<HTMLDivElement>(null);
+  const overviewImageRef = useRef<HTMLDivElement>(null);
+  const chartsImageRef = useRef<HTMLDivElement>(null);
   const csvFilename = useMemo(
     () => `review-escalations-${period}.csv`.replace(/[^a-z0-9._-]+/gi, "-"),
-    [period]
-  );
-  const pdfFilename = useMemo(
-    () => `review-escalations-${period}.pdf`.replace(/[^a-z0-9._-]+/gi, "-"),
     [period]
   );
 
@@ -133,6 +134,18 @@ export function ReviewEscalationsSection({
   ].filter((d) => d.value > 0);
 
   const singleTeamView = metrics.teamFilter !== "all";
+  const imageSections: DashboardImageSection[] = [
+    {
+      filename: `01-review-escalations-overview-${period}.png`.replace(/[^a-z0-9._-]+/gi, "-"),
+      label: "Review escalation overview",
+      getElement: () => overviewImageRef.current,
+    },
+    {
+      filename: `02-review-escalations-charts-${period}.png`.replace(/[^a-z0-9._-]+/gi, "-"),
+      label: "Review escalation charts",
+      getElement: () => chartsImageRef.current,
+    },
+  ];
 
   return (
     <section className="mt-6 space-y-4">
@@ -142,8 +155,8 @@ export function ReviewEscalationsSection({
           showSectionExport ? (
             <DashboardReportMenu
               csvFilename={csvFilename}
-              pdfFilename={pdfFilename}
-              pdfTargetRef={exportRef}
+              printTargetRef={reviewPrintRef}
+              imageSections={imageSections}
               buildCsv={() => formatReviewEscalationCsv(metrics)}
               buildPlainReport={() => formatReviewEscalationReportPlain(metrics)}
               buildHtmlReport={() => formatReviewEscalationReportHtml(metrics)}
@@ -166,7 +179,8 @@ export function ReviewEscalationsSection({
         </p>
       </QualitySectionHeader>
 
-      <div ref={exportRef} className="space-y-4">
+      <div ref={reviewPrintRef} className="space-y-4">
+      <div ref={overviewImageRef} className="space-y-4">
       <QualityReportFilterBar>
         <QualityReportFilterSelect
           label="Team"
@@ -206,8 +220,9 @@ export function ReviewEscalationsSection({
           </p>
         </QualityMetricCard>
       </div>
+      </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div ref={chartsImageRef} className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <QualityChartCard title="Outcomes" subtitle="Action in period" info={info.outcomes}>
           {outcomeChartData.length === 0 ? (
             <QualityEmptyChart />

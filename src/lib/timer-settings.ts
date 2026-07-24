@@ -8,6 +8,8 @@ export interface TimerSettings {
   initialResponseHours: number;
   /** Default Response SLA hours — due time is anchored on the customer's last message. */
   defaultSlaHours: number;
+  /** How often to poll Gmail for reopen on Resolved tickets (not Resolve & Close), in hours. */
+  resolvedGmailPollHours: number;
   /** Days after resolve before unlinking Gmail thread and stopping background sync (Send/Resolved). */
   resolvedGmailLinkArchiveDays: number;
 }
@@ -25,6 +27,7 @@ export const DEFAULT_TIMER_SETTINGS: TimerSettings = {
   longtermHoldReopenDays: 7,
   initialResponseHours: 48,
   defaultSlaHours: 48,
+  resolvedGmailPollHours: 24,
   resolvedGmailLinkArchiveDays: defaultResolvedGmailLinkArchiveDays(),
 };
 
@@ -63,6 +66,12 @@ export function normalizeTimerSettings(
       DEFAULT_TIMER_SETTINGS.defaultSlaHours,
       1,
       720
+    ),
+    resolvedGmailPollHours: clampInt(
+      partial?.resolvedGmailPollHours,
+      DEFAULT_TIMER_SETTINGS.resolvedGmailPollHours,
+      1,
+      168
     ),
     resolvedGmailLinkArchiveDays: clampInt(
       partial?.resolvedGmailLinkArchiveDays,

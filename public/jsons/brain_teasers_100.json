@@ -1,0 +1,506 @@
+{
+    "title": "100 Brain Teasers & Logic Puzzles",
+    "count": 100,
+    "puzzles": [
+        {
+            "id": 1,
+            "teaser": "A man describes his daughters: 'They are all blonde, but two; all brunette, but two; and all redheaded, but two.' How many daughters does he have?",
+            "answer": "Three (one blonde, one brunette, and one redhead)."
+        },
+        {
+            "id": 2,
+            "teaser": "You see a boat filled with people. It has not capsized, but when you look again, not a single person is on the boat. How?",
+            "answer": "All the people on the boat were married!"
+        },
+        {
+            "id": 3,
+            "teaser": "Two mothers and two daughters went out for lunch, but they only ordered three meals and everyone had one. How?",
+            "answer": "It was a grandmother, her daughter, and her granddaughter."
+        },
+        {
+            "id": 4,
+            "teaser": "A barrel of water weighs 50 pounds. What can you add to it to make it weigh 35 pounds?",
+            "answer": "A hole!"
+        },
+        {
+            "id": 5,
+            "teaser": "What five-letter word becomes shorter when you add two letters to it?",
+            "answer": "Short (add 'er' to get 'shorter')."
+        },
+        {
+            "id": 6,
+            "teaser": "I have four legs in the morning, two legs at noon, and three legs in the evening. What am I?",
+            "answer": "A human (crawling as a baby, walking as an adult, using a cane as an elder)."
+        },
+        {
+            "id": 7,
+            "teaser": "A man was driving a black car with no headlights down a road with no streetlights. A black cat ran across the road, but he stopped in time. How did he see it?",
+            "answer": "It was daytime!"
+        },
+        {
+            "id": 8,
+            "teaser": "What number comes next in the sequence: 1, 11, 21, 1211, 111221...?",
+            "answer": "312211 (Look-and-say sequence: three 1s, two 2s, one 1)."
+        },
+        {
+            "id": 9,
+            "teaser": "If a red house is made of red bricks and a blue house is made of blue bricks, what is a greenhouse made of?",
+            "answer": "Glass!"
+        },
+        {
+            "id": 10,
+            "teaser": "What day comes two days after the day before yesterday?",
+            "answer": "Today!"
+        },
+        {
+            "id": 11,
+            "teaser": "A farmer has 17 sheep and all but 9 die. How many sheep are left?",
+            "answer": "Nine sheep."
+        },
+        {
+            "id": 12,
+            "teaser": "If you are running in a race and you pass the person in second place, what place are you in?",
+            "answer": "Second place."
+        },
+        {
+            "id": 13,
+            "teaser": "A man leaves home, turns left three times, and returns home to find two men wearing masks waiting for him. Who are they?",
+            "answer": "The catcher and the umpire (it's a game of baseball)."
+        },
+        {
+            "id": 14,
+            "teaser": "What can you hold in your right hand, but never in your left hand?",
+            "answer": "Your left hand (or left elbow)."
+        },
+        {
+            "id": 15,
+            "teaser": "There are three apples in a basket and you take away two. How many apples do you have?",
+            "answer": "Two apples (the ones you took)."
+        },
+        {
+            "id": 16,
+            "teaser": "A doctor and a bus driver are both in love with the same woman, Sarah. The bus driver had to go on a long trip for 7 days. Before he left, he gave Sarah 7 apples. Why?",
+            "answer": "An apple a day keeps the doctor away!"
+        },
+        {
+            "id": 17,
+            "teaser": "What turns everything around, but does not move?",
+            "answer": "A mirror."
+        },
+        {
+            "id": 18,
+            "teaser": "Before Mount Everest was discovered, what was the highest mountain in the world?",
+            "answer": "Mount Everest (it was still the highest, just not discovered yet)."
+        },
+        {
+            "id": 19,
+            "teaser": "How many times can you subtract 10 from 100?",
+            "answer": "Only once. After that, you are subtracting from 90."
+        },
+        {
+            "id": 20,
+            "teaser": "A man drops his hat in a deep well. How does he get it out?",
+            "answer": "Wet!"
+        },
+        {
+            "id": 21,
+            "teaser": "What breaks on the water but never on the land?",
+            "answer": "A wave."
+        },
+        {
+            "id": 22,
+            "teaser": "If a rooster lays an egg on the peak of a barn roof, which side does it roll down?",
+            "answer": "Roosters don't lay eggs!"
+        },
+        {
+            "id": 23,
+            "teaser": "What has 88 keys, but cannot open a single door?",
+            "answer": "A piano."
+        },
+        {
+            "id": 24,
+            "teaser": "What gets wetter the more it dries?",
+            "answer": "A towel."
+        },
+        {
+            "id": 25,
+            "teaser": "What can travel all around the world while remaining in the exact same corner?",
+            "answer": "A postage stamp."
+        },
+        {
+            "id": 26,
+            "teaser": "I have cities, but no houses. I have mountains, but no trees. I have water, but no fish. What am I?",
+            "answer": "A map."
+        },
+        {
+            "id": 27,
+            "teaser": "What belongs to you, but everyone else uses it far more than you do?",
+            "answer": "Your name."
+        },
+        {
+            "id": 28,
+            "teaser": "What is light as a feather, yet even the world's strongest person cannot hold it for more than 5 minutes?",
+            "answer": "Their breath."
+        },
+        {
+            "id": 29,
+            "teaser": "What builds up castles, tears down mountains, blinds some men, and helps others see?",
+            "answer": "Sand."
+        },
+        {
+            "id": 30,
+            "teaser": "The person who makes it doesn't want it. The person who buys it doesn't use it. The person who uses it doesn't know it. What is it?",
+            "answer": "A coffin."
+        },
+        {
+            "id": 31,
+            "teaser": "What has a head and a tail, but no body?",
+            "answer": "A coin."
+        },
+        {
+            "id": 32,
+            "teaser": "What word in the dictionary is always spelled incorrectly?",
+            "answer": "Incorrectly."
+        },
+        {
+            "id": 33,
+            "teaser": "What has four fingers and a thumb, but is not alive?",
+            "answer": "A glove."
+        },
+        {
+            "id": 34,
+            "teaser": "A man pushes his car to a hotel and tells the owner he's bankrupt. Why?",
+            "answer": "He was playing Monopoly!"
+        },
+        {
+            "id": 35,
+            "teaser": "What comes once in a minute, twice in a moment, but never in a thousand years?",
+            "answer": "The letter 'M'."
+        },
+        {
+            "id": 36,
+            "teaser": "If you have me, you want to share me. If you share me, you haven't got me. What am I?",
+            "answer": "A secret."
+        },
+        {
+            "id": 37,
+            "teaser": "What can fill a room without taking up any physical space?",
+            "answer": "Light (or air)."
+        },
+        {
+            "id": 38,
+            "teaser": "If 5 cats can catch 5 mice in 5 minutes, how many cats does it take to catch 100 mice in 100 minutes?",
+            "answer": "5 cats."
+        },
+        {
+            "id": 39,
+            "teaser": "A plane crashes on the border of the United States and Canada. Where do they bury the survivors?",
+            "answer": "You don't bury survivors!"
+        },
+        {
+            "id": 40,
+            "teaser": "What has a neck but no head?",
+            "answer": "A bottle."
+        },
+        {
+            "id": 41,
+            "teaser": "Which weighs more: a pound of feathers or a pound of bricks?",
+            "answer": "Neither\u2014they both weigh exactly one pound."
+        },
+        {
+            "id": 42,
+            "teaser": "I am an odd number. Take away a letter and I become even. What number am I?",
+            "answer": "Seven (remove 'S' to get 'even')."
+        },
+        {
+            "id": 43,
+            "teaser": "What has to be broken before you can use it?",
+            "answer": "An egg."
+        },
+        {
+            "id": 44,
+            "teaser": "I'm tall when I'm young, and I'm short when I'm old. What am I?",
+            "answer": "A candle (or a pencil)."
+        },
+        {
+            "id": 45,
+            "teaser": "What goes up but never comes down?",
+            "answer": "Your age."
+        },
+        {
+            "id": 46,
+            "teaser": "What can you break, even if you never pick it up or touch it?",
+            "answer": "A promise."
+        },
+        {
+            "id": 47,
+            "teaser": "What goes through cities and fields, but never moves?",
+            "answer": "A road."
+        },
+        {
+            "id": 48,
+            "teaser": "What has one eye, but cannot see anything?",
+            "answer": "A needle (or a hurricane)."
+        },
+        {
+            "id": 49,
+            "teaser": "What has hands, but cannot clap?",
+            "answer": "A clock."
+        },
+        {
+            "id": 50,
+            "teaser": "What gets bigger the more you take away from it?",
+            "answer": "A hole."
+        },
+        {
+            "id": 51,
+            "teaser": "There is a one-story house where everything inside is yellow. What color are the stairs?",
+            "answer": "There are no stairs (it's a one-story house)."
+        },
+        {
+            "id": 52,
+            "teaser": "What is so fragile that saying its name breaks it?",
+            "answer": "Silence."
+        },
+        {
+            "id": 53,
+            "teaser": "What can you catch, but never throw?",
+            "answer": "A cold."
+        },
+        {
+            "id": 54,
+            "teaser": "What runs all around a backyard, yet never moves?",
+            "answer": "A fence."
+        },
+        {
+            "id": 55,
+            "teaser": "If a brother, his sister, and their dog weren't under an umbrella, why didn't they get wet?",
+            "answer": "It wasn't raining!"
+        },
+        {
+            "id": 56,
+            "teaser": "What has many legs, but cannot walk?",
+            "answer": "A pair of trousers."
+        },
+        {
+            "id": 57,
+            "teaser": "What has teeth, but cannot bite?",
+            "answer": "A comb."
+        },
+        {
+            "id": 58,
+            "teaser": "Where does today come before yesterday?",
+            "answer": "In a dictionary."
+        },
+        {
+            "id": 59,
+            "teaser": "What has a thumb, but no fingers?",
+            "answer": "A mitten."
+        },
+        {
+            "id": 60,
+            "teaser": "What goes up and down, but stays in the same place?",
+            "answer": "A staircase."
+        },
+        {
+            "id": 61,
+            "teaser": "What has a spine, but no bones?",
+            "answer": "A book."
+        },
+        {
+            "id": 62,
+            "teaser": "What loses its head in the morning, but gets it back at night?",
+            "answer": "A pillow."
+        },
+        {
+            "id": 63,
+            "teaser": "What has a heart that doesn't beat?",
+            "answer": "An artichoke (or a deck of cards)."
+        },
+        {
+            "id": 64,
+            "teaser": "What begins with T, ends with T, and has T in it?",
+            "answer": "A teapot."
+        },
+        {
+            "id": 65,
+            "teaser": "What kind of coat is best put on wet?",
+            "answer": "A coat of paint."
+        },
+        {
+            "id": 66,
+            "teaser": "What has a bed but never sleeps, and runs but never walks?",
+            "answer": "A river."
+        },
+        {
+            "id": 67,
+            "teaser": "If two's a company, and three's a crowd, what are four and five?",
+            "answer": "Nine (4 + 5 = 9)."
+        },
+        {
+            "id": 68,
+            "teaser": "What umbrella does a king use when it rains?",
+            "answer": "A wet one!"
+        },
+        {
+            "id": 69,
+            "teaser": "What passes in front of the sun without casting a shadow?",
+            "answer": "The wind."
+        },
+        {
+            "id": 70,
+            "teaser": "What gets sharper the more you use it?",
+            "answer": "Your brain."
+        },
+        {
+            "id": 71,
+            "teaser": "What four-letter word can be written forward, backward, or upside down and still be read left to right?",
+            "answer": "NOON."
+        },
+        {
+            "id": 72,
+            "teaser": "What asks no questions, but requires many answers?",
+            "answer": "A doorbell."
+        },
+        {
+            "id": 73,
+            "teaser": "What has branches, but no fruit, trunk, or leaves?",
+            "answer": "A bank."
+        },
+        {
+            "id": 74,
+            "teaser": "What never asks questions, but is answered all the time?",
+            "answer": "A telephone."
+        },
+        {
+            "id": 75,
+            "teaser": "What has words, but never speaks?",
+            "answer": "A book."
+        },
+        {
+            "id": 76,
+            "teaser": "What flies without wings?",
+            "answer": "Time."
+        },
+        {
+            "id": 77,
+            "teaser": "What has thousands of needles, but cannot sew?",
+            "answer": "A porcupine (or a pine tree)."
+        },
+        {
+            "id": 78,
+            "teaser": "I am not alive, but I grow; I don't have lungs, but I need air; I don't have a mouth, but water kills me. What am I?",
+            "answer": "Fire."
+        },
+        {
+            "id": 79,
+            "teaser": "What travels faster: heat or cold?",
+            "answer": "Heat, because you can easily catch a cold!"
+        },
+        {
+            "id": 80,
+            "teaser": "What is black when you buy it, red when you use it, and gray when you throw it away?",
+            "answer": "Charcoal."
+        },
+        {
+            "id": 81,
+            "teaser": "What can you throw out when you want to use it, and pull back in when you are done?",
+            "answer": "An anchor."
+        },
+        {
+            "id": 82,
+            "teaser": "What has 13 hearts, but no other organs?",
+            "answer": "A deck of playing cards."
+        },
+        {
+            "id": 83,
+            "teaser": "What key cannot open any door?",
+            "answer": "A donkey (or a piano key / monkey / turkey)."
+        },
+        {
+            "id": 84,
+            "teaser": "You are in a dark room with a candle, a wood stove, and a gas lamp. You only have one match. What do you light first?",
+            "answer": "The match!"
+        },
+        {
+            "id": 85,
+            "teaser": "A man dies of old age on his 25th birthday. How is this possible?",
+            "answer": "He was born on February 29th (a leap year)."
+        },
+        {
+            "id": 86,
+            "teaser": "How can a door be non-existent?",
+            "answer": "When it's ajar (a jar)."
+        },
+        {
+            "id": 87,
+            "teaser": "What double-digit number multiplied by itself equals the sum of its digits multiplied by 18?",
+            "answer": "18 (18 * 18 = 324; (1+8) * 18 = 162 wait: 18 * 18 = 324, 9 * 36 = 324)."
+        },
+        {
+            "id": 88,
+            "teaser": "Two fathers and two sons go fishing. They each catch one fish, but bring home 3 fish in total. How?",
+            "answer": "There are only 3 people: a grandfather, his son, and his grandson."
+        },
+        {
+            "id": 89,
+            "teaser": "A thief enters a shop and steals a $100 bill. He then buys $70 worth of goods using the $100 bill. The shopkeeper gives him $30 change. How much money did the store lose?",
+            "answer": "$100."
+        },
+        {
+            "id": 90,
+            "teaser": "What side of a turkey has the most feathers?",
+            "answer": "The outside!"
+        },
+        {
+            "id": 91,
+            "teaser": "How many months have 28 days?",
+            "answer": "All 12 months!"
+        },
+        {
+            "id": 92,
+            "teaser": "If there are 6 apples and you take away 4, how many do you have?",
+            "answer": "4 apples."
+        },
+        {
+            "id": 93,
+            "teaser": "A man is looking at a photograph of someone. His friend asks who it is. He replies: 'Brothers and sisters I have none, but that man's father is my father's son.' Who is in the photo?",
+            "answer": "His son."
+        },
+        {
+            "id": 94,
+            "teaser": "What 5-letter word can be read the same upside down and upside right?",
+            "answer": "SWIMS."
+        },
+        {
+            "id": 95,
+            "teaser": "What can you hold without ever touching it with your hands?",
+            "answer": "Your breath (or a conversation / a grudge)."
+        },
+        {
+            "id": 96,
+            "teaser": "Where can you find roads without cars, forests without trees, and cities without houses?",
+            "answer": "On a map."
+        },
+        {
+            "id": 97,
+            "teaser": "What kind of room has no walls, doors, or windows?",
+            "answer": "A mushroom."
+        },
+        {
+            "id": 98,
+            "teaser": "What runs, but never walks; murmurs, but never talks; has a bed, but never sleeps?",
+            "answer": "A river."
+        },
+        {
+            "id": 99,
+            "teaser": "What invention lets you look right through a wall?",
+            "answer": "A window."
+        },
+        {
+            "id": 100,
+            "teaser": "What moves faster than the speed of light?",
+            "answer": "Darkness (it always gets there first)."
+        }
+    ]
+}

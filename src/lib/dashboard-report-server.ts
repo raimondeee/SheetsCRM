@@ -195,3 +195,12 @@ export function pdfAttachmentForReport(data: Buffer, filename: string) {
     data,
   };
 }
+
+export function zipAttachmentForReport(data: Buffer, filename: string) {
+  const safeName = filename.toLowerCase().endsWith(".zip") ? filename : `${filename}.zip`;
+  return {
+    filename: safeName.replace(/[^a-z0-9._-]+/gi, "-"),
+    mimeType: "application/zip",
+    data,
+  };
+}

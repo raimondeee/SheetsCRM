@@ -45,6 +45,7 @@ next-env.d.ts
 /data/*.db-shm
 /data/*.db-wal
 /data/custom-sounds/
+/data/team-dashboard-sources.json
 
 # leftover scaffold from initial setup
 /sheets-crm-tmp/

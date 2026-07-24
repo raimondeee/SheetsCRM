@@ -1,0 +1,606 @@
+{
+    "title": "100 Immersive & Iconic Blockbuster Movie Quotes",
+    "count": 100,
+    "quotes": [
+        {
+            "id": 1,
+            "quote": "I've seen things you people wouldn't believe. Attack ships on fire off the shoulder of Orion. I watched C-beams glitter in the dark near the Tannh\u00e4user Gate. All those moments will be lost in time, like tears in rain.",
+            "movie": "Blade Runner (1982)",
+            "character": "Roy Batty"
+        },
+        {
+            "id": 2,
+            "quote": "Great men are not born great, they grow great.",
+            "movie": "The Godfather (1972)",
+            "character": "Vito Corleone"
+        },
+        {
+            "id": 3,
+            "quote": "You're a doctor, so you're allowed to kill people. I'm a thief, so I'm allowed to steal things. We're both professionals.",
+            "movie": "Heat (1995)",
+            "character": "Neil McCauley"
+        },
+        {
+            "id": 4,
+            "quote": "You either die a hero, or you live long enough to see yourself become the villain.",
+            "movie": "The Dark Knight (2008)",
+            "character": "Harvey Dent"
+        },
+        {
+            "id": 5,
+            "quote": "Choice is an illusion created between those with power and those without.",
+            "movie": "The Matrix Reloaded (2003)",
+            "character": "The Merovingian"
+        },
+        {
+            "id": 6,
+            "quote": "My name is Maximus Decimus Meridius, commander of the Armies of the North, General of the Felix Legions and loyal servant to the true emperor, Marcus Aurelius. Father to a murdered son, husband to a murdered wife. And I will have my vengeance, in this life or the next.",
+            "movie": "Gladiator (2000)",
+            "character": "Maximus"
+        },
+        {
+            "id": 7,
+            "quote": "I don't know who you are. I don't know what you want. If you are looking for ransom, I can tell you I don't have money. But what I do have are a very particular set of skills.",
+            "movie": "Taken (2008)",
+            "character": "Bryan Mills"
+        },
+        {
+            "id": 8,
+            "quote": "It is not our abilities that show what we truly are\u2026 it is our choices.",
+            "movie": "Harry Potter and the Chamber of Secrets (2002)",
+            "character": "Albus Dumbledore"
+        },
+        {
+            "id": 9,
+            "quote": "There is a difference between knowing the path and walking the path.",
+            "movie": "The Matrix (1999)",
+            "character": "Morpheus"
+        },
+        {
+            "id": 10,
+            "quote": "A census taker once tried to test me. I ate his liver with some fava beans and a nice Chianti.",
+            "movie": "The Silence of the Lambs (1991)",
+            "character": "Hannibal Lecter"
+        },
+        {
+            "id": 11,
+            "quote": "The problem is not the problem. The problem is your attitude about the problem.",
+            "movie": "Pirates of the Caribbean: The Curse of the Black Pearl (2003)",
+            "character": "Captain Jack Sparrow"
+        },
+        {
+            "id": 12,
+            "quote": "It\u2019s only after we\u2019ve lost everything that we\u2019re free to do anything.",
+            "movie": "Fight Club (1999)",
+            "character": "Tyler Durden"
+        },
+        {
+            "id": 13,
+            "quote": "Every man dies, not every man really lives.",
+            "movie": "Braveheart (1995)",
+            "character": "William Wallace"
+        },
+        {
+            "id": 14,
+            "quote": "Do you know what happens to a toad when it's struck by lightning? The same thing that happens to everything else.",
+            "movie": "X-Men (2000)",
+            "character": "Storm"
+        },
+        {
+            "id": 15,
+            "quote": "Hope is a good thing, maybe the best of things, and no good thing ever dies.",
+            "movie": "The Shawshank Redemption (1994)",
+            "character": "Andy Dufresne"
+        },
+        {
+            "id": 16,
+            "quote": "Fear is the path to the dark side. Fear leads to anger. Anger leads to hate. Hate leads to suffering.",
+            "movie": "Star Wars: Episode I - The Phantom Menace (1999)",
+            "character": "Yoda"
+        },
+        {
+            "id": 17,
+            "quote": "I don't wanna survive. I wanna live!",
+            "movie": "WALL-E (2008)",
+            "character": "Captain B. McCrea"
+        },
+        {
+            "id": 18,
+            "quote": "You know, the world is full of lonely people waiting to make the first move.",
+            "movie": "Green Book (2018)",
+            "character": "Tony Lip"
+        },
+        {
+            "id": 19,
+            "quote": "When you have to shoot, shoot. Don't talk.",
+            "movie": "The Good, the Bad and the Ugly (1966)",
+            "character": "Tuco"
+        },
+        {
+            "id": 20,
+            "quote": "Look, if you had one shot or one opportunity to seize everything you ever wanted in one moment, would you capture it or just let it slip?",
+            "movie": "8 Mile (2002)",
+            "character": "Jimmy 'B-Rabbit' Smith"
+        },
+        {
+            "id": 21,
+            "quote": "The flower that blooms in adversity is the most rare and beautiful of all.",
+            "movie": "Mulan (1998)",
+            "character": "The Emperor of China"
+        },
+        {
+            "id": 22,
+            "quote": "Gentlemen, you can't fight in here! This is the War Room!",
+            "movie": "Dr. Strangelove (1964)",
+            "character": "President Merkin Muffley"
+        },
+        {
+            "id": 23,
+            "quote": "I know what you're thinking. 'Did he fire six shots or only five?' Well, to tell you the truth, in all this excitement I've kind of lost track myself.",
+            "movie": "Dirty Harry (1971)",
+            "character": "Harry Callahan"
+        },
+        {
+            "id": 24,
+            "quote": "People should not be afraid of their governments. Governments should be afraid of their people.",
+            "movie": "V for Vendetta (2005)",
+            "character": "V"
+        },
+        {
+            "id": 25,
+            "quote": "All we have to decide is what to do with the time that is given us.",
+            "movie": "The Lord of the Rings: The Fellowship of the Ring (2001)",
+            "character": "Gandalf"
+        },
+        {
+            "id": 26,
+            "quote": "The path of the righteous man is beset on all sides by the inequities of the selfish and the tyranny of evil men.",
+            "movie": "Pulp Fiction (1994)",
+            "character": "Jules Winnfield"
+        },
+        {
+            "id": 27,
+            "quote": "In case I don't see ya, good afternoon, good evening, and good night!",
+            "movie": "The Truman Show (1998)",
+            "character": "Truman Burbank"
+        },
+        {
+            "id": 28,
+            "quote": "I am looking for someone to share in an adventure that I am arranging, and it's very difficult to find anyone.",
+            "movie": "The Hobbit: An Unexpected Journey (2012)",
+            "character": "Gandalf"
+        },
+        {
+            "id": 29,
+            "quote": "I have a competition in me. I want no one else to succeed. I hate most people.",
+            "movie": "There Will Be Blood (2007)",
+            "character": "Daniel Plainview"
+        },
+        {
+            "id": 30,
+            "quote": "If you are good at something, never do it for free.",
+            "movie": "The Dark Knight (2008)",
+            "character": "The Joker"
+        },
+        {
+            "id": 31,
+            "quote": "No matter what anybody tells you, words and ideas can change the world.",
+            "movie": "Dead Poets Society (1989)",
+            "character": "John Keating"
+        },
+        {
+            "id": 32,
+            "quote": "Whatever doesn't kill you, simply makes you... stranger.",
+            "movie": "The Dark Knight (2008)",
+            "character": "The Joker"
+        },
+        {
+            "id": 33,
+            "quote": "Do not go gentle into that good night. Rage, rage against the dying of the light.",
+            "movie": "Interstellar (2014)",
+            "character": "Professor Brand"
+        },
+        {
+            "id": 34,
+            "quote": "We used to look up at the sky and wonder at our place in the stars. Now we just look down and worry about our place in the dirt.",
+            "movie": "Interstellar (2014)",
+            "character": "Cooper"
+        },
+        {
+            "id": 35,
+            "quote": "Your scientists were so preoccupied with whether or not they could, they didn't stop to think if they should.",
+            "movie": "Jurassic Park (1993)",
+            "character": "Dr. Ian Malcolm"
+        },
+        {
+            "id": 36,
+            "quote": "Life finds a way.",
+            "movie": "Jurassic Park (1993)",
+            "character": "Dr. Ian Malcolm"
+        },
+        {
+            "id": 37,
+            "quote": "I don't want to get to the end of my life and find that I have just lived the length of it. I want to have lived the width of it as well.",
+            "movie": "The Secret Life of Walter Mitty (2013)",
+            "character": "Walter Mitty"
+        },
+        {
+            "id": 38,
+            "quote": "The greatest trick the Devil ever pulled was convincing the world he didn't exist.",
+            "movie": "The Usual Suspects (1995)",
+            "character": "Verbal Kint"
+        },
+        {
+            "id": 39,
+            "quote": "You know, I am accurate from 1,000 yards with this rifle, but I can't read a map to save my life.",
+            "movie": "Shooter (2007)",
+            "character": "Bob Lee Swagger"
+        },
+        {
+            "id": 40,
+            "quote": "Good news, everyone! We're back on schedule, which means we have 10 minutes to save the world.",
+            "movie": "The Avengers (2012)",
+            "character": "Tony Stark"
+        },
+        {
+            "id": 41,
+            "quote": "You wanna know how I got these scars?",
+            "movie": "The Dark Knight (2008)",
+            "character": "The Joker"
+        },
+        {
+            "id": 42,
+            "quote": "That's my secret, Captain: I'm always angry.",
+            "movie": "The Avengers (2012)",
+            "character": "Bruce Banner"
+        },
+        {
+            "id": 43,
+            "quote": "The hardest choices require the strongest wills.",
+            "movie": "Avengers: Infinity War (2018)",
+            "character": "Thanos"
+        },
+        {
+            "id": 44,
+            "quote": "Dread it. Run from it. Destiny arrives all the same.",
+            "movie": "Avengers: Infinity War (2018)",
+            "character": "Thanos"
+        },
+        {
+            "id": 45,
+            "quote": "I am inevitable.",
+            "movie": "Avengers: Endgame (2019)",
+            "character": "Thanos"
+        },
+        {
+            "id": 46,
+            "quote": "Part of the journey is the end.",
+            "movie": "Avengers: Endgame (2019)",
+            "character": "Tony Stark"
+        },
+        {
+            "id": 47,
+            "quote": "Even the smallest person can change the course of the future.",
+            "movie": "The Lord of the Rings: The Fellowship of the Ring (2001)",
+            "character": "Galadriel"
+        },
+        {
+            "id": 48,
+            "quote": "There's some good in this world, Mr. Frodo, and it's worth fighting for.",
+            "movie": "The Lord of the Rings: The Two Towers (2002)",
+            "character": "Samwise Gamgee"
+        },
+        {
+            "id": 49,
+            "quote": "Death is just another path, one that we all must take.",
+            "movie": "The Lord of the Rings: The Return of the King (2003)",
+            "character": "Gandalf"
+        },
+        {
+            "id": 50,
+            "quote": "I can't carry it for you, but I can carry you!",
+            "movie": "The Lord of the Rings: The Return of the King (2003)",
+            "character": "Samwise Gamgee"
+        },
+        {
+            "id": 51,
+            "quote": "My father taught me many things here. He taught me in this room. He taught me: keep your friends close, but your enemies closer.",
+            "movie": "The Godfather Part II (1974)",
+            "character": "Michael Corleone"
+        },
+        {
+            "id": 52,
+            "quote": "Just when I thought I was out, they pull me back in.",
+            "movie": "The Godfather Part III (1990)",
+            "character": "Michael Corleone"
+        },
+        {
+            "id": 53,
+            "quote": "As far back as I can remember, I always wanted to be a gangster.",
+            "movie": "Goodfellas (1990)",
+            "character": "Henry Hill"
+        },
+        {
+            "id": 54,
+            "quote": "When you work with stiffs, you gotta be able to laugh. Otherwise you'll go crazy.",
+            "movie": "Casino (1995)",
+            "character": "Sam 'Ace' Rothstein"
+        },
+        {
+            "id": 55,
+            "quote": "Sell me this pen.",
+            "movie": "The Wolf of Wall Street (2013)",
+            "character": "Jordan Belfort"
+        },
+        {
+            "id": 56,
+            "quote": "Risk is what keeps us young.",
+            "movie": "The Wolf of Wall Street (2013)",
+            "character": "Jordan Belfort"
+        },
+        {
+            "id": 57,
+            "quote": "You're not your job, you're not how much money you have in the bank. You're not the car you drive. You're not the contents of your wallet.",
+            "movie": "Fight Club (1999)",
+            "character": "Tyler Durden"
+        },
+        {
+            "id": 58,
+            "quote": "First rule of leadership: everything is your fault.",
+            "movie": "A Bug's Life (1998)",
+            "character": "Hopper"
+        },
+        {
+            "id": 59,
+            "quote": "The only thing standing between you and your goal is the bullshit story you keep telling yourself as to why you can't achieve it.",
+            "movie": "The Wolf of Wall Street (2013)",
+            "character": "Jordan Belfort"
+        },
+        {
+            "id": 60,
+            "quote": "Don't ever let somebody tell you\u2026 You can't do something. Not even me. You got a dream, you gotta protect it.",
+            "movie": "The Pursuit of Happyness (2006)",
+            "character": "Chris Gardner"
+        },
+        {
+            "id": 61,
+            "quote": "You want something, go get it. Period.",
+            "movie": "The Pursuit of Happyness (2006)",
+            "character": "Chris Gardner"
+        },
+        {
+            "id": 62,
+            "quote": "Great minds discuss ideas; average minds discuss events; small minds discuss people.",
+            "movie": "The Social Network (2010)",
+            "character": "Erica Albright"
+        },
+        {
+            "id": 63,
+            "quote": "A million dollars isn't cool. You know what's cool? A billion dollars.",
+            "movie": "The Social Network (2010)",
+            "character": "Sean Parker"
+        },
+        {
+            "id": 64,
+            "quote": "You don't get to 500 million friends without making a few enemies.",
+            "movie": "The Social Network (2010)",
+            "character": "Tagline / Mark Zuckerberg"
+        },
+        {
+            "id": 65,
+            "quote": "You either die a hero, or live long enough to see yourself become the villain.",
+            "movie": "The Dark Knight (2008)",
+            "character": "Harvey Dent"
+        },
+        {
+            "id": 66,
+            "quote": "Some men just want to watch the world burn.",
+            "movie": "The Dark Knight (2008)",
+            "character": "Alfred Pennyworth"
+        },
+        {
+            "id": 67,
+            "quote": "It's not who I am underneath, but what I do that defines me.",
+            "movie": "Batman Begins (2005)",
+            "character": "Bruce Wayne"
+        },
+        {
+            "id": 68,
+            "quote": "Why do we fall, Bruce? So that we can learn to pick ourselves up.",
+            "movie": "Batman Begins (2005)",
+            "character": "Thomas Wayne"
+        },
+        {
+            "id": 69,
+            "quote": "A hero can be anyone. Even a man doing something as simple and reassuring as putting a coat around a young boy's shoulders to let him know that the world hadn't ended.",
+            "movie": "The Dark Knight Rises (2012)",
+            "character": "Batman"
+        },
+        {
+            "id": 70,
+            "quote": "I believe whatever doesn't kill you, simply makes you stranger.",
+            "movie": "The Dark Knight (2008)",
+            "character": "The Joker"
+        },
+        {
+            "id": 71,
+            "quote": "You think darkness is your ally. But you merely adopted the dark; I was born in it, molded by it.",
+            "movie": "The Dark Knight Rises (2012)",
+            "character": "Bane"
+        },
+        {
+            "id": 72,
+            "quote": "Every man's life ends the same way. It is only the details of how he lived and how he died that distinguish one man from another.",
+            "movie": "The Old Man & the Gun (2018)",
+            "character": "Forrest Tucker"
+        },
+        {
+            "id": 73,
+            "quote": "I am not a smart man, but I know what love is.",
+            "movie": "Forrest Gump (1994)",
+            "character": "Forrest Gump"
+        },
+        {
+            "id": 74,
+            "quote": "Run, Forrest, run!",
+            "movie": "Forrest Gump (1994)",
+            "character": "Jenny Curran"
+        },
+        {
+            "id": 75,
+            "quote": "Stupid is as stupid does.",
+            "movie": "Forrest Gump (1994)",
+            "character": "Forrest Gump"
+        },
+        {
+            "id": 76,
+            "quote": "There is no spoon.",
+            "movie": "The Matrix (1999)",
+            "character": "Spoon Boy"
+        },
+        {
+            "id": 77,
+            "quote": "Welcome to the real world.",
+            "movie": "The Matrix (1999)",
+            "character": "Morpheus"
+        },
+        {
+            "id": 78,
+            "quote": "What if I told you that everything you know is a lie?",
+            "movie": "The Matrix (1999)",
+            "character": "Morpheus"
+        },
+        {
+            "id": 79,
+            "quote": "I can only show you the door. You're the one that has to walk through it.",
+            "movie": "The Matrix (1999)",
+            "character": "Morpheus"
+        },
+        {
+            "id": 80,
+            "quote": "Ignorance is bliss.",
+            "movie": "The Matrix (1999)",
+            "character": "Cypher"
+        },
+        {
+            "id": 81,
+            "quote": "It is remarkable how similar the pattern of love is to the pattern of insanity.",
+            "movie": "Ex Machina (2014)",
+            "character": "Nathan"
+        },
+        {
+            "id": 82,
+            "quote": "One day the AIs are going to look back on us the same way we look at fossil skeletons on the plains of Africa.",
+            "movie": "Ex Machina (2014)",
+            "character": "Nathan"
+        },
+        {
+            "id": 83,
+            "quote": "We're not meant to save the world. We're meant to leave it.",
+            "movie": "Interstellar (2014)",
+            "character": "Professor Brand"
+        },
+        {
+            "id": 84,
+            "quote": "Love is the one thing we're capable of perceiving that transcends dimensions of time and space.",
+            "movie": "Interstellar (2014)",
+            "character": "Brand"
+        },
+        {
+            "id": 85,
+            "quote": "Once you've a parent, you're the ghost of your children's future.",
+            "movie": "Interstellar (2014)",
+            "character": "Cooper"
+        },
+        {
+            "id": 86,
+            "quote": "An idea is like a virus. Resilient. Highly contagious. And even the smallest seed of an idea can grow. It can grow to define or destroy you.",
+            "movie": "Inception (2010)",
+            "character": "Cobb"
+        },
+        {
+            "id": 87,
+            "quote": "You're waiting for a train. A train that'll take you far away. You know where you hope this train will take you, but you can't know for sure.",
+            "movie": "Inception (2010)",
+            "character": "Cobb"
+        },
+        {
+            "id": 88,
+            "quote": "Down here, it's our time. It's our time down here.",
+            "movie": "The Goonies (1985)",
+            "character": "Mickey"
+        },
+        {
+            "id": 89,
+            "quote": "Goonies never say die!",
+            "movie": "The Goonies (1985)",
+            "character": "Mickey"
+        },
+        {
+            "id": 90,
+            "quote": "Roads? Where we're going, we don't need roads.",
+            "movie": "Back to the Future (1985)",
+            "character": "Doc Brown"
+        },
+        {
+            "id": 91,
+            "quote": "If you put your mind to it, you can accomplish anything.",
+            "movie": "Back to the Future (1985)",
+            "character": "Marty McFly"
+        },
+        {
+            "id": 92,
+            "quote": "Your future is whatever you make it, so make it a good one.",
+            "movie": "Back to the Future Part III (1990)",
+            "character": "Doc Brown"
+        },
+        {
+            "id": 93,
+            "quote": "Look to my coming at first light on the fifth day. At dawn, look to the East.",
+            "movie": "The Lord of the Rings: The Two Towers (2002)",
+            "character": "Gandalf"
+        },
+        {
+            "id": 94,
+            "quote": "A day may come when the courage of men fails, when we forsake our friends and break all bonds of fellowship, but it is not this day.",
+            "movie": "The Lord of the Rings: The Return of the King (2003)",
+            "character": "Aragorn"
+        },
+        {
+            "id": 95,
+            "quote": "I would rather share one lifetime with you than face all the ages of this world alone.",
+            "movie": "The Lord of the Rings: The Fellowship of the Ring (2001)",
+            "character": "Arwen"
+        },
+        {
+            "id": 96,
+            "quote": "May the Force be with you.",
+            "movie": "Star Wars (1977)",
+            "character": "Han Solo"
+        },
+        {
+            "id": 97,
+            "quote": "In my experience, there is no such thing as luck.",
+            "movie": "Star Wars (1977)",
+            "character": "Obi-Wan Kenobi"
+        },
+        {
+            "id": 98,
+            "quote": "Your eyes can deceive you; don't trust them.",
+            "movie": "Star Wars (1977)",
+            "character": "Obi-Wan Kenobi"
+        },
+        {
+            "id": 99,
+            "quote": "Do or do not. There is no try.",
+            "movie": "Star Wars: Episode V - The Empire Strikes Back (1980)",
+            "character": "Yoda"
+        },
+        {
+            "id": 100,
+            "quote": "Pass on what you have learned. Strength, mastery, depends on you. But weakness, folly, failure also. Especially failure. Failure is the greatest teacher.",
+            "movie": "Star Wars: Episode VIII - The Last Jedi (2017)",
+            "character": "Yoda"
+        }
+    ]
+}

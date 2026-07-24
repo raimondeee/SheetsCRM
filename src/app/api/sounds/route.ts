@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteCustomSound, listCustomSounds, saveCustomSound } from "@/lib/custom-sounds-store";
 import {
+  BUILTIN_CALENDAR_SOUNDS,
   BUILTIN_INBOUND_SOUNDS,
   BUILTIN_OUTBOUND_SOUNDS,
   MAX_CUSTOM_SOUND_BYTES,
@@ -14,6 +15,7 @@ export async function GET() {
     builtin: {
       inbound: BUILTIN_INBOUND_SOUNDS,
       outbound: BUILTIN_OUTBOUND_SOUNDS,
+      calendar: BUILTIN_CALENDAR_SOUNDS,
     },
     custom: listCustomSounds(),
     limits: {

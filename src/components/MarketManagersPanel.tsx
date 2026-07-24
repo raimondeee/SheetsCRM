@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Download, Plus, Search, Trash2 } from "lucide-react";
 import type { MarketManager } from "@/lib/market-managers";
 import { parseMarketManagerPaste, sortMarketManagers } from "@/lib/market-managers";
 
@@ -83,6 +83,23 @@ export function MarketManagersPanel() {
     setManagers((prev) => sortMarketManagers([...prev, ...imported]));
     setPasteText("");
     setMessage(`Added ${imported.length} market manager(s). Click Save directory to persist.`);
+  }
+
+  function exportCurrentList() {
+    const rows = sortMarketManagers(managers)
+      .filter((manager) => manager.name.trim() && manager.email.trim())
+      .map((manager) => `${manager.name.replace(/\t|\r?\n/g, " ").trim()}\t${manager.email.trim()}`);
+    const blob = new Blob([`Name\tEmail\n${rows.join("\n")}\n`], {
+      type: "text/tab-separated-values;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "market-managers.tsv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }
 
   async function save() {
@@ -233,13 +250,23 @@ export function MarketManagersPanel() {
           placeholder={"Dario Cirella\tdario.cirella@airbnb.com\nEssie Atherton\tessie.atherton@ext.airbnb.com"}
           className="mt-2 w-full rounded border border-zendesk-border p-2 text-sm"
         />
-        <button
-          type="button"
-          onClick={importPaste}
-          className="mt-2 rounded bg-zendesk-teal px-3 py-1.5 text-sm font-medium text-white"
-        >
-          Import rows
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={importPaste}
+            className="rounded bg-zendesk-teal px-3 py-1.5 text-sm font-medium text-white"
+          >
+            Import rows
+          </button>
+          <button
+            type="button"
+            onClick={exportCurrentList}
+            className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm font-medium text-zendesk-navy hover:bg-gray-100"
+          >
+            <Download className="h-4 w-4" />
+            Export current list
+          </button>
+        </div>
       </details>
 
       {message && (
