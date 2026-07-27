@@ -1,3 +1,7 @@
+/**
+ * OAuth callback: exchange code for tokens and set httpOnly refresh-token cookie
+ * (plus email cookie for display). Refresh token never exposed to client JS.
+ */
 import { NextResponse } from "next/server";
 import { AUTH_COOKIES, exchangeCodeForTokens } from "@/lib/google-auth";
 

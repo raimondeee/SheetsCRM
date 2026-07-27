@@ -1,3 +1,10 @@
+/**
+ * Bidirectional status labels: CRM status ids ↔ free-text sheet Status column.
+ *
+ * Status automation (pending reopen, DNA, resolve-closed) keys off CRM ids
+ * (open, pending, resolved, …). Sheet cells may use team-specific wording;
+ * these patterns normalize inbound text and format outbound writes.
+ */
 import { DEFAULT_STATUSES } from "./types";
 
 const SHEET_STATUS_PATTERNS: { id: string; patterns: RegExp[] }[] = [

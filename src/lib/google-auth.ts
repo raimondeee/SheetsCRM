@@ -1,3 +1,18 @@
+/**
+ * Google credentials for SheetsCRM.
+ *
+ * Layer: auth / Google API clients
+ *
+ * Primary path: user OAuth2 (offline refresh token in an httpOnly cookie). That
+ * unlocks Sheets + Gmail + Calendar + People with the signed-in operator's access.
+ * Optional service-account JWT is Sheets-only and cannot send mail or read Calendar.
+ *
+ * There are no application user accounts — whoever signed in on this machine is
+ * the operator. Scopes are listed in GOOGLE_SCOPES; after pulling new scopes,
+ * operators must sign out and back in so Google re-prompts.
+ *
+ * @see /api/auth/google, /api/auth/callback
+ */
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 import { cookies } from "next/headers";

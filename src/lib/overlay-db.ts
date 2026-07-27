@@ -1,3 +1,22 @@
+/**
+ * Local SQLite overlay — CRM source of truth for workflow state that the intake
+ * sheet does not (or should not) own.
+ *
+ * Layer: persistence (better-sqlite3, WAL, path from OVERLAY_DB_PATH or data/overlay.db)
+ *
+ * Owns: sheet config, ticket overlay (status timers, SLA, Gmail link metadata,
+ * notes, Airbnb user ID overrides), cached Gmail thread messages/attachments,
+ * user prefs, cover-sheet slots, holiday cache, CRM event log helpers.
+ *
+ * Does not own: form intake rows (Google Sheet), raw Gmail mailbox contents.
+ * Schema is created lazily in getDb() on first use — scripts/init-db.mjs only
+ * ensures the data/ directory exists.
+ *
+ * Invariant: ticket list/detail merge sheet rows + overlay via mergeOverlayOntoTicket.
+ * Sheet writes from the UI are usually queued asynchronously after overlay updates.
+ *
+ * @see docs/ENGINEERING_AND_SECURITY.md — Data stores & persistence
+ */
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
@@ -146,6 +165,7 @@ export function workspaceHolidayCacheIsFresh(
   return Date.now() - fetchedAt < ttlMs;
 }
 
+/** Open (or create) overlay.db and ensure core tables/migrations exist. */
 function getDb(): Database.Database {
   if (db) return db;
   const dir = path.dirname(DB_PATH);
@@ -390,6 +410,8 @@ function getDb(): Database.Database {
 
   return db;
 }
+
+// --- Sheet / cover config ----------------------------------------------------
 
 export function saveSheetConfig(config: SheetConfig): void {
   const d = getDb();
@@ -807,6 +829,8 @@ function applyBackgroundGmailSyncEligibility(
   syncBackgroundGmailSyncForTicket(rowId, nextStatus, resolvedClosed);
 }
 
+// --- Ticket overlay mutations (status, IDs, notes, SLA) ----------------------
+
 export function updateTicketStatus(
   rowId: string,
   status: string,
@@ -1180,6 +1204,8 @@ export function getTicketRowIdForGmailThread(threadId: string): string | null {
     .get(trimmed) as { row_id: string } | undefined;
   return row?.row_id ?? null;
 }
+
+// --- Gmail thread claims & cached messages -----------------------------------
 
 /** Bind one Gmail thread to one ticket (primary). Returns false if thread belongs to another ticket. */
 export function claimGmailThreadForTicket(
@@ -2399,6 +2425,8 @@ export function resyncCoverTicketOverlayFromSheet(
 
   return mergeOverlayOntoTicket(freshTicket, freshTicket.airbnbUserId, timerSettings);
 }
+
+// --- Sheet row ⊕ overlay merge (used on every ticket list/detail load) --------
 
 export function mergeOverlayOntoTicket(
   ticket: Ticket,

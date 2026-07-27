@@ -1,3 +1,7 @@
+/**
+ * Pending reopen / customer-reply / DNA-style status transitions.
+ * Uses business-hours helpers so weekday timers skip nights/weekends/holidays.
+ */
 import {
   addWeekdayHours,
   DEFAULT_BUSINESS_HOURS,

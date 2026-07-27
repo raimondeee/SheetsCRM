@@ -7,7 +7,7 @@ import { TeamSourcesPanel } from "./TeamSourcesPanel";
 import {
   DEFAULT_USER_PREFERENCES,
   fetchUserPreferences,
-  saveUserPreferences,
+  patchUserPreferences,
   type UserPreferences,
 } from "@/lib/user-preferences";
 import {
@@ -88,10 +88,9 @@ export function TeamDashboardShell() {
   }, []);
 
   async function persistPeriod(period: DashboardPeriod) {
-    const next = { ...prefs, dashboardPeriod: period };
-    setPrefs(next);
+    setPrefs((prev) => ({ ...prev, dashboardPeriod: period }));
     try {
-      const saved = await saveUserPreferences(next);
+      const saved = await patchUserPreferences({ dashboardPeriod: period });
       setPrefs(saved);
     } catch {
       /* local-only if prefs API unavailable */

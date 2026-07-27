@@ -4,8 +4,11 @@ import {
   dashboardPeriodLabel,
   dateMatchesDashboardPeriod,
 } from "./dashboard-period";
-import { LOCAL_TEAM_REGION } from "./team-dashboard-sources";
-import type { TeamTabSource } from "./team-dashboard-sources";
+import {
+  LOCAL_TEAM_REGION,
+  type TeamTabColumnMap,
+  type TeamTabSource,
+} from "./team-dashboard-sources";
 import type { SheetTabData } from "./sheet-tabs";
 import { parseSheetTimestamp } from "./ticket-activity";
 import type { DashboardPeriod } from "./dashboard-period";
@@ -77,8 +80,12 @@ export function recordMatchesDashboardPeriod(
   return dateMatchesDashboardPeriod(submittedAt, period);
 }
 
-export function parseTeamTab(source: TeamTabSource, tab: SheetTabData): TeamIntakeRecord[] {
-  const { columns } = source;
+export function parseTeamTab(
+  source: TeamTabSource,
+  tab: SheetTabData,
+  columnOverride?: TeamTabColumnMap
+): TeamIntakeRecord[] {
+  const columns = columnOverride ?? source.columns;
   const records: TeamIntakeRecord[] = [];
 
   for (const row of tab.rows) {

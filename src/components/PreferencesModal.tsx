@@ -28,7 +28,7 @@ import {
 import {
   DEFAULT_USER_PREFERENCES,
   type UserPreferences,
-  saveUserPreferences,
+  patchUserPreferences,
 } from "@/lib/user-preferences";
 import {
   clearAttachmentDownloadFolder,
@@ -181,7 +181,8 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
   }
 
   async function handleSave() {
-    const prefs: UserPreferences = {
+    // Omit mixmaxStarredTemplateIds — Mixmax picker owns that field via its own PATCH.
+    const prefs = {
       defaultStatusFilter: defaultView,
       sortBy,
       sortOrder,
@@ -205,11 +206,11 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       wellnessContentIds,
       pomodoroBreaksEnabled,
       pomodoroScheduleId,
-    };
+    } satisfies Partial<UserPreferences>;
     setSaving(true);
     setError(null);
     try {
-      const saved = await saveUserPreferences(prefs);
+      const saved = await patchUserPreferences(prefs);
       onSaved(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save preferences");

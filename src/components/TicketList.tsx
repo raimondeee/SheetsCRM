@@ -1,3 +1,7 @@
+/**
+ * Filterable/sortable ticket list driven by CrmShell state.
+ * SLA countdown / last-response display use shared lib helpers so list and detail stay aligned.
+ */
 import { useEffect, useRef } from "react";
 import type { Ticket } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";

@@ -1,3 +1,17 @@
+/**
+ * Google Sheets intake adapter.
+ *
+ * Layer: domain / external I/O
+ *
+ * Reads form submission rows from the configured spreadsheet tab, maps columns
+ * by role (see column-mapper), then merges each row with the local SQLite overlay.
+ * Writes only selected CRM-owned columns back (status, user ID, notes, UI fields,
+ * user-emailed flag, etc.) — the sheet remains the intake source of truth.
+ *
+ * Prefer user OAuth (google-auth); service-account JWT is Sheets-only fallback.
+ *
+ * @see fetchTicketsFromSheet, mergeOverlayOntoTicket in overlay-db
+ */
 import { google } from "googleapis";
 import type { SheetConfig, Ticket } from "./types";
 import {

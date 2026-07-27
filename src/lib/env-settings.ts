@@ -1,3 +1,7 @@
+/**
+ * Whitelisted .env keys editable from Setup → Environment (localhost-gated API).
+ * MANAGED_ENV_FIELDS doubles as operator-facing field documentation.
+ */
 import fs from "fs";
 import path from "path";
 

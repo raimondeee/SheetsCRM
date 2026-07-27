@@ -1,3 +1,8 @@
+/**
+ * Team coverage: up to MAX_COVER_SHEETS teammate intake sheets merged into the
+ * operator's ticket list. Cover tickets keep their spreadsheet identity in rowId;
+ * resolve-via-ignore is CRM-only and must not write the teammate's sheet.
+ */
 import type { CoverSheetEntry, SheetConfig } from "./types";
 import { parseTicketRowId } from "./types";
 import { prepareSheetConfig } from "./ui-field-slots";

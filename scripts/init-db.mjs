@@ -1,3 +1,7 @@
+/**
+ * npm run db:migrate — ensure the data/ directory exists for overlay.db.
+ * Does not create tables; SQLite schema is applied lazily on first getDb() use.
+ */
 import fs from "fs";
 import path from "path";
 

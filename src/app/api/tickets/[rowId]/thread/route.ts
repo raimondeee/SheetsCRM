@@ -1,3 +1,12 @@
+/**
+ * Ticket Gmail thread API.
+ *
+ * GET  — sync/import thread messages into overlay cache and return them.
+ * POST — send a reply via Gmail as the signed-in user, update overlay/status/
+ *        user-emailed, queue sheet sync + post-send thread refresh.
+ *
+ * Same overlay-first / async sheet pattern as the ticket PATCH route.
+ */
 import { NextResponse } from "next/server";
 import {
   getThreadMessages,

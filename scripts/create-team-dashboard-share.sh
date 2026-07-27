@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Create a shareable Team Dashboard-only copy of SheetsCRM.
-# Includes the Team dashboard UI plus tools to add/edit regional source sheets.
+# Create a Team Dashboard-only copy for private management handoff.
+# Includes shared Google OAuth from your local .env and the current regional
+# team sheet sources so recipients can sign in and view metrics without setup.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,8 +14,61 @@ if [[ -e "$DEST" ]]; then
   exit 1
 fi
 
+# Read KEY=value from ROOT/.env (ignores comments / blank lines; strips optional quotes).
+env_value() {
+  local key="$1"
+  local file="$ROOT/.env"
+  local line value
+
+  if [[ ! -f "$file" ]]; then
+    echo ""
+    return
+  fi
+
+  line="$(
+    grep -E "^[[:space:]]*${key}=" "$file" | tail -n 1 || true
+  )"
+  if [[ -z "$line" ]]; then
+    echo ""
+    return
+  fi
+
+  value="${line#*=}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+env_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+GOOGLE_CLIENT_ID_VALUE="$(env_value GOOGLE_CLIENT_ID)"
+GOOGLE_CLIENT_SECRET_VALUE="$(env_value GOOGLE_CLIENT_SECRET)"
+
+OAUTH_INCLUDED=0
+if [[ -n "$GOOGLE_CLIENT_ID_VALUE" && -n "$GOOGLE_CLIENT_SECRET_VALUE" \
+  && "$GOOGLE_CLIENT_ID_VALUE" != *your-google-oauth* \
+  && "$GOOGLE_CLIENT_SECRET_VALUE" != *your-google-oauth* ]]; then
+  OAUTH_INCLUDED=1
+else
+  GOOGLE_CLIENT_ID_VALUE="${GOOGLE_CLIENT_ID_VALUE:-your-google-oauth-client-id.apps.googleusercontent.com}"
+  GOOGLE_CLIENT_SECRET_VALUE="${GOOGLE_CLIENT_SECRET_VALUE:-your-google-oauth-client-secret}"
+fi
+
 echo "Creating Team Dashboard shareable copy at:"
 echo "  $DEST"
+echo
+if [[ "$OAUTH_INCLUDED" -eq 1 ]]; then
+  echo "Including Google OAuth client id/secret from your local .env"
+else
+  echo "No usable Google OAuth values found in $ROOT/.env — placeholders will be used."
+fi
 echo
 
 mkdir -p "$DEST"
@@ -42,6 +96,10 @@ mkdir -p "$DEST/data"
 
 # Point the app at the slim Team Dashboard shell
 cat > "$DEST/src/app/page.tsx" <<'EOF'
+/**
+ * Team Dashboard share build — management metrics only (no ticket inbox).
+ * Regional tabs load from data/team-dashboard-sources.json via team-tab-loader.
+ */
 import { TeamDashboardShell } from "@/components/TeamDashboardShell";
 
 export default function HomePage() {
@@ -49,95 +107,35 @@ export default function HomePage() {
 }
 EOF
 
-# In the shareable build only: load regional tabs from editable JSON, not hardcoded CRM list.
-cat > "$DEST/src/lib/team-tab-loader.ts" <<'EOF'
-import {
-  getTeamSpreadsheetId,
-  getTeamTabSources,
-} from "@/lib/team-dashboard-sources-store";
-import type { TeamTabSource } from "@/lib/team-dashboard-sources";
-import { fetchSheetTabsBatch } from "@/lib/sheet-tabs";
-import { parseTeamTab, type TeamIntakeRecord } from "@/lib/team-metrics";
+# Prefer the exporter's live Team Dashboard sources; otherwise seed from CRM defaults.
+# team-tab-loader.ts is copied from the main app (header remap + health warnings).
+SOURCES_INCLUDED=0
+if [[ -f "$ROOT/data/team-dashboard-sources.json" ]]; then
+  cp "$ROOT/data/team-dashboard-sources.json" "$DEST/data/team-dashboard-sources.json"
+  SOURCES_INCLUDED=1
+  echo "Including live team sheet sources from data/team-dashboard-sources.json"
+else
+  node "$ROOT/scripts/seed-team-dashboard-sources.mjs" "$DEST"
+  SOURCES_INCLUDED=1
+fi
 
-export interface ColleagueTeamLoadResult {
-  colleagueRecords: TeamIntakeRecord[];
-  sourcesLoaded: number;
-  sourcesTotal: number;
-  loadError: string | null;
-}
-
-export async function loadColleagueTeamRecords(): Promise<ColleagueTeamLoadResult> {
-  const sources = getTeamTabSources();
-  const spreadsheetId = getTeamSpreadsheetId();
-  const sourcesTotal = sources.length;
-  let colleagueRecords: TeamIntakeRecord[] = [];
-  let sourcesLoaded = 0;
-  let loadError: string | null = null;
-
-  if (sourcesTotal === 0) {
-    return {
-      colleagueRecords: [],
-      sourcesLoaded: 0,
-      sourcesTotal: 0,
-      loadError: "No regional source sheets configured",
-    };
-  }
-
-  try {
-    const tabs = await fetchSheetTabsBatch(
-      spreadsheetId,
-      sources.map((source) => ({
-        key: source.id,
-        sheetName: source.sheetName,
-        gid: source.gid,
-      }))
-    );
-
-    for (const source of sources) {
-      const tab = tabs.get(source.id);
-      if (!tab) {
-        if (!loadError) {
-          loadError = `Sheet tab not found: ${source.sheetName}`;
-        }
-        continue;
-      }
-      colleagueRecords = colleagueRecords.concat(parseTeamTab(source, tab));
-      sourcesLoaded += 1;
-    }
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : "Failed to load team sheet tabs";
-  }
-
-  return {
-    colleagueRecords,
-    sourcesLoaded,
-    sourcesTotal,
-    loadError,
-  };
-}
-
-export type { TeamTabSource };
-EOF
-
-# Example regional sources (edit via Source sheets UI or this JSON file)
-cp "$ROOT/data/team-dashboard-sources.example.json" "$DEST/data/team-dashboard-sources.json"
-
-# Placeholder env for dashboard-only use
-cat > "$DEST/.env" <<'EOF'
-# Team Dashboard (shareable) — replace placeholders before first run
-GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-
-# Optional: service account (share each spreadsheet with this email)
-GOOGLE_SERVICE_ACCOUNT_EMAIL=
-GOOGLE_PRIVATE_KEY=
-
-TEAM_DASHBOARD_SOURCES_PATH=./data/team-dashboard-sources.json
-OVERLAY_DB_PATH=./data/overlay.db
-
-USE_MOCK_DATA=false
-EOF
+{
+  echo "# Team Dashboard — private management handoff .env"
+  echo "# Generated by scripts/create-team-dashboard-share.sh"
+  echo "# Do not commit this file or upload the zip to a public location."
+  echo "GOOGLE_CLIENT_ID=\"$(env_escape "$GOOGLE_CLIENT_ID_VALUE")\""
+  echo "GOOGLE_CLIENT_SECRET=\"$(env_escape "$GOOGLE_CLIENT_SECRET_VALUE")\""
+  echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+  echo
+  echo "# Optional: service account (usually not needed when using Sign in with Google)"
+  echo "GOOGLE_SERVICE_ACCOUNT_EMAIL="
+  echo "GOOGLE_PRIVATE_KEY="
+  echo
+  echo "TEAM_DASHBOARD_SOURCES_PATH=./data/team-dashboard-sources.json"
+  echo "OVERLAY_DB_PATH=./data/overlay.db"
+  echo
+  echo "USE_MOCK_DATA=false"
+} > "$DEST/.env"
 
 cp "$DEST/.env" "$DEST/.env.example"
 
@@ -153,7 +151,6 @@ fs.writeFileSync(pkgPath, JSON.stringify(pkg,null,2)+'\n');
 " "$DEST/package.json"
 
 # Remove CRM-only surfaces that are unused by the Team Dashboard shell
-# (keeps shared libs so Next can still resolve transitive imports).
 rm -rf \
   "$DEST/extensions" \
   "$DEST/public/sounds" \
@@ -162,97 +159,231 @@ rm -rf \
   "$DEST/docs" \
   2>/dev/null || true
 
-# macOS launcher
+# First-time Mac setup (same Homebrew / Node / Xcode checks as full CRM).
+# Opens Privacy & Security via bootstrap-macos.sh so the user can approve Gatekeeper.
+cat > "$DEST/Install TeamDashboard.command" <<'EOF'
+#!/bin/bash
+# First-time setup only. Day-to-day: Open TeamDashboard.command
+# Privacy & Security opens automatically (via bootstrap) for Gatekeeper / Open Anyway.
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+exec bash "$ROOT/scripts/bootstrap-macos.sh"
+EOF
+chmod +x "$DEST/Install TeamDashboard.command"
+
+# Day-to-day launcher (assumes Node is already installed)
 cat > "$DEST/Open TeamDashboard.command" <<'EOF'
 #!/bin/bash
+set -euo pipefail
 cd "$(dirname "$0")"
+
+PORT="${PORT:-3000}"
+URL="http://localhost:${PORT}"
+
+# Remember this window so we can minimize it after the dashboard opens in the browser.
+TEAM_DASHBOARD_WINDOW_ID="$(
+  osascript -e 'tell application "Terminal" to id of front window' 2>/dev/null || true
+)"
+
+close_empty_terminal_windows() {
+  osascript <<'APPLESCRIPT' 2>/dev/null || true
+tell application "Terminal"
+  if (count of windows) < 2 then return
+  set keeper to front window
+  repeat with w in windows
+    if w is not keeper then
+      try
+        if (count of tabs of w) is 1 then
+          tell tab 1 of w
+            if (busy of it) is false and ((contents of it) is missing value or (contents of it) is "") then
+              close w saving no
+            end if
+          end tell
+        end if
+      end try
+    end if
+  end repeat
+end tell
+APPLESCRIPT
+}
+
+minimize_launcher_terminal() {
+  if [ -z "${TEAM_DASHBOARD_WINDOW_ID:-}" ]; then
+    return
+  fi
+  osascript -e "tell application \"Terminal\" to set miniaturized of (first window whose id is ${TEAM_DASHBOARD_WINDOW_ID}) to true" 2>/dev/null || true
+}
+
+stop_existing_server_on_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -z "$pids" ]; then
+    return
+  fi
+  echo "Stopping previous server on port ${port}…"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  sleep 1
+  pids="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+    sleep 1
+  fi
+}
+
+wait_for_ready() {
+  local url="$1"
+  local attempt
+  for attempt in $(seq 1 120); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+close_empty_terminal_windows
+
 if [[ ! -d node_modules ]]; then
   echo "Installing dependencies…"
-  npm install
+  if [[ -f package-lock.json ]]; then
+    npm ci
+  else
+    npm install
+  fi
 fi
-if [[ ! -f data/overlay.db ]]; then
+if [[ ! -d data ]] || [[ ! -f data/overlay.db && ! -f .env ]]; then
   npm run db:migrate || true
 fi
-echo "Starting Team Dashboard on http://localhost:3000"
+
+stop_existing_server_on_port "$PORT"
+
+echo "Starting Team Dashboard…"
+echo "When ready, open: $URL"
+echo "Leave this window open while you use the dashboard."
+echo "Press Ctrl+C to stop the server."
+echo ""
+
+(
+  if wait_for_ready "$URL"; then
+    open "$URL"
+    minimize_launcher_terminal
+  else
+    echo "Team Dashboard did not become ready in time. Open $URL manually once the server is up."
+  fi
+) &
+
 npm run dev
 EOF
 chmod +x "$DEST/Open TeamDashboard.command"
 
-cat > "$DEST/TEAM_DASHBOARD_README.md" <<'EOF'
-# Team Dashboard (shareable)
+if [[ "$OAUTH_INCLUDED" -eq 1 && "$SOURCES_INCLUDED" -eq 1 ]]; then
+  cat > "$DEST/TEAM_DASHBOARD_README.md" <<'EOF'
+# Team Dashboard (management handoff)
 
-This package is a **Team Dashboard-only** build of SheetsCRM. It does not include the ticket inbox, Gmail compose, Mixmax, or calendar tools.
+Team Dashboard-only build of SheetsCRM — regional intake metrics, no ticket inbox.
 
-## What you get
+## Already included
 
-- Regional intake dashboard (charts, status cards, reports)
-- **Source sheets** UI to add / edit / remove regional Google Sheet tabs that feed the dashboard
-- Google sign-in (OAuth) or optional service-account auth for reading Sheets
+- Shared Google OAuth Client ID + Secret
+- Current regional team sheet sources (`data/team-dashboard-sources.json`)
+- `USE_MOCK_DATA=false`
 
 ## Quick start
 
-1. Edit `.env` with your Google OAuth client ID/secret (and set `NEXT_PUBLIC_APP_URL=http://localhost:3000`).
-2. Double-click `Open TeamDashboard.command`, or run:
-   ```bash
-   npm install
-   npm run db:migrate
-   npm run dev
-   ```
-3. Open http://localhost:3000 and **Sign in with Google**.
-4. Click **Source sheets** and set:
-   - Spreadsheet ID (from the sheet URL)
-   - One row per region: tab name, gid, and column letters for timestamp / status / owner / category
-5. Save, then refresh the dashboard.
+1. **First time on a Mac:** double-click **`Install TeamDashboard.command`**
+   (opens Privacy & Security for Gatekeeper approval, installs Homebrew/Node if needed, then project packages).
+2. Double-click **`Open TeamDashboard.command`** to start the server (opens the browser when ready, then minimizes Terminal).
+3. **Sign in with Google** with an account that can open the team spreadsheet(s).
+4. The dashboard should load regional metrics immediately.
 
-You can also edit `data/team-dashboard-sources.json` directly (same fields).
+If Node is already installed, you can skip Install and only use Open.
 
-## Sharing sheets
+Optional: **Source sheets** if a region tab changes later.
 
-- **OAuth:** the signed-in Google user must be able to open the spreadsheet.
-- **Service account:** set `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_PRIVATE_KEY` in `.env`, then share the spreadsheet with that email (Viewer is enough).
+## Access requirements
+
+- The signed-in Google account must have Viewer (or better) on the team spreadsheet(s).
+- If your org’s OAuth app is in Testing mode, an admin must add your email as a test user.
 
 ## Notes
 
-- Review escalations / quality appeals sections still call their own APIs if those sheets are configured in the full CRM source files; they may show empty or errors until those sources exist. Core regional intake only needs the Source sheets config above.
-- Do not zip real `.env` secrets or `data/overlay.db` when redistributing.
+- Treat this zip as private — it contains the shared OAuth client secret and sheet source config.
+- Review escalations / quality appeals use separate sheets baked into the CRM source; they appear when your Google account can open those sheets.
+- npm audit warnings should be zero when this package was built from a current SheetsCRM tree. If you still see findings, ask for a freshly exported zip.
 EOF
 
-cat > "$DEST/SHARE_PACKAGING.txt" <<'EOF'
+  cat > "$DEST/SHARE_PACKAGING.txt" <<'EOF'
+Team Dashboard — private management handoff
+===========================================
+
+Included:
+  - Shared Google OAuth Client ID + Client Secret
+  - Current regional team sheet sources
+  - USE_MOCK_DATA=false
+  - Install TeamDashboard.command (first-time Mac bootstrap)
+  - Open TeamDashboard.command (day-to-day)
+
+Excluded:
+  - Mixmax / service-account private key
+  - overlay.db, node_modules, .git
+
+Manager steps:
+  1. Unzip
+  2. First Mac: Install TeamDashboard.command
+  3. Open TeamDashboard.command
+  4. Sign in with Google (account must have access to the team sheets)
+  5. View the dashboard — Source sheets is optional
+
+Do not upload this zip to a public link or commit the included .env to git.
+EOF
+else
+  cat > "$DEST/TEAM_DASHBOARD_README.md" <<'EOF'
+# Team Dashboard (shareable)
+
+This package is a **Team Dashboard-only** build of SheetsCRM.
+
+## Quick start
+
+1. First time on a Mac: double-click **Install TeamDashboard.command**.
+2. Edit `.env` with the shared Google OAuth client ID/secret if placeholders remain.
+3. Confirm `data/team-dashboard-sources.json` lists the regional tabs (or use **Source sheets**).
+4. Double-click **Open TeamDashboard.command**.
+5. Sign in with Google (account must open the team spreadsheet).
+
+## Notes
+
+- Do not upload this zip publicly if `.env` contains real secrets.
+EOF
+
+  cat > "$DEST/SHARE_PACKAGING.txt" <<'EOF'
 Team Dashboard — shareable copy
 ================================
 
-Generated without secrets or local database files.
+Fill in Google OAuth in .env if placeholders remain.
+Confirm data/team-dashboard-sources.json has the regional tabs.
 
-Before zipping:
-  - Confirm .env has only placeholders
-  - data/team-dashboard-sources.json should use YOUR_TEAM_SPREADSHEET_ID (or example values)
-
-Coworker steps:
+Manager steps:
   1. Unzip
-  2. Edit .env (Google OAuth)
-  3. Open TeamDashboard.command (or npm install && npm run dev)
-  4. Sign in → Source sheets → add regional tabs
+  2. First Mac: Install TeamDashboard.command
+  3. Open TeamDashboard.command
+  4. Sign in with Google
 EOF
-
-# Scrub known production spreadsheet IDs from the copy defaults
-if [[ "$(uname)" == "Darwin" ]]; then
-  SED_INPLACE=(-i '')
-else
-  SED_INPLACE=(-i)
 fi
-
-sed "${SED_INPLACE[@]}" \
-  's|1Kj8p-USf20vZREe-Cxg2c28vq4ppTwmgr05lYGxJebg|YOUR_TEAM_SPREADSHEET_ID|g' \
-  "$DEST/src/lib/default-sheet-config.ts" \
-  "$DEST/src/lib/team-dashboard-sources.ts" \
-  "$DEST/data/team-dashboard-sources.json" \
-  "$DEST/.env" \
-  "$DEST/.env.example" 2>/dev/null || true
 
 echo "Done."
 echo
-echo "Excluded: node_modules, .next, .git, secrets, overlay.db, sounds, extensions"
-echo "Homepage wired to TeamDashboardShell + Source sheets tools"
+echo "Excluded: node_modules, .next, .git, Mixmax/SA secrets, overlay.db, sounds, extensions"
+if [[ "$OAUTH_INCLUDED" -eq 1 ]]; then
+  echo "Included in .env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, USE_MOCK_DATA=false"
+else
+  echo "OAuth: placeholders only (set values in your local .env, then re-run)"
+fi
+if [[ "$SOURCES_INCLUDED" -eq 1 ]]; then
+  echo "Included: data/team-dashboard-sources.json (live or CRM default regional tabs)"
+fi
 echo
 echo "Next steps:"
 echo "  cd $(dirname "$DEST")"

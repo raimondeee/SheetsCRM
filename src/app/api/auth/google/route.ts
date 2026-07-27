@@ -1,3 +1,7 @@
+/**
+ * Starts Google OAuth consent. Requires GOOGLE_CLIENT_ID / SECRET in .env and
+ * authorized redirect URI http://localhost:3000/api/auth/callback.
+ */
 import { NextResponse } from "next/server";
 import { getOAuthSignInUrl } from "@/lib/google-auth";
 

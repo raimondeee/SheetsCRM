@@ -1,3 +1,12 @@
+/**
+ * Shared domain types for SheetsCRM.
+ *
+ * Reviewers: start here for vocabulary. Many Ticket / SheetConfig fields document
+ * whether a value lives on the Google Sheet, in the SQLite overlay, or both.
+ * ColumnRole is the stable CRM meaning of a sheet column after auto/manual mapping.
+ *
+ * @see column-mapper (header → role), overlay-db (CRM-owned fields), sheets (intake)
+ */
 import type { BusinessHoursConfig } from "./business-hours";
 
 export type ColumnRole =

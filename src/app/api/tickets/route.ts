@@ -1,3 +1,15 @@
+/**
+ * GET /api/tickets — primary ticket list load for CrmShell.
+ *
+ * Side effects on refresh (not a pure read):
+ * - Ensures default SheetConfig exists
+ * - Merges enabled cover-sheet tickets
+ * - Migrates legacy SLA rows, refreshes holiday cache
+ * - Queues background Gmail sync + archives stale Gmail links
+ * - Enriches last-response timestamps from overlay thread cache
+ *
+ * Mock path: USE_MOCK_DATA=true or missing Google credentials.
+ */
 import { NextResponse } from "next/server";
 import { buildDefaultSheetConfig } from "@/lib/default-sheet-config";
 import { refreshWorkspaceHolidayCache } from "@/lib/business-holidays";

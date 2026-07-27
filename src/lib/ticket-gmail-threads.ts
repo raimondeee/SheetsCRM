@@ -1,3 +1,8 @@
+/**
+ * Multi-thread Gmail link table (primary + appended threads per ticket).
+ * Migrates legacy single gmail_thread_id on ticket_overlay. A Gmail thread id
+ * can belong to at most one ticket (unique index).
+ */
 import type Database from "better-sqlite3";
 import { v4 as uuidv4 } from "uuid";
 

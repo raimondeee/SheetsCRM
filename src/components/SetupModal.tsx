@@ -1,3 +1,8 @@
+/**
+ * Setup modal tabs: sheet column mapping, cover sheets, market managers,
+ * localhost-only .env editor, and business hours. Analyze → POST /api/sheet/analyze;
+ * save sheet config → /api/config.
+ */
 "use client";
 
 import { useEffect, useRef, useState } from "react";

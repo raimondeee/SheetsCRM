@@ -1,3 +1,16 @@
+/**
+ * Ticket workspace: header fields, Gmail thread, compose, tools, resolve flows.
+ *
+ * Layer: UI (largest client component)
+ *
+ * Receives a Ticket from CrmShell and talks to /api/tickets/[rowId]/* for patches,
+ * thread sync/send, link/backfill/redact. Optimistic UI updates flow back through
+ * shell callbacks (onStatusChange, onThreadUpdate, …). Sheet sync after overlay
+ * writes is fire-and-forget on the server — UI success does not prove the sheet updated.
+ *
+ * Prefer section banners below over narrating every handler; domain rules live in
+ * lib/status-automation, ticket-action-validation, gmail, overlay-db.
+ */
 "use client";
 
 import {
@@ -802,6 +815,15 @@ export function TicketDetail({
     shouldScrollConversationToNewestRef.current = false;
   }, [messages, threadLoading, ticket?.rowId]);
 
+  useEffect(() => {
+    if (composePanelView === "split") return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setComposePanelView("split");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [composePanelView]);
+
   if (!ticket) {
     return (
       <main className="flex flex-1 items-center justify-center text-sm text-zendesk-muted">
@@ -1206,15 +1228,6 @@ export function TicketDetail({
     });
   }
 
-  useEffect(() => {
-    if (composePanelView === "split") return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setComposePanelView("split");
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [composePanelView]);
-
   function openReplyDraftExpanded() {
     replyEditorRef.current?.flush();
     if (composeTab !== "reply") {
@@ -1343,6 +1356,8 @@ export function TicketDetail({
   }
 
   function renderEmailDraftComposePanel() {
+    if (!ticket) return null;
+
     const ccRecipients = parseRecipientList(ccDraft);
     const bccRecipients = parseRecipientList(bccDraft);
     const ccHasRecipients = ccRecipients.length > 0;
@@ -1945,6 +1960,7 @@ export function TicketDetail({
 
   return (
     <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Header: subject, status, IDs, external tool links */}
       <div className="shrink-0 border-b border-zendesk-border px-3 py-1.5">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -2507,6 +2523,7 @@ export function TicketDetail({
             {threadLoading && messages.length === 0 && (
               <p className="py-2 text-xs text-zendesk-muted">Loading conversation…</p>
             )}
+            {/* Cached Gmail thread (+ CRM system notices); bodies from overlay, not live Gmail HTML */}
             {messages.map((msg) => {
               if (msg.direction === "redacted") {
                 return (
@@ -2671,6 +2688,7 @@ export function TicketDetail({
                     }`
             }
           >
+            {/* Compose: email draft / admin notes / CRM log — send queues via CrmShell */}
             <div className="relative z-10 flex shrink-0 items-center border-b border-zendesk-border bg-slate-100 px-2.5">
               {composeTabButton("reply", "Email draft")}
               {composeTabButton("admin-notes", "Admin notes")}

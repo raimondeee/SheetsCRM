@@ -1,3 +1,7 @@
+/**
+ * Personal ops dashboard (charts from the local ticket list + dashboard APIs).
+ * Team / quality sections live in sibling views; report export uses dashboard-report-* libs.
+ */
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +20,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Copy } from "lucide-react";
+import { Copy, RefreshCw } from "lucide-react";
 import type { Ticket } from "@/lib/types";
 import {
   DASHBOARD_PERIOD_OPTIONS,
@@ -66,6 +70,8 @@ interface DashboardViewProps {
   onFilter?: (filter: DashboardFilter) => void;
   userEmail?: string | null;
   canSendEmail?: boolean;
+  /** Refresh intake tickets (parent list) before reloading dashboard APIs. */
+  onRefreshTickets?: () => void | Promise<void>;
 }
 
 export function DashboardView({
@@ -79,6 +85,7 @@ export function DashboardView({
   onFilter,
   userEmail,
   canSendEmail = false,
+  onRefreshTickets,
 }: DashboardViewProps) {
   const [marketManagerFilter, setMarketManagerFilter] = useState<string>("all");
   const [reviewTeamFilter, setReviewTeamFilter] = useState<string>("all");
@@ -86,6 +93,8 @@ export function DashboardView({
   const [serviceMetrics, setServiceMetrics] = useState<ServiceMetricsSnapshot | null>(null);
   const [reviewMetrics, setReviewMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(null);
   const [qualityMetrics, setQualityMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
+  const [metricsRefreshKey, setMetricsRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const dashboardPrintRef = useRef<HTMLDivElement>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
 
@@ -166,7 +175,18 @@ export function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [period, marketManagerFilter, reviewTeamFilter, qualityAgentFilter]);
+  }, [period, marketManagerFilter, reviewTeamFilter, qualityAgentFilter, metricsRefreshKey]);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefreshTickets?.();
+      setMetricsRefreshKey((n) => n + 1);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   const dashFilter = useCallback(
     (fields: Omit<DashboardFilter, "period"> = {}) => {
@@ -249,6 +269,16 @@ export function DashboardView({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50 disabled:opacity-60"
+            title="Reload tickets and dashboard metrics"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
           <label className="flex items-center gap-2 text-xs text-zendesk-muted">
             <span className="font-medium">Period</span>
             <select

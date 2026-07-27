@@ -1,3 +1,10 @@
+/**
+ * Polls Gmail for pending/resolved tickets during ticket-list refresh.
+ *
+ * Not a standalone worker — invoked from GET /api/tickets with a concurrency cap.
+ * Skips resolve-closed tickets and archived Gmail links. Intervals: pending ~10m;
+ * resolved uses Preferences timer settings (default 24h).
+ */
 import { syncGmailThreadForTicket } from "./gmail";
 import {
   ensureBackgroundGmailSyncEnabled,

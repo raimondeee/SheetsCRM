@@ -1,3 +1,19 @@
+/**
+ * Top-level client shell for SheetsCRM.
+ *
+ * Layer: UI orchestration (single-page app)
+ *
+ * Owns view switching (ticket list/detail, personal/team dashboards), auth chrome,
+ * auto-refresh of GET /api/tickets, preferences/setup modals, calendar/wellness
+ * reminders, optimistic status updates, and ticket chimes. Child components render
+ * panels; this file coordinates shared ticket state and refresh side effects.
+ *
+ * Ticket refresh is not a pure read: the tickets API may run background Gmail sync
+ * and archive stale links. Prefer loadTickets() over ad-hoc fetches so debounce /
+ * in-flight coalescing stay consistent.
+ *
+ * @see docs/ENGINEERING_AND_SECURITY.md — Runtime architecture
+ */
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -81,7 +97,7 @@ import {
   DEFAULT_USER_PREFERENCES,
   fetchUserPreferences,
   migrateLegacyPreferencesIfNeeded,
-  saveUserPreferences,
+  patchUserPreferences,
   type UserPreferences,
 } from "@/lib/user-preferences";
 
@@ -217,6 +233,7 @@ export function CrmShell() {
     countdownResetKey
   );
 
+  // Coalesces concurrent refreshes so auto-refresh + manual Refresh share one /api/tickets trip.
   const loadTickets = useCallback(async (options?: LoadTicketsOptions) => {
     if (loadTicketsInflightRef.current) {
       loadTicketsPendingRef.current = {
@@ -535,27 +552,27 @@ export function CrmShell() {
     setSelectedId(filtered.length > 0 ? filtered[0].rowId : null);
   }, [prefsLoaded, loading, filtered]);
 
-  function persistPreferences(next: UserPreferences) {
-    prefsRef.current = next;
-    void saveUserPreferences(next).catch(() => {
+  function persistPreferences(patch: Partial<UserPreferences>) {
+    prefsRef.current = { ...prefsRef.current, ...patch };
+    void patchUserPreferences(patch).catch(() => {
       /* keep local UI state; will retry on next save */
     });
   }
 
   function handleSortByChange(by: UserPreferences["sortBy"]) {
     setSortBy(by);
-    persistPreferences({ ...prefsRef.current, sortBy: by });
+    persistPreferences({ sortBy: by });
   }
 
   function handleSortOrderChange(order: UserPreferences["sortOrder"]) {
     setSortOrder(order);
-    persistPreferences({ ...prefsRef.current, sortOrder: order });
+    persistPreferences({ sortOrder: order });
   }
 
   function handleDashboardRollingPeriodChange(period: RollingDashboardPeriod) {
     setLastRollingDashboardPeriod(period);
     setDashboardPeriod(period);
-    persistPreferences({ ...prefsRef.current, dashboardPeriod: period });
+    persistPreferences({ dashboardPeriod: period });
   }
 
   function handleDashboardCalendarMonthChange(monthKey: string) {
@@ -563,14 +580,11 @@ export function CrmShell() {
       const period = dashboardPeriodFromCalendarMonthKey(monthKey);
       if (!period) return;
       setDashboardPeriod(period);
-      persistPreferences({ ...prefsRef.current, dashboardPeriod: period });
+      persistPreferences({ dashboardPeriod: period });
       return;
     }
     setDashboardPeriod(lastRollingDashboardPeriod);
-    persistPreferences({
-      ...prefsRef.current,
-      dashboardPeriod: lastRollingDashboardPeriod,
-    });
+    persistPreferences({ dashboardPeriod: lastRollingDashboardPeriod });
   }
 
   function handlePreferencesSaved(prefs: UserPreferences) {
@@ -1349,6 +1363,7 @@ export function CrmShell() {
             onFilter={handleDashboardFilter}
             userEmail={auth.email}
             canSendEmail={auth.signedIn && auth.method === "oauth" && source !== "mock"}
+            onRefreshTickets={() => loadTickets({ silent: true, reason: "manual" })}
           />
         ) : activeView === "team-dashboard" ? (
           <TeamDashboardView
@@ -1365,6 +1380,7 @@ export function CrmShell() {
             onCalendarMonthChange={handleDashboardCalendarMonthChange}
             userEmail={auth.email}
             canSendEmail={auth.signedIn && auth.method === "oauth" && source !== "mock"}
+            onRefreshTickets={() => loadTickets({ silent: true, reason: "manual" })}
           />
         ) : (
           <div className="flex min-w-0 flex-1 flex-col">

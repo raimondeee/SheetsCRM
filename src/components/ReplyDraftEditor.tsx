@@ -57,7 +57,7 @@ const LINE_SPACINGS = [
 
 const BLOCK_TAGS = new Set(["P", "DIV", "LI", "H1", "H2", "H3", "H4", "H5", "H6"]);
 
-const DEFAULT_TEXT_COLOR = TEXT_COLORS[0].value;
+const DEFAULT_TEXT_COLOR: string = TEXT_COLORS[0].value;
 
 export interface ReplyDraftEditorHandle {
   focus: () => void;

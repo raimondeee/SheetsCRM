@@ -3,6 +3,9 @@ import { normalizeDashboardPeriod } from "./dashboard-period";
 import type { ExternalToolLink } from "./external-tools";
 import { defaultExternalTools, normalizeExternalTools } from "./external-tools";
 import {
+  normalizeMixmaxStarredTemplateIds,
+} from "./mixmax-starred";
+import {
   DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
   normalizeNotificationSoundPreferences,
   type NotificationSoundPreferences,
@@ -35,6 +38,8 @@ export interface UserPreferences
   /** Show "Append to selected" in the Gmail unread inbox modal. */
   unreadInboxAppendToSelectedEnabled: boolean;
   externalTools: ExternalToolLink[];
+  /** Ordered Mixmax template IDs the agent starred (drag to reorder). */
+  mixmaxStarredTemplateIds: string[];
 }
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
@@ -47,6 +52,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   unreadInboxBindToSelectedEnabled: false,
   unreadInboxAppendToSelectedEnabled: true,
   externalTools: defaultExternalTools(),
+  mixmaxStarredTemplateIds: [],
   ...DEFAULT_TIMER_SETTINGS,
   ...DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
   ...DEFAULT_WELLNESS_PREFERENCES,
@@ -94,6 +100,9 @@ export function readLegacyUserPreferences(): UserPreferences | null {
           ? parsed.unreadInboxAppendToSelectedEnabled
           : DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
+      mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
+        parsed.mixmaxStarredTemplateIds
+      ),
       ...normalizeTimerSettings(parsed),
       ...normalizeNotificationSoundPreferences(parsed),
       ...normalizeWellnessPreferences(parsed),
@@ -141,16 +150,27 @@ export async function fetchUserPreferences(): Promise<UserPreferences> {
     ...DEFAULT_USER_PREFERENCES,
     ...data.preferences,
     externalTools: normalizeExternalTools(data.preferences?.externalTools),
+    mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
+      data.preferences?.mixmaxStarredTemplateIds
+    ),
     ...normalizeNotificationSoundPreferences(data.preferences),
     ...normalizeWellnessPreferences(data.preferences),
   };
 }
 
 export async function saveUserPreferences(prefs: UserPreferences): Promise<UserPreferences> {
+  return patchUserPreferences(prefs);
+}
+
+/** Merge a preference patch into overlay.db without requiring a full prefs object. */
+export async function patchUserPreferences(
+  patch: Partial<UserPreferences>
+): Promise<UserPreferences> {
   const res = await fetch("/api/preferences", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ preferences: prefs }),
+    credentials: "same-origin",
+    body: JSON.stringify({ preferences: patch }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to save preferences");
@@ -158,9 +178,24 @@ export async function saveUserPreferences(prefs: UserPreferences): Promise<UserP
     ...DEFAULT_USER_PREFERENCES,
     ...data.preferences,
     externalTools: normalizeExternalTools(data.preferences?.externalTools),
+    mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
+      data.preferences?.mixmaxStarredTemplateIds
+    ),
     ...normalizeNotificationSoundPreferences(data.preferences),
     ...normalizeWellnessPreferences(data.preferences),
   };
+}
+
+/** Persist Mixmax stars without overwriting unrelated preference fields. */
+export async function saveMixmaxStarredTemplateIdsPreference(
+  mixmaxStarredTemplateIds: string[]
+): Promise<string[]> {
+  const saved = await patchUserPreferences({
+    mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
+      mixmaxStarredTemplateIds
+    ),
+  });
+  return saved.mixmaxStarredTemplateIds;
 }
 
 export async function migrateLegacyPreferencesIfNeeded(): Promise<void> {

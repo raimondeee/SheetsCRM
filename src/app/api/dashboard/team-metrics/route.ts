@@ -22,12 +22,13 @@ export async function GET() {
         sourcesLoaded: 0,
         sourcesTotal: 6,
         partialError: null,
+        mappingWarnings: [],
       },
       { headers: { "Cache-Control": "private, max-age=60" } }
     );
   }
 
-  const { colleagueRecords, sourcesLoaded, sourcesTotal, loadError } =
+  const { colleagueRecords, sourcesLoaded, sourcesTotal, loadError, mappingWarnings } =
     await loadColleagueTeamRecords();
 
   if (sourcesLoaded === 0 && loadError) {
@@ -41,6 +42,7 @@ export async function GET() {
       sourcesTotal,
       partialError:
         sourcesLoaded > 0 && sourcesLoaded < sourcesTotal ? loadError : null,
+      mappingWarnings,
     },
     { headers: { "Cache-Control": "private, max-age=60" } }
   );

@@ -1,3 +1,10 @@
+/**
+ * Maps Google Sheet header row text → ColumnRole for CRM field binding.
+ *
+ * Used by Setup → Analyze columns and by sheets.ts when reading/writing cells.
+ * Operators can lock mappings (manuallyMapped) so later analyze passes do not
+ * overwrite intentional column choices. Unknown headers stay unmapped until assigned.
+ */
 import type { ColumnMapping, ColumnRole, SheetConfig } from "./types";
 import { indexToLetter } from "./types";
 

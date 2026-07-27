@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -16,6 +16,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { RefreshCw } from "lucide-react";
 import type { Ticket } from "@/lib/types";
 import {
   DASHBOARD_PERIOD_OPTIONS,
@@ -62,6 +63,8 @@ interface TeamDashboardViewProps {
   canSendEmail?: boolean;
   /** Shareable Team Dashboard shell only — opens source-sheet config. */
   onOpenSources?: () => void;
+  /** Refresh local intake tickets (full CRM) before reloading regional tabs. */
+  onRefreshTickets?: () => void | Promise<void>;
 }
 
 export function TeamDashboardView({
@@ -74,12 +77,16 @@ export function TeamDashboardView({
   onCalendarMonthChange,
   userEmail,
   canSendEmail = false,
+  onRefreshTickets,
 }: TeamDashboardViewProps) {
   const [colleagueRecords, setColleagueRecords] = useState<TeamIntakeRecord[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(0);
   const [sourcesTotal, setSourcesTotal] = useState(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [mappingWarnings, setMappingWarnings] = useState<string[]>([]);
   const [fetchingTabs, setFetchingTabs] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [teamRefreshKey, setTeamRefreshKey] = useState(0);
   const [regionFilter, setRegionFilter] = useState<string>("all");
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
   const teamPrintRef = useRef<HTMLDivElement>(null);
@@ -110,11 +117,17 @@ export function TeamDashboardView({
           setSourcesLoaded(data.sourcesLoaded ?? 0);
           setSourcesTotal(data.sourcesTotal ?? 0);
           setFetchError(data.partialError ?? null);
+          setMappingWarnings(
+            Array.isArray(data.mappingWarnings)
+              ? (data.mappingWarnings as string[])
+              : []
+          );
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setColleagueRecords([]);
+          setMappingWarnings([]);
           setFetchError(err instanceof Error ? err.message : "Failed to load team tabs");
         }
       })
@@ -125,7 +138,18 @@ export function TeamDashboardView({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [teamRefreshKey]);
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefreshTickets?.();
+      setTeamRefreshKey((n) => n + 1);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefreshTickets, refreshing]);
 
   const regionOptions = useMemo(() => listTeamRegions(allRecords), [allRecords]);
   const ownerOptions = useMemo(
@@ -224,6 +248,18 @@ export function TeamDashboardView({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            disabled={refreshing || fetchingTabs}
+            className="inline-flex items-center gap-1.5 rounded border border-zendesk-border bg-white px-2.5 py-1.5 text-xs font-medium text-zendesk-navy hover:bg-gray-50 disabled:opacity-60"
+            title="Reload regional sheet tabs and local intake"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${refreshing || fetchingTabs ? "animate-spin" : ""}`}
+            />
+            {refreshing || fetchingTabs ? "Refreshing…" : "Refresh"}
+          </button>
           <label className="flex items-center gap-2 text-xs text-zendesk-muted">
             <span className="font-medium">Period</span>
             <select
@@ -307,6 +343,27 @@ export function TeamDashboardView({
           {fetchingTabs
             ? "Loading regional sheet tabs…"
             : `Regional tabs: ${sourcesLoaded}/${sourcesTotal} loaded. ${fetchError}`}
+        </div>
+      )}
+
+      {!fetchingTabs && mappingWarnings.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <p className="font-medium">Column mapping warnings</p>
+          <p className="mt-0.5 text-amber-900/90">
+            Headers are remapped automatically when possible. Use Source sheets → Detect columns
+            to update saved letters if agents reordered columns.
+          </p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+            {mappingWarnings.slice(0, 8).map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+          {mappingWarnings.length > 8 && (
+            <p className="mt-1 text-amber-900/80">
+              +{mappingWarnings.length - 8} more warning
+              {mappingWarnings.length - 8 === 1 ? "" : "s"}
+            </p>
+          )}
         </div>
       )}
 

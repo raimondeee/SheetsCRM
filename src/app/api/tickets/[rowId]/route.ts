@@ -1,3 +1,11 @@
+/**
+ * PATCH /api/tickets/[rowId] — update CRM ticket fields.
+ *
+ * Pattern: write SQLite overlay first, then queueSheetSync() for Google Sheets.
+ * UI success means overlay updated; sheet confirmation is best-effort async.
+ * Cover-sheet "ignore" and resolve rules that must not touch a teammate's sheet
+ * are enforced in overlay-db helpers called from here.
+ */
 import { NextResponse } from "next/server";
 import {
   addAdminNoteThreadMessage,
@@ -36,6 +44,7 @@ import { getSignedInUser } from "@/lib/google-auth";
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
 
+/** Fire-and-forget sheet write; failures are logged, not returned to the client. */
 function queueSheetSync(label: string, task: () => Promise<void>): void {
   void task().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);

@@ -78,6 +78,8 @@ There is **no multi-tenant server**, **no central backend**, and **no applicatio
 
 ### Key modules
 
+Architecture-oriented file headers live at the top of these hubs (and a few related API routes) so code review can start in-repo without rereading this whole document. For end-user setup see [README.md](../README.md).
+
 | Path | Responsibility |
 |------|----------------|
 | `src/lib/sheets.ts` | Sheet read/write, column mapping, ticket fetch |
@@ -94,6 +96,8 @@ There is **no multi-tenant server**, **no central backend**, and **no applicatio
 | `src/lib/dashboard-report-export.ts` / `dashboard-report-server.ts` | CSV/HTML/PDF + emailed reports |
 | `src/lib/crm-preferences-store.ts` | User prefs & compose prefs in SQLite |
 | `src/lib/env-settings.ts` | Whitelisted `.env` read/write (localhost gate) |
+| `src/components/CrmShell.tsx` | Client app brain: views, refresh, auth chrome |
+| `src/components/TicketDetail.tsx` | Ticket workspace UI (compose, thread, tools) |
 
 ### Request lifecycle (tickets)
 
@@ -287,11 +291,10 @@ System of record for intake. CRM writes are limited to mapped columns (see READM
 | Key | Content | Survives cache clear? |
 |-----|---------|------------------------|
 | `sheetscrm_reply_drafts` | Unsent reply HTML/subject | No |
-| `sheetscrm_mixmax_starred` | Starred template IDs | No |
 | `sheetscrm_calendar_notified_v1` | Calendar reminder dedupe | No |
 | `crm.calendarCollapsed` | Sidebar calendar UI state | No |
 
-Preferences were moved to SQLite; legacy keys are migrated once via `/api/preferences`.
+Mixmax starred template IDs (ordered) live in `user_preferences` inside `overlay.db`. Legacy `sheetscrm_mixmax_starred_templates` is migrated once into preferences.
 
 ---
 

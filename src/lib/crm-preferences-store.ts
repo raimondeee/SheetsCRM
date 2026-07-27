@@ -2,6 +2,7 @@ import type { DashboardPeriod } from "./dashboard-period";
 import { normalizeDashboardPeriod } from "./dashboard-period";
 import type { ExternalToolLink } from "./external-tools";
 import { defaultExternalTools, normalizeExternalTools } from "./external-tools";
+import { normalizeMixmaxStarredTemplateIds } from "./mixmax-starred";
 import {
   normalizeNotificationSoundPreferences,
   type NotificationSoundPreferences,
@@ -30,6 +31,7 @@ export interface StoredUserPreferences
   unreadInboxBindToSelectedEnabled: boolean;
   unreadInboxAppendToSelectedEnabled: boolean;
   externalTools: ExternalToolLink[];
+  mixmaxStarredTemplateIds: string[];
 }
 
 export const DEFAULT_STORED_PREFERENCES: StoredUserPreferences = {
@@ -85,6 +87,9 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
           ? parsed.unreadInboxAppendToSelectedEnabled
           : DEFAULT_STORED_PREFERENCES.unreadInboxAppendToSelectedEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
+      mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
+        parsed.mixmaxStarredTemplateIds
+      ),
       ...normalizeTimerSettings(parsed),
       ...normalizeNotificationSoundPreferences(parsed),
       ...normalizeWellnessPreferences(parsed),

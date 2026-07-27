@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, ScanSearch, Trash2, X } from "lucide-react";
 import type {
   TeamDashboardSourcesFile,
+  TeamTabColumnLetters,
   TeamTabSourceConfig,
 } from "@/lib/team-dashboard-sources";
 import { parseSheetUrl } from "@/lib/types";
@@ -32,8 +33,10 @@ export function TeamSourcesPanel({ open, onClose, onSaved }: TeamSourcesPanelPro
   const [pathHint, setPathHint] = useState("./data/team-dashboard-sources.json");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [detectNotes, setDetectNotes] = useState<Record<string, string[]>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +114,105 @@ export function TeamSourcesPanel({ open, onClose, onSaved }: TeamSourcesPanelPro
         ),
       };
     });
+  }
+
+  async function detectSourceColumns(index: number) {
+    if (!config) return;
+    const source = config.sources[index];
+    if (!source) return;
+    const key = source.id || String(index);
+    setDetecting(key);
+    setError(null);
+    try {
+      const spreadsheetId =
+        source.spreadsheetId?.trim() || config.spreadsheetId.trim();
+      const res = await fetch("/api/dashboard/team-sources/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          id: source.id,
+          region: source.region,
+          spreadsheetId,
+          sheetName: source.sheetName,
+          gid: source.gid,
+          columns: source.columns,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to detect columns");
+      const columns = data.columns as TeamTabColumnLetters;
+      updateSource(index, { columns });
+      const warnings = Array.isArray(data.warnings)
+        ? (data.warnings as string[])
+        : [];
+      setDetectNotes((prev) => ({
+        ...prev,
+        [key]:
+          warnings.length > 0
+            ? warnings
+            : [
+                `Matched headers → Timestamp ${columns.timestamp}, Status ${columns.status}, MM ${columns.owner}, Contact Reason ${columns.category}.`,
+              ],
+      }));
+      setSavedMessage(
+        "Column letters updated from sheet headers. Save sources to keep them."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to detect columns");
+    } finally {
+      setDetecting(null);
+    }
+  }
+
+  async function detectAllColumns() {
+    if (!config) return;
+    setDetecting("all");
+    setError(null);
+    try {
+      const res = await fetch("/api/dashboard/team-sources/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ all: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to detect columns");
+      const results = (data.results ?? []) as Array<{
+        sourceId: string;
+        columns: TeamTabColumnLetters;
+        health?: { warnings?: string[] };
+      }>;
+      const byId = new Map(results.map((row) => [row.sourceId, row]));
+      const notes: Record<string, string[]> = {};
+      for (const [sourceId, hit] of byId) {
+        const warnings = hit.health?.warnings ?? [];
+        notes[sourceId] =
+          warnings.length > 0
+            ? warnings
+            : [
+                `Matched headers → Timestamp ${hit.columns.timestamp}, Status ${hit.columns.status}, MM ${hit.columns.owner}, Contact Reason ${hit.columns.category}.`,
+              ];
+      }
+      setConfig((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sources: prev.sources.map((source) => {
+            const hit = byId.get(source.id);
+            return hit ? { ...source, columns: hit.columns } : source;
+          }),
+        };
+      });
+      setDetectNotes(notes);
+      setSavedMessage(
+        "Column letters updated from sheet headers for enabled sources. Save sources to keep them."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to detect columns");
+    } finally {
+      setDetecting(null);
+    }
   }
 
   if (!open) return null;
@@ -256,36 +358,75 @@ export function TeamSourcesPanel({ open, onClose, onSaved }: TeamSourcesPanelPro
                     </div>
                     <p className="text-xs text-zendesk-muted">
                       The dashboard reads this sheet only. Add a second source with the same team name
-                      when a team uses separate language tabs.
+                      when a team uses separate language tabs. Letters are a fallback — Detect columns
+                      matches header names, and reporting also remaps from headers at load time.
                     </p>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {(["timestamp", "status", "owner", "category"] as const).map((field) => (
-                        <label key={field} className="block text-xs">
-                          <span className="font-medium capitalize">{field} col</span>
-                          <input
-                            value={source.columns[field]}
-                            onChange={(e) => updateColumns(index, field, e.target.value)}
-                            className="mt-1 w-full rounded border border-zendesk-border px-2 py-1.5 text-sm uppercase"
-                          />
-                        </label>
-                      ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+                        {(
+                          [
+                            ["timestamp", "Timestamp"],
+                            ["status", "Status"],
+                            ["owner", "MM"],
+                            ["category", "Contact Reason"],
+                          ] as const
+                        ).map(([field, label]) => (
+                          <label key={field} className="block text-xs">
+                            <span className="font-medium">{label}</span>
+                            <input
+                              value={source.columns[field]}
+                              onChange={(e) => updateColumns(index, field, e.target.value)}
+                              className="mt-1 w-full rounded border border-zendesk-border px-2 py-1.5 text-sm uppercase"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={Boolean(detecting)}
+                        onClick={() => void detectSourceColumns(index)}
+                        className="inline-flex shrink-0 items-center gap-1 rounded border border-zendesk-border px-2 py-1.5 text-xs hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <ScanSearch className="h-3.5 w-3.5" />
+                        {detecting === (source.id || String(index))
+                          ? "Detecting…"
+                          : "Detect columns"}
+                      </button>
                     </div>
+                    {(detectNotes[source.id] ?? []).length > 0 && (
+                      <ul className="space-y-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">
+                        {(detectNotes[source.id] ?? []).map((note) => (
+                          <li key={note}>{note}</li>
+                        ))}
+                      </ul>
+                    )}
                   </fieldset>
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setConfig((prev) =>
-                    prev ? { ...prev, sources: [...prev.sources, emptySource()] } : prev
-                  )
-                }
-                className="inline-flex items-center gap-1.5 rounded border border-zendesk-border px-3 py-2 text-sm hover:bg-gray-50"
-              >
-                <Plus className="h-4 w-4" />
-                Add source sheet
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setConfig((prev) =>
+                      prev ? { ...prev, sources: [...prev.sources, emptySource()] } : prev
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 rounded border border-zendesk-border px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add source sheet
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(detecting) || config.sources.length === 0}
+                  onClick={() => void detectAllColumns()}
+                  className="inline-flex items-center gap-1.5 rounded border border-zendesk-border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ScanSearch className="h-4 w-4" />
+                  {detecting === "all" ? "Detecting…" : "Detect all columns"}
+                </button>
+              </div>
             </>
           )}
         </div>

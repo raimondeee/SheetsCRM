@@ -1,3 +1,7 @@
+/**
+ * Persist primary SheetConfig (column mapping, hours, UI fields) to SQLite.
+ * Normalized via prepareSheetConfig before save. Loaded again by GET /api/tickets.
+ */
 import { NextResponse } from "next/server";
 import { saveSheetConfig } from "@/lib/overlay-db";
 import type { SheetConfig } from "@/lib/types";

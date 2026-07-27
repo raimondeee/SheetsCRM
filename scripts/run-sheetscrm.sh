@@ -1,4 +1,7 @@
 #!/bin/bash
+# Day-to-day macOS launcher (via "Open SheetsCRM.command").
+# Assumes Node is already installed — use bootstrap-macos.sh for first-time setup.
+# Starts npm run dev on port 3000, opens the browser when ready, minimizes Terminal.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -41,13 +44,30 @@ minimize_launcher_terminal() {
 
 close_empty_terminal_windows
 
+# Prefer Node 22 LTS from Homebrew when present (plain `node` may be too new).
+if [ -x /opt/homebrew/opt/node@22/bin/node ]; then
+  PATH="/opt/homebrew/opt/node@22/bin:${PATH}"
+  export PATH
+elif [ -x /usr/local/opt/node@22/bin/node ]; then
+  PATH="/usr/local/opt/node@22/bin:${PATH}"
+  export PATH
+fi
+
 echo "SheetsCRM"
 echo "Project: $ROOT"
 echo ""
 
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is not installed."
-  echo "Install it from https://nodejs.org (LTS), then try again."
+  echo "Run Install SheetsCRM.command first, or install Node 22 LTS (brew install node@22)."
+  read -r -p "Press Enter to close…"
+  exit 1
+fi
+
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$NODE_MAJOR" -lt 20 ] || [ "$NODE_MAJOR" -gt 22 ]; then
+  echo "Node.js $(node --version) is not supported (need v20–v22)."
+  echo "Run Install SheetsCRM.command, or: brew install node@22"
   read -r -p "Press Enter to close…"
   exit 1
 fi

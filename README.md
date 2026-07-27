@@ -2,7 +2,7 @@
 
 SheetsCRM is a Zendesk-style CRM that sits on top of your Google Forms intake sheet. Form submissions still land in Google Sheets; the CRM adds ticket workflow, email threads, SLAs, team coverage, dashboards, and reporting without replacing the sheet as the intake source of truth.
 
-This guide walks through installing and configuring SheetsCRM on your Mac for local use.
+This guide walks through installing and configuring SheetsCRM on your Mac for local use. For engineers reviewing architecture, trust boundaries, and module map, see [`docs/ENGINEERING_AND_SECURITY.md`](docs/ENGINEERING_AND_SECURITY.md) (key source files also have short orientation headers at the top of the file).
 
 Word and rich-text copies of this guide are available at:
 
@@ -15,19 +15,20 @@ Word and rich-text copies of this guide are available at:
 
 1. [What you need](#what-you-need)
 2. [Quick start (macOS)](#quick-start-macos)
-3. [Manual install](#manual-install)
-4. [Environment configuration](#environment-configuration)
-5. [Google sign-in setup](#google-sign-in-setup)
-6. [Connect your intake sheet](#connect-your-intake-sheet)
-7. [Setup tabs](#setup-tabs)
-8. [Preferences](#preferences)
-9. [Day-to-day features](#day-to-day-features)
-10. [First run checklist](#first-run-checklist)
-11. [Where data is stored](#where-data-is-stored)
-12. [Optional integrations](#optional-integrations)
-13. [Updating SheetsCRM](#updating-sheetscrm)
-14. [Troubleshooting](#troubleshooting)
-15. [Column reference](#column-reference)
+3. [One-click Mac setup](#one-click-mac-setup)
+4. [Manual install](#manual-install)
+5. [Environment configuration](#environment-configuration)
+6. [Google sign-in setup](#google-sign-in-setup)
+7. [Connect your intake sheet](#connect-your-intake-sheet)
+8. [Setup tabs](#setup-tabs)
+9. [Preferences](#preferences)
+10. [Day-to-day features](#day-to-day-features)
+11. [First run checklist](#first-run-checklist)
+12. [Where data is stored](#where-data-is-stored)
+13. [Optional integrations](#optional-integrations)
+14. [Updating SheetsCRM](#updating-sheetscrm)
+15. [Troubleshooting](#troubleshooting)
+16. [Column reference](#column-reference)
 
 ---
 
@@ -37,7 +38,7 @@ Word and rich-text copies of this guide are available at:
 |-------------|--------|
 | **macOS** (recommended) | Double-click launcher works out of the box. Windows/Linux: use [Manual install](#manual-install). |
 | **Homebrew** (macOS) | Package manager used to install Node.js. See [Install Homebrew and Node.js](#install-homebrew-and-nodejs) below. |
-| **Node.js 20+ (LTS)** | Install with Homebrew (`brew install node`), or from [https://nodejs.org](https://nodejs.org). Includes `npm`. |
+| **Node.js 20–22 (LTS)** | Install with Homebrew (`brew install node@22`), or the **20.x / 22.x LTS** installer from [https://nodejs.org](https://nodejs.org). Do not use Node 23+ yet (native SQLite build fails). Includes `npm`. |
 | **Google account** | Same account you use to view the intake sheet in Chrome. |
 | **Sheet access** | Viewer or Editor on the team intake Google Sheet. |
 | **Google Cloud project** | One-time OAuth setup (≈10–15 min). See [Google sign-in setup](#google-sign-in-setup). |
@@ -54,13 +55,17 @@ On a Mac that does not already have Node.js, install Homebrew first, then Node:
 
 Follow any on-screen steps Homebrew prints (on Apple Silicon it often asks you to add Homebrew to your `PATH`).
 
-Then install Node.js:
+Then install Node.js 22 LTS:
 
 ```bash
-brew install node
+brew install node@22
+echo 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"' >> ~/.zprofile
+export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
 ```
 
-Confirm both tools are available:
+On Intel Macs, use `/usr/local/opt/node@22/bin` instead of `/opt/homebrew/opt/node@22/bin`.
+
+Confirm:
 
 ```bash
 brew -v
@@ -68,20 +73,37 @@ node -v
 npm -v
 ```
 
-`node -v` should report **v20** or newer.
+`node -v` should report **v20**, **v21**, or **v22** (not v23+).
+
+Keep the project folder path **free of spaces** (e.g. `~/Documents/SheetsCRM`, not `Robert CRM`).
 
 ---
 
 ## Quick start (macOS)
 
-1. Install [Homebrew and Node.js](#install-homebrew-and-nodejs) if you have not already.
-2. Clone or copy the `SheetsCRM` project folder to your Mac (e.g. `~/Desktop/projects/SheetsCRM`).
+1. Clone or copy the `SheetsCRM` project folder to your Mac (e.g. `~/Desktop/projects/SheetsCRM`).
+2. Double-click **`Install SheetsCRM.command`** in the project root if this Mac has not been set up yet.
 3. Double-click **`Open SheetsCRM.command`** in the project root.
    - First launch runs `npm install` automatically (may take a minute).
    - One Terminal window starts the server, opens your browser when ready, then minimizes itself to the Dock.
    - Leave that Terminal window running while you use the CRM. Press **Ctrl+C** to stop the server.
 
 If macOS blocks the launcher (“unidentified developer”), right-click → **Open** → confirm once.
+
+---
+
+## One-click Mac setup
+
+Double-click **`Install SheetsCRM.command`** once on each Mac before opening the CRM. It:
+
+1. Opens **System Settings → Privacy & Security** so the user can resolve a Gatekeeper warning if macOS blocked the downloaded script.
+2. Checks for Homebrew and, with the user's confirmation, runs Homebrew's official installer if it is missing.
+3. Installs Node.js 22 LTS (not the latest Homebrew `node`, which can be too new for the SQLite package), installing Xcode Command Line Tools when macOS needs them.
+4. Creates `.env` from `.env.example` when needed, installs the locked npm packages, and prepares the local data folder.
+
+The installer cannot bypass macOS security controls, approve Gatekeeper prompts, or enter an administrator password. If the installer itself is blocked before it starts, right-click **`Install SheetsCRM.command`** → **Open** → **Open**, or go to **System Settings → Privacy & Security** and select **Open Anyway**. Review and accept the Homebrew installer only if you trust the copy of SheetsCRM you received.
+
+After setup, double-click **`Open SheetsCRM.command`**. The initial `.env` uses demo data; configure Google OAuth in **Setup → Environment** for live sheets.
 
 ---
 
@@ -389,7 +411,7 @@ Review escalations and quality appeals tabs read shared Google Sheets (defaults 
 Use this after install:
 
 - [ ] Homebrew installed (`brew -v` in Terminal)
-- [ ] Node.js installed via Homebrew (`brew install node`, then `node -v` — v20+)
+- [ ] Node.js 20–22 installed (`brew install node@22`, then `node -v`)
 - [ ] `.env` configured (UI or file) with Google Client ID + Secret
 - [ ] Google Cloud APIs enabled: Sheets, Gmail, Calendar, People
 - [ ] `USE_MOCK_DATA=false` for live data
@@ -426,8 +448,8 @@ SheetsCRM/
 | View/sort/dashboard/timer preferences | `data/overlay.db` | Yes |
 | CC Market Manager per ticket | `data/overlay.db` | Yes |
 | Google sign-in session | Browser cookie | **No** — sign in again after clearing cookies |
+| Mixmax starred templates | `data/overlay.db` (user preferences) | Yes |
 | Unsent reply drafts | Browser `localStorage` | **No** — convenience only |
-| Mixmax starred templates | Browser `localStorage` | **No** — convenience only |
 | Calendar “already notified” markers | Browser `localStorage` | **No** — convenience only |
 
 ### Backup before updates or OS changes
@@ -484,6 +506,23 @@ After a ticket is Resolved, Gmail thread claims can be released after N days (de
 
 ## Updating SheetsCRM
 
+### Zip / share installs (most teammates)
+
+You send a new share zip. They keep their existing folder (with `.env` and `data/`).
+
+1. Unzip the new package somewhere else (do **not** overwrite their working folder).
+2. Update their install:
+   - **If their folder already has `Update SheetsCRM.command`:** double-click it and choose the new unzipped folder.
+   - **First update / older install:** in Terminal, from the **new** unzipped folder, run:
+     ```bash
+     bash scripts/update-local-install.sh --apply-to "/path/to/their/existing/SheetsCRM"
+     ```
+3. When it finishes, double-click **Open SheetsCRM.command** in their existing folder.
+
+The updater replaces app code and reinstalls packages. It **keeps** `.env`, `overlay.db`, Market Managers, custom sounds, and team-dashboard sources.
+
+### Git installs
+
 ```bash
 cd /path/to/SheetsCRM
 git pull
@@ -505,7 +544,9 @@ On macOS, install Homebrew, then Node.js:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew install node
+brew install node@22
+echo 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"' >> ~/.zprofile
+export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
 ```
 
 After Homebrew installs on Apple Silicon, run the “Next steps” commands it prints (they add Homebrew to your `PATH`), then open a **new** Terminal window and retry `brew -v` / `node -v`.
@@ -564,6 +605,36 @@ PORT=3001 npm run dev
 ```
 
 Update `NEXT_PUBLIC_APP_URL` and the Google OAuth redirect URI to match if you change ports.
+
+### `npm install` fails with `climits` / `better-sqlite3` / Node 26
+
+SheetsCRM needs **Node 20–22**. Homebrew’s plain `brew install node` may install Node 26, which cannot build `better-sqlite3`. Prefer:
+
+```bash
+brew install node@22
+export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+node -v   # should be v22.x
+rm -rf node_modules
+npm ci
+```
+
+Also keep the project path **free of spaces** (rename `Robert CRM` → `SheetsCRM`). Spaces break the native build.
+
+If headers are missing (`climits` file not found), confirm with:
+
+```bash
+xcrun --sdk macosx --show-sdk-path
+ls "$(xcrun --sdk macosx --show-sdk-path)/usr/include/c++/v1/climits"
+```
+
+If that file is missing, remove and reinstall the tools (requires your Mac password):
+
+```bash
+sudo rm -rf /Library/Developer/CommandLineTools
+sudo xcode-select --install
+```
+
+Finish Apple’s installer, then run **`Install SheetsCRM.command`** again (or `npm ci` in the project folder).
 
 ### macOS launcher won’t open
 
@@ -630,9 +701,9 @@ Google Form  →  Google Sheet (intake + selected column writes)
 
 ## Sharing with a coworker (zip / copy)
 
-Do **not** zip your working folder as-is — it may include `.env`, `data/overlay.db`, and real Market Manager emails.
+Do **not** zip your working folder as-is — it may include your full `.env`, `data/overlay.db`, and real Market Manager emails.
 
-Create a sanitized copy:
+Create a handoff copy:
 
 ```bash
 npm run share:export
@@ -646,9 +717,22 @@ cd ..
 zip -r SheetsCRM-share.zip SheetsCRM-share
 ```
 
-The script excludes `node_modules`, `.next`, `.git`, local databases, and your real `.env`. It adds a placeholder `.env`, example market managers, and scrubs example sheet IDs in the copy only (your project is unchanged).
+The script excludes `node_modules`, `.next`, `.git`, local databases, Mixmax tokens, and service-account keys. If your local `.env` has a real **Google OAuth Client ID + Secret**, those two values are copied into the share `.env` and `USE_MOCK_DATA` is set to `false` so the recipient can Sign in with Google without creating their own Cloud client. Treat the zip as **private** (same trust as handing them the client secret).
+
+If OAuth values are missing locally, the share `.env` keeps placeholders and `SHARE_PACKAGING.txt` tells the coworker what to paste.
 
 See `SHARE_PACKAGING.txt` inside the export for a handoff checklist.
+
+### Team Dashboard-only package (management)
+
+For managers who only need regional metrics (no ticket inbox):
+
+```bash
+npm run share:team-dashboard
+# or: bash scripts/create-team-dashboard-share.sh ../TeamDashboard-share
+```
+
+This packages OAuth from your local `.env`, embeds the current regional team sheet sources (`data/team-dashboard-sources.json` if present, otherwise the CRM’s default regional tabs), and sets `USE_MOCK_DATA=false`. Recipients unzip, run **Install TeamDashboard.command** once on a new Mac (same Node/Homebrew bootstrap as the full CRM), then **Open TeamDashboard.command**, sign in with Google (account must open the team spreadsheet), and the dashboard should load. Treat the zip as private. Re-export after dependency updates so the zip includes the current `package-lock.json` (audit findings come from that lockfile, not from skipping bootstrap).
 
 ---
 
