@@ -104,17 +104,21 @@ export function CoverSheetsPanel({ onSaved }: { onSaved?: () => void }) {
         return;
       }
       const merged = prepareSheetConfig(
-        mergeAnalyzedSheetConfig(draft.analyzed, {
-          ...data.config,
-          id: entry.id,
-          manuallyMapped: false,
-        })
+        mergeAnalyzedSheetConfig(
+          draft.analyzed,
+          {
+            ...data.config,
+            id: entry.id,
+            manuallyMapped: false,
+          },
+          { forceRemapRoles: true }
+        )
       );
       updateDraft(entry.id, {
         analyzed: merged,
         analysisNote:
           data.analysis?.note ??
-          `Analyzed "${data.config.sheetName}" — remap columns below, then save.`,
+          `Analyzed "${data.config.sheetName}" — roles rematched from current headers. Save team coverage to keep.`,
         loading: false,
       });
     } catch (error) {
@@ -183,8 +187,8 @@ export function CoverSheetsPanel({ onSaved }: { onSaved?: () => void }) {
         <h3 className="text-sm font-semibold">Team coverage</h3>
         <p className="mt-1 text-sm text-zendesk-muted">
           Add up to 10 teammate intake sheets. Enabled sheets merge into your inbox with a banner
-          showing which agent or team each ticket belongs to. Analyze and map each sheet
-          independently.
+          showing which agent or team each ticket belongs to. Expand a slot to Analyze or Detect
+          columns after a teammate deletes/reorders sheet columns, then save.
         </p>
         <p className="mt-2 text-xs text-zendesk-muted">
           {enabledCount} of {entries.length} slots enabled.
@@ -277,6 +281,7 @@ export function CoverSheetsPanel({ onSaved }: { onSaved?: () => void }) {
                       onAnalyze={() => analyzeEntry(entry)}
                       loading={draft.loading}
                       analysisNote={draft.analysisNote}
+                      persistHint="Save team coverage to keep these letters permanently."
                     />
                   </div>
                 </div>

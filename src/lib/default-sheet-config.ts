@@ -86,6 +86,7 @@ export function buildDefaultSheetConfig(headers: string[] = []): SheetConfig {
     sheetName: "Form Responses",
     headerRow: 1,
     columns,
+    emailSubjectPrefix: "Form Submission Response - ",
     createdAt: now,
     updatedAt: now,
   };

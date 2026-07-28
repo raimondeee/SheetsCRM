@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 
   const tickets = useMock
     ? getMockTickets(timerSettings)
-    : await fetchTicketsFromSheet(config, timerSettings);
+    : (await fetchTicketsFromSheet(config, timerSettings)).tickets;
 
   const metrics = buildServiceMetrics({
     tickets,

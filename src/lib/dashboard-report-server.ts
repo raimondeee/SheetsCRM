@@ -44,7 +44,7 @@ export async function loadDashboardTickets(userEmail: string | null) {
 
   return useMock
     ? getMockTickets(timerSettings)
-    : await fetchTicketsFromSheet(config, timerSettings);
+    : (await fetchTicketsFromSheet(config, timerSettings)).tickets;
 }
 
 export async function loadColleagueTeamRecords(): Promise<{

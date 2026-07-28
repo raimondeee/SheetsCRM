@@ -32,6 +32,7 @@ export interface StoredUserPreferences
   unreadInboxAppendToSelectedEnabled: boolean;
   externalTools: ExternalToolLink[];
   mixmaxStarredTemplateIds: string[];
+  dismissedMappingWarningsFingerprint: string | null;
 }
 
 export const DEFAULT_STORED_PREFERENCES: StoredUserPreferences = {
@@ -90,6 +91,12 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
       mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
         parsed.mixmaxStarredTemplateIds
       ),
+      dismissedMappingWarningsFingerprint:
+        typeof parsed.dismissedMappingWarningsFingerprint === "string"
+          ? parsed.dismissedMappingWarningsFingerprint
+          : parsed.dismissedMappingWarningsFingerprint === null
+            ? null
+            : DEFAULT_STORED_PREFERENCES.dismissedMappingWarningsFingerprint,
       ...normalizeTimerSettings(parsed),
       ...normalizeNotificationSoundPreferences(parsed),
       ...normalizeWellnessPreferences(parsed),

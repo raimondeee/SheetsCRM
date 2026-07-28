@@ -76,12 +76,16 @@ export function SetupModal({
       }
       setAnalyzed(
         prepareSheetConfig(
-          mergeAnalyzedSheetConfig(config, { ...data.config, manuallyMapped: false })
+          mergeAnalyzedSheetConfig(
+            analyzed ?? config,
+            { ...data.config, manuallyMapped: false },
+            { forceRemapRoles: true }
+          )
         )
       );
       setAnalysisNote(
         data.analysis?.note ??
-          `Analyzed "${data.config.sheetName}" — remap columns below, then save.`
+          `Analyzed "${data.config.sheetName}" — roles rematched from current headers. Save mapping to keep.`
       );
     } finally {
       setLoading(false);

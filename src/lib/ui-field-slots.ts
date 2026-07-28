@@ -34,6 +34,10 @@ export function prepareSheetConfig(config: SheetConfig): SheetConfig {
     ...repaired,
     uiFieldSlots: syncedSlots,
     businessHours,
+    emailSubjectPrefix:
+      typeof config.emailSubjectPrefix === "string"
+        ? config.emailSubjectPrefix
+        : repaired.emailSubjectPrefix,
   };
 }
 

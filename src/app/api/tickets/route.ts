@@ -52,19 +52,29 @@ export async function GET() {
     const timerSettings = loadTimerSettings(email);
     const coverSheets = loadCoverSheets();
     await refreshWorkspaceHolidayCache();
-    let tickets = useMock
-      ? getMockTickets(timerSettings)
-      : await fetchTicketsFromSheet(config, timerSettings);
+
+    let tickets = useMock ? getMockTickets(timerSettings) : [];
+    let mappingWarnings: string[] = [];
+
     if (!useMock) {
+      const primary = await fetchTicketsFromSheet(config, timerSettings, {
+        label: "Intake sheet",
+      });
+      tickets = primary.tickets;
+      mappingWarnings = [...primary.mappingWarnings];
+
       const enabledCoverSheets = listEnabledCoverSheetEntries(coverSheets);
       if (enabledCoverSheets.length > 0) {
         const ownRowIds = new Set(tickets.map((ticket) => ticket.rowId));
         for (const entry of enabledCoverSheets) {
           if (!entry.config) continue;
           const coverConfig = prepareSheetConfig(entry.config);
-          const coverTickets = await fetchTicketsFromSheet(coverConfig, timerSettings);
           const label = coverSourceLabelForEntry(entry);
-          for (const ticket of coverTickets) {
+          const cover = await fetchTicketsFromSheet(coverConfig, timerSettings, {
+            label: `Cover: ${label}`,
+          });
+          mappingWarnings.push(...cover.mappingWarnings);
+          for (const ticket of cover.tickets) {
             if (ownRowIds.has(ticket.rowId)) continue;
             tickets.push({ ...ticket, coverSourceLabel: label });
           }
@@ -99,6 +109,7 @@ export async function GET() {
         source: useMock ? "mock" : "sheets",
         hasCredentials: hasAuth,
         syncedAt: new Date().toISOString(),
+        mappingWarnings,
         legacyInitialSlaCleared: legacySlaCleared > 0 ? legacySlaCleared : undefined,
       },
       { headers: NO_CACHE_HEADERS }

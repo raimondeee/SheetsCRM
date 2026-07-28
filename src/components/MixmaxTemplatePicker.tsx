@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowRightLeft,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -107,6 +108,7 @@ export function MixmaxTemplatePicker({
   );
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
   const starredPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const starredIdsRef = useRef(starredIds);
   starredIdsRef.current = starredIds;
@@ -117,10 +119,26 @@ export function MixmaxTemplatePicker({
   function setExpandedState(open: boolean) {
     setExpanded(open);
     onExpandedChange?.(open);
+    if (!open) {
+      setReordering(false);
+      setDraggingId(null);
+      setDropTargetId(null);
+    }
   }
 
   function toggleExpanded() {
     setExpandedState(!expanded);
+  }
+
+  function toggleReordering() {
+    setReordering((prev) => {
+      const next = !prev;
+      if (!next) {
+        setDraggingId(null);
+        setDropTargetId(null);
+      }
+      return next;
+    });
   }
 
   const persistStarredIds = useCallback((next: string[]) => {
@@ -175,12 +193,17 @@ export function MixmaxTemplatePicker({
   }
 
   function handleStarredDragStart(templateId: string, event: React.DragEvent) {
+    if (!reordering) {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", templateId);
     setDraggingId(templateId);
   }
 
   function handleStarredDragOver(templateId: string, event: React.DragEvent) {
+    if (!reordering) return;
     if (!draggingId || draggingId === templateId) return;
     if (!starredIdSet.has(templateId)) return;
     event.preventDefault();
@@ -190,6 +213,11 @@ export function MixmaxTemplatePicker({
 
   function handleStarredDrop(templateId: string, event: React.DragEvent) {
     event.preventDefault();
+    if (!reordering) {
+      setDraggingId(null);
+      setDropTargetId(null);
+      return;
+    }
     const fromId = event.dataTransfer.getData("text/plain") || draggingId;
     if (!fromId || !starredIdSet.has(templateId)) {
       setDraggingId(null);
@@ -471,9 +499,34 @@ export function MixmaxTemplatePicker({
 
   return renderExpandedBody(
     <>
-      <p className="text-[10px] text-zendesk-muted">
-        Your templates only. Drag starred templates to reorder.
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] text-zendesk-muted">Your templates only</p>
+        <button
+          type="button"
+          onClick={toggleReordering}
+          disabled={starredIds.length < 2}
+          className={`inline-flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-[10px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+            reordering
+              ? "border-amber-300 bg-amber-50 text-amber-950"
+              : "border-zendesk-border bg-white text-zendesk-navy hover:bg-gray-50"
+          }`}
+          title={
+            starredIds.length < 2
+              ? "Star at least two templates to reorder"
+              : reordering
+                ? "Finish reordering"
+                : "Show drag handles to reorder starred templates"
+          }
+        >
+          <ArrowRightLeft className="h-3 w-3" />
+          {reordering ? "Done" : "Reorder"}
+        </button>
+      </div>
+      {reordering && (
+        <p className="mt-1 text-[10px] text-amber-900">
+          Drag starred templates by the handle to change their order.
+        </p>
+      )}
       <div className="relative mt-2 shrink-0">
         <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-zendesk-muted" />
         <input
@@ -494,19 +547,23 @@ export function MixmaxTemplatePicker({
           const starred = starredIdSet.has(template.id);
           const applying = applyingTemplateId === template.id;
           const attachmentCount = template.attachments.length;
-          const isDragging = draggingId === template.id;
-          const isDropTarget = dropTargetId === template.id && draggingId !== template.id;
+          const isDragging = reordering && draggingId === template.id;
+          const isDropTarget =
+            reordering && dropTargetId === template.id && draggingId !== template.id;
+          const showDragHandle = reordering && starred;
           return (
             <li
               key={template.id}
-              onDragOver={starred ? (e) => handleStarredDragOver(template.id, e) : undefined}
-              onDrop={starred ? (e) => handleStarredDrop(template.id, e) : undefined}
-              onDragEnd={starred ? handleStarredDragEnd : undefined}
+              onDragOver={
+                showDragHandle ? (e) => handleStarredDragOver(template.id, e) : undefined
+              }
+              onDrop={showDragHandle ? (e) => handleStarredDrop(template.id, e) : undefined}
+              onDragEnd={showDragHandle ? handleStarredDragEnd : undefined}
               className={`flex gap-1 rounded transition-colors ${
                 isDragging ? "opacity-50" : ""
               } ${isDropTarget ? "ring-1 ring-amber-400 ring-offset-1" : ""}`}
             >
-              {starred ? (
+              {showDragHandle ? (
                 <button
                   type="button"
                   draggable
@@ -518,9 +575,7 @@ export function MixmaxTemplatePicker({
                 >
                   <GripVertical className="h-3.5 w-3.5" />
                 </button>
-              ) : (
-                <span className="w-[18px] shrink-0" aria-hidden />
-              )}
+              ) : null}
               <button
                 type="button"
                 title={starred ? "Unstar template" : "Star template"}

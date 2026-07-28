@@ -34,6 +34,7 @@ import {
   clearAttachmentDownloadFolder,
   getAttachmentDownloadFolderInfo,
   isAttachmentFolderPickerSupported,
+  openAttachmentDownloadFolder,
   pickAttachmentDownloadFolder,
   readAttachmentFolderDisplayName,
 } from "@/lib/attachment-download-folder";
@@ -174,6 +175,21 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     } catch (err) {
       setAttachmentFolderError(
         err instanceof Error ? err.message : "Could not clear attachment folder"
+      );
+    } finally {
+      setAttachmentFolderBusy(false);
+    }
+  }
+
+  async function openConfiguredAttachmentFolder() {
+    setAttachmentFolderError(null);
+    setAttachmentFolderBusy(true);
+    try {
+      await openAttachmentDownloadFolder();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setAttachmentFolderError(
+        err instanceof Error ? err.message : "Could not open attachment folder"
       );
     } finally {
       setAttachmentFolderBusy(false);
@@ -895,7 +911,9 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
             <p className="text-xs text-zendesk-muted">
               Choose a folder on this computer. Ticket attachments save into{" "}
               <code className="text-[11px]">Row {"{n}"}</code> subfolders (Chrome / Edge). Without
-              a folder, files download normally.
+              a folder, files download normally. Use <span className="font-medium">Open folder…</span>{" "}
+              here or <span className="font-medium">Folder</span> next to a ticket’s Row link to browse
+              the row folder when it exists, otherwise the root.
             </p>
             {!isAttachmentFolderPickerSupported() ? (
               <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -927,14 +945,24 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
                     {attachmentFolderName ? "Change folder…" : "Choose folder…"}
                   </button>
                   {attachmentFolderName && (
-                    <button
-                      type="button"
-                      onClick={() => void removeAttachmentFolder()}
-                      disabled={attachmentFolderBusy}
-                      className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      Clear folder
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void openConfiguredAttachmentFolder()}
+                        disabled={attachmentFolderBusy}
+                        className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Open folder…
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void removeAttachmentFolder()}
+                        disabled={attachmentFolderBusy}
+                        className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Clear folder
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

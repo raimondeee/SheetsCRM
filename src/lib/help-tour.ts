@@ -140,7 +140,7 @@ export const HELP_TOUR_SPOTS: HelpTourSpot[] = [
   {
     id: "mixmax",
     title: "Mixmax templates",
-    body: "Browse and insert Mixmax email templates into the draft. Star favorites for faster access; drag starred rows to reorder. Stars sync to your local CRM preferences (survive clearing browser cache). Variables resolve from the current ticket when you apply a template.",
+    body: "Browse and insert Mixmax email templates into the draft. Star favorites for faster access; use Reorder to drag starred rows. Stars sync to your local CRM preferences (survive clearing browser cache). Variables resolve from the current ticket when you apply a template.",
     match: {
       text: "Mixmax templates",
       ariaLabel: "Mixmax templates",

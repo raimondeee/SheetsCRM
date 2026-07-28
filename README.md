@@ -253,13 +253,13 @@ The project ships with a default example sheet URL in `.env.example`. Your team�
 
 1. Click the **gear icon** → **Sheet mapping** tab.
 2. Paste your **Google Sheet URL** (the tab with form responses).
-3. Click **Analyze columns**.
-4. Review the mapping table — important columns include timestamp (A), email, reso/listing, Market Manager (H), contact reason (I), status (N), case summary (U), Airbnb User ID (AD).
+3. Click **Analyze columns** (first-time setup) or **Detect columns** (after someone deletes/reorders sheet columns).
+4. Review the mapping table — important columns include timestamp, email, reso/listing, Market Manager, contact reason, status, case summary, Airbnb User ID.
 5. Adjust any **Role** dropdowns if headers were mis-detected.
 6. Optionally configure ticket header field slots and custom display labels.
 7. Click **Save**.
 
-The mapping is stored in **`data/overlay.db`**, not in the browser.
+The mapping is stored in **`data/overlay.db`**, not in the browser. Ticket loads also rematch roles from live header names automatically (with warnings if columns drifted); Detect + Save updates the stored letters.
 
 ### What syncs with the Google Sheet
 
@@ -579,7 +579,9 @@ After Homebrew installs on Apple Silicon, run the “Next steps” commands it p
 
 - Sign out and sign in again (cookie may have expired)
 - Re-run **Setup → Analyze columns** on the correct sheet URL
+- If columns were deleted or reordered: **Setup → Detect columns**, then **Save mapping**
 - Check the sheet wasn’t moved or renamed
+- Amber **Column mapping warnings** on the ticket list mean headers drifted — Detect + Save fixes saved letters
 
 ### Cover-sheet tickets missing or stale
 
@@ -677,7 +679,7 @@ Default layout for the team intake sheet (0-based index → letter):
 | **U** | Case summary | Admin notes (append from CRM) |
 | **AD** | Airbnb User ID | User ID for Nova / Become User links |
 
-Headers are resolved at runtime via **Setup → Analyze columns**. Fixed positions above are used as fallbacks when headers are ambiguous.
+Headers are resolved at runtime via **Setup → Analyze columns** / **Detect columns**, and again on each ticket load from live header names. Fixed positions above are used as fallbacks when headers are ambiguous.
 
 ---
 
@@ -722,6 +724,24 @@ The script excludes `node_modules`, `.next`, `.git`, local databases, Mixmax tok
 If OAuth values are missing locally, the share `.env` keeps placeholders and `SHARE_PACKAGING.txt` tells the coworker what to paste.
 
 See `SHARE_PACKAGING.txt` inside the export for a handoff checklist.
+
+### Team Coverage packages (one zip folder per teammate)
+
+When Setup → Team coverage is mapped, export a private package for each person (plus your own primary sheet). Each package preloads:
+
+- **Setup → Sheet mapping** = that person's intake sheet (column mappings included)
+- **Setup → Team coverage** = everyone else (enabled, with mappings)
+- Shared Google OAuth from your local `.env` (same trust model as `share:export`)
+- A fresh `overlay.db` (mappings only — no tickets/threads)
+
+```bash
+npm run share:coverage
+# or:
+# bash scripts/create-coverage-shares.sh ../SheetsCRM-coverage-shares --self-label "Robert"
+# bash scripts/create-coverage-shares.sh ../SheetsCRM-coverage-shares --only "Artie"
+```
+
+Output defaults to `../SheetsCRM-coverage-shares/<slug>/` with `MANIFEST.json` listing every package. Recipients need Google access to the mapped sheets. Re-export after mapping changes.
 
 ### Team Dashboard-only package (management)
 

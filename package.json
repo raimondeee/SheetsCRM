@@ -12,6 +12,7 @@
     "lint": "next lint",
     "db:migrate": "node scripts/init-db.mjs",
     "share:export": "bash scripts/create-shareable-copy.sh",
+    "share:coverage": "bash scripts/create-coverage-shares.sh",
     "share:team-dashboard": "bash scripts/create-team-dashboard-share.sh",
     "update:local": "bash scripts/update-local-install.sh",
     "docs:richtext": "node scripts/export-docs-richtext.mjs"

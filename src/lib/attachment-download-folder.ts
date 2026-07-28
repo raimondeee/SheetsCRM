@@ -6,7 +6,26 @@
  * cannot be serialized to JSON.
  */
 
-type DirectoryPickerOptions = { mode?: "read" | "readwrite" };
+type WellKnownDirectory =
+  | "desktop"
+  | "documents"
+  | "downloads"
+  | "music"
+  | "pictures"
+  | "videos";
+
+type DirectoryPickerOptions = {
+  mode?: "read" | "readwrite";
+  startIn?: FileSystemHandle | WellKnownDirectory;
+  id?: string;
+};
+
+type OpenFilePickerOptions = {
+  multiple?: boolean;
+  startIn?: FileSystemHandle | WellKnownDirectory;
+  id?: string;
+};
+
 type FsPermissionDescriptor = { mode?: "read" | "readwrite" };
 type FsPermissionState = PermissionState | "prompt";
 
@@ -20,6 +39,9 @@ declare global {
     showDirectoryPicker?: (
       options?: DirectoryPickerOptions
     ) => Promise<FileSystemDirectoryHandle>;
+    showOpenFilePicker?: (
+      options?: OpenFilePickerOptions
+    ) => Promise<FileSystemFileHandle[]>;
   }
 }
 
@@ -213,4 +235,76 @@ export async function saveBlobToAttachmentFolder(params: {
 
   writeAttachmentFolderDisplayName(root.name);
   return { rootName: root.name, rowFolder, filename };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+/**
+ * Opens a system file/folder picker starting at the ticket's `Row {n}` folder when
+ * that subfolder already exists; otherwise starts at the configured root.
+ *
+ * Browsers cannot reveal folders in Finder/Explorer, so this is the closest
+ * equivalent via the File System Access API `startIn` option.
+ */
+export async function openAttachmentDownloadFolder(params?: {
+  rowNumber?: number;
+}): Promise<{ opened: "row" | "root"; pathHint: string }> {
+  if (!canUseFolderPicker()) {
+    throw new Error("Opening the attachment folder requires Chrome or Edge.");
+  }
+
+  const root = await idbGetHandle();
+  if (!root) {
+    throw new Error("No attachment folder configured. Choose one in Preferences.");
+  }
+
+  const allowed = await ensureReadWritePermission(root);
+  if (!allowed) {
+    throw new Error(
+      "Attachment folder permission expired. Choose the folder again in Preferences."
+    );
+  }
+
+  writeAttachmentFolderDisplayName(root.name);
+
+  let target: FileSystemDirectoryHandle = root;
+  let opened: "row" | "root" = "root";
+  let pathHint = root.name;
+
+  const rowNumber = params?.rowNumber;
+  if (rowNumber != null && Number.isFinite(rowNumber)) {
+    const rowFolder = rowAttachmentFolderName(rowNumber);
+    try {
+      target = await root.getDirectoryHandle(rowFolder, { create: false });
+      opened = "row";
+      pathHint = `${root.name}/${rowFolder}`;
+    } catch {
+      // Row folder has not been created yet (no downloads for this row).
+    }
+  }
+
+  try {
+    // Prefer the open-file picker so the dialog shows the folder's contents for browsing.
+    if (typeof window.showOpenFilePicker === "function") {
+      await window.showOpenFilePicker({
+        startIn: target,
+        multiple: true,
+        id: "sheetscrm-attachment-browse",
+      });
+    } else {
+      // Discard the result — this is browse-only, not a root-folder change.
+      await window.showDirectoryPicker!({
+        startIn: target,
+        mode: "read",
+        id: "sheetscrm-attachment-browse",
+      });
+    }
+  } catch (error) {
+    // Closing the dialog without selecting is the normal "done browsing" path.
+    if (!isAbortError(error)) throw error;
+  }
+
+  return { opened, pathHint };
 }

@@ -40,6 +40,11 @@ export interface UserPreferences
   externalTools: ExternalToolLink[];
   /** Ordered Mixmax template IDs the agent starred (drag to reorder). */
   mixmaxStarredTemplateIds: string[];
+  /**
+   * Fingerprint of mapping warnings the agent dismissed.
+   * Banner returns if a new/different warning set appears.
+   */
+  dismissedMappingWarningsFingerprint: string | null;
 }
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
@@ -53,6 +58,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   unreadInboxAppendToSelectedEnabled: true,
   externalTools: defaultExternalTools(),
   mixmaxStarredTemplateIds: [],
+  dismissedMappingWarningsFingerprint: null,
   ...DEFAULT_TIMER_SETTINGS,
   ...DEFAULT_NOTIFICATION_SOUND_PREFERENCES,
   ...DEFAULT_WELLNESS_PREFERENCES,
@@ -103,6 +109,12 @@ export function readLegacyUserPreferences(): UserPreferences | null {
       mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
         parsed.mixmaxStarredTemplateIds
       ),
+      dismissedMappingWarningsFingerprint:
+        typeof parsed.dismissedMappingWarningsFingerprint === "string"
+          ? parsed.dismissedMappingWarningsFingerprint
+          : parsed.dismissedMappingWarningsFingerprint === null
+            ? null
+            : DEFAULT_USER_PREFERENCES.dismissedMappingWarningsFingerprint,
       ...normalizeTimerSettings(parsed),
       ...normalizeNotificationSoundPreferences(parsed),
       ...normalizeWellnessPreferences(parsed),
@@ -153,6 +165,12 @@ export async function fetchUserPreferences(): Promise<UserPreferences> {
     mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
       data.preferences?.mixmaxStarredTemplateIds
     ),
+    dismissedMappingWarningsFingerprint:
+      typeof data.preferences?.dismissedMappingWarningsFingerprint === "string"
+        ? data.preferences.dismissedMappingWarningsFingerprint
+        : data.preferences?.dismissedMappingWarningsFingerprint === null
+          ? null
+          : DEFAULT_USER_PREFERENCES.dismissedMappingWarningsFingerprint,
     ...normalizeNotificationSoundPreferences(data.preferences),
     ...normalizeWellnessPreferences(data.preferences),
   };
@@ -181,6 +199,12 @@ export async function patchUserPreferences(
     mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
       data.preferences?.mixmaxStarredTemplateIds
     ),
+    dismissedMappingWarningsFingerprint:
+      typeof data.preferences?.dismissedMappingWarningsFingerprint === "string"
+        ? data.preferences.dismissedMappingWarningsFingerprint
+        : data.preferences?.dismissedMappingWarningsFingerprint === null
+          ? null
+          : DEFAULT_USER_PREFERENCES.dismissedMappingWarningsFingerprint,
     ...normalizeNotificationSoundPreferences(data.preferences),
     ...normalizeWellnessPreferences(data.preferences),
   };

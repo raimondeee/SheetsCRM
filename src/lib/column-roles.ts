@@ -8,8 +8,8 @@ export const CRM_ROLE_DESTINATIONS: Partial<Record<ColumnRole, string>> = {
   name: "Ticket header (requester name) · Mixmax templates",
   ticketHeaderField:
     "Form value under subject · Salesforce search default (Header field legacy)",
-  subject: "Email subject prefix",
-  description: "Conversation panel → Original request",
+    subject: "Sheet subject column (optional) · separate from CRM email subject prefix",
+    description: "Conversation panel → Original request",
   marketManager: "Ticket header · CC Market Manager on reply",
   contactReason: "Details → Contact reason dropdown",
   userEmailed: "Sheet only — set to Yes when CRM sends email",
@@ -54,7 +54,7 @@ export const COLUMN_ROLE_OPTIONS: { value: ColumnRole; label: string; hint?: str
   },
   {
     value: "subject",
-    label: "Subject → email prefix",
+    label: "Subject → sheet subject (optional)",
     hint: CRM_ROLE_DESTINATIONS.subject,
   },
   {

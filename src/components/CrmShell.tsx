@@ -100,11 +100,21 @@ import {
   patchUserPreferences,
   type UserPreferences,
 } from "@/lib/user-preferences";
+import {
+  filterActiveMappingWarnings,
+  mappingWarningsFingerprint,
+} from "@/lib/mapping-warnings";
 
 const AUTO_REFRESH_SECONDS =
   Number(process.env.NEXT_PUBLIC_AUTO_REFRESH_SECONDS) || 60;
 const AUTO_REFRESH_MS = AUTO_REFRESH_SECONDS * 1000;
 const TICKET_REFRESH_DEBOUNCE_MS = 900;
+/** Keep local sheet-field edits until Google Sheets catch up on refresh. */
+const PENDING_SHEET_FIELD_TTL_MS = 20_000;
+
+type PendingSheetFields = Partial<
+  Pick<Ticket, "claimNumber" | "reservationCode" | "listingId">
+>;
 
 type LoadTicketsOptions = {
   silent?: boolean;
@@ -178,6 +188,8 @@ export function CrmShell() {
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<string>("mock");
+  const [mappingWarnings, setMappingWarnings] = useState<string[]>([]);
+  const rawMappingWarningsRef = useRef<string[]>([]);
   const [auth, setAuth] = useState<{
     signedIn: boolean;
     email: string | null;
@@ -222,8 +234,51 @@ export function CrmShell() {
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const ticketChimeSnapshotsRef = useRef<Map<string, TicketChimeSnapshot> | null>(null);
+  const pendingSheetFieldsRef = useRef<
+    Map<string, { fields: PendingSheetFields; at: number }>
+  >(new Map());
   const [composeClearedRowId, setComposeClearedRowId] = useState<string | null>(null);
   sourceRef.current = source;
+
+  function rememberPendingSheetFields(rowId: string, fields: PendingSheetFields) {
+    const prev = pendingSheetFieldsRef.current.get(rowId);
+    pendingSheetFieldsRef.current.set(rowId, {
+      fields: { ...prev?.fields, ...fields },
+      at: Date.now(),
+    });
+  }
+
+  function applyPendingSheetFields(tickets: Ticket[]): Ticket[] {
+    const now = Date.now();
+    return tickets.map((ticket) => {
+      const pending = pendingSheetFieldsRef.current.get(ticket.rowId);
+      if (!pending) return ticket;
+      if (now - pending.at > PENDING_SHEET_FIELD_TTL_MS) {
+        pendingSheetFieldsRef.current.delete(ticket.rowId);
+        return ticket;
+      }
+
+      const remaining: PendingSheetFields = { ...pending.fields };
+      (Object.keys(remaining) as (keyof PendingSheetFields)[]).forEach((key) => {
+        const local = (remaining[key] ?? "").trim();
+        const remote = (ticket[key] ?? "").trim();
+        if (local === remote) {
+          delete remaining[key];
+        }
+      });
+
+      if (Object.keys(remaining).length === 0) {
+        pendingSheetFieldsRef.current.delete(ticket.rowId);
+        return ticket;
+      }
+
+      pendingSheetFieldsRef.current.set(ticket.rowId, {
+        fields: remaining,
+        at: pending.at,
+      });
+      return { ...ticket, ...remaining };
+    });
+  }
 
   useTicketChimeUnlock();
 
@@ -287,10 +342,20 @@ export function CrmShell() {
         ) {
           playInboundNotificationSound();
         }
-        setTickets(incomingTickets);
+        setTickets(applyPendingSheetFields(incomingTickets));
         setConfig(data.config ?? null);
         setCoverSheets(data.coverSheets ?? []);
         setSource(data.source ?? "mock");
+        const incomingWarnings = Array.isArray(data.mappingWarnings)
+          ? (data.mappingWarnings as string[])
+          : [];
+        rawMappingWarningsRef.current = incomingWarnings;
+        setMappingWarnings(
+          filterActiveMappingWarnings(
+            incomingWarnings,
+            prefsRef.current.dismissedMappingWarningsFingerprint
+          )
+        );
         setLastSyncedAt(new Date());
         setCountdownResetKey((k) => k + 1);
         const ticketCount = (data.tickets ?? []).length;
@@ -380,6 +445,12 @@ export function CrmShell() {
       if (cancelled) return;
       prefsRef.current = prefs;
       configureNotificationSounds(prefs);
+      setMappingWarnings(
+        filterActiveMappingWarnings(
+          rawMappingWarningsRef.current,
+          prefs.dismissedMappingWarningsFingerprint
+        )
+      );
       setStatusFilter(prefs.defaultStatusFilter);
       setSortBy(prefs.sortBy);
       setSortOrder(prefs.sortOrder);
@@ -589,6 +660,12 @@ export function CrmShell() {
 
   function handlePreferencesSaved(prefs: UserPreferences) {
     prefsRef.current = prefs;
+    setMappingWarnings(
+      filterActiveMappingWarnings(
+        rawMappingWarningsRef.current,
+        prefs.dismissedMappingWarningsFingerprint
+      )
+    );
     configureNotificationSounds(prefs);
     setStatusFilter(prefs.defaultStatusFilter);
     setSortBy(prefs.sortBy);
@@ -609,6 +686,20 @@ export function CrmShell() {
     setPomodoroScheduleId(prefs.pomodoroScheduleId);
     setPreferencesOpen(false);
     void loadTickets({ silent: true, reason: "manual" });
+  }
+
+  async function dismissMappingWarnings() {
+    const fingerprint = mappingWarningsFingerprint(rawMappingWarningsRef.current);
+    prefsRef.current = {
+      ...prefsRef.current,
+      dismissedMappingWarningsFingerprint: fingerprint,
+    };
+    setMappingWarnings([]);
+    try {
+      await patchUserPreferences({ dismissedMappingWarningsFingerprint: fingerprint });
+    } catch {
+      /* banner already hidden locally */
+    }
   }
 
   const ticketUiFields = useMemo(() => {
@@ -1025,32 +1116,35 @@ export function CrmShell() {
   }
 
   async function handleReservationCodeChange(rowId: string, reservationCode: string) {
+    setTickets((prev) =>
+      prev.map((t) => (t.rowId === rowId ? { ...t, reservationCode } : t))
+    );
+    rememberPendingSheetFields(rowId, { reservationCode });
     await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rowId, reservationCode }),
     });
-    setTickets((prev) =>
-      prev.map((t) => (t.rowId === rowId ? { ...t, reservationCode } : t))
-    );
   }
 
   async function handleClaimNumberChange(rowId: string, claimNumber: string) {
+    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, claimNumber } : t)));
+    rememberPendingSheetFields(rowId, { claimNumber });
     await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rowId, claimNumber }),
     });
-    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, claimNumber } : t)));
   }
 
   async function handleListingIdChange(rowId: string, listingId: string) {
+    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, listingId } : t)));
+    rememberPendingSheetFields(rowId, { listingId });
     await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rowId, listingId }),
     });
-    setTickets((prev) => prev.map((t) => (t.rowId === rowId ? { ...t, listingId } : t)));
   }
 
   async function handleUiFieldChange(rowId: string, slotId: string, value: string) {
@@ -1396,6 +1490,44 @@ export function CrmShell() {
             </button>
           </div>
         )}
+        {mappingWarnings.length > 0 && (
+          <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">Column mapping warnings</p>
+                <p className="mt-0.5 text-amber-900/90">
+                  Headers are remapped automatically when possible after sheet columns move. Use{" "}
+                  <button
+                    type="button"
+                    onClick={() => openSetup("sheet")}
+                    className="font-medium underline hover:no-underline"
+                  >
+                    Setup → Detect columns
+                  </button>{" "}
+                  to review, or ignore if your mapping is intentional (e.g. duplicate headers).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void dismissMappingWarnings()}
+                className="shrink-0 rounded border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100"
+              >
+                Ignore warnings
+              </button>
+            </div>
+            <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+              {mappingWarnings.slice(0, 6).map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+            {mappingWarnings.length > 6 && (
+              <p className="mt-1 text-amber-900/80">
+                +{mappingWarnings.length - 6} more warning
+                {mappingWarnings.length - 6 === 1 ? "" : "s"}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex min-h-0 flex-1">
         <ResizableColumn
           width={ticketListWidthState.width}
@@ -1491,6 +1623,7 @@ export function CrmShell() {
               onOpenSetup={openSetup}
               marketManagersVersion={marketManagersVersion}
               sheetUrl={activeSheetConfig?.sheetUrl ?? null}
+              emailSubjectPrefix={activeSheetConfig?.emailSubjectPrefix ?? null}
             />
           </TicketDetailTransition>
         )}

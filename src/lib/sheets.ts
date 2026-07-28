@@ -40,7 +40,31 @@ import { buildUiFieldValues } from "./ui-field-slots";
 import { DEFAULT_TIMER_SETTINGS, type TimerSettings } from "./timer-settings";
 import type { ColumnMapping } from "./types";
 import { withOpsMetric } from "./ops-metrics";
+import { resolveAndAssessIntakeSheet } from "./intake-column-resolve";
 
+export interface FetchTicketsResult {
+  tickets: Ticket[];
+  mappingWarnings: string[];
+  /** Config after header-based role remapping (not persisted). */
+  resolvedConfig: SheetConfig;
+}
+
+/** Fetch header row and remap roles so writes hit the live columns after deletes/reorders. */
+export async function resolveLiveSheetConfig(
+  config: SheetConfig,
+  options?: { label?: string }
+): Promise<{ config: SheetConfig; warnings: string[] }> {
+  try {
+    const { headers } = await fetchSheetHeaders(
+      config.spreadsheetId,
+      config.sheetName
+    );
+    const resolution = resolveAndAssessIntakeSheet(config, headers, [], options);
+    return { config: resolution.config, warnings: resolution.warnings };
+  } catch {
+    return { config, warnings: [] };
+  }
+}
 function rowQualifiesAsTicket(
   row: string[],
   config: SheetConfig,
@@ -109,8 +133,9 @@ export async function fetchSheetHeaders(
 
 export async function fetchTicketsFromSheet(
   config: SheetConfig,
-  timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS
-): Promise<Ticket[]> {
+  timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS,
+  options?: { label?: string }
+): Promise<FetchTicketsResult> {
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google or configure a service account");
 
@@ -123,26 +148,44 @@ export async function fetchTicketsFromSheet(
   );
 
   const rows = res.data.values ?? [];
-  if (rows.length <= config.headerRow) return [];
+  if (rows.length <= config.headerRow) {
+    return { tickets: [], mappingWarnings: [], resolvedConfig: config };
+  }
 
-  const dataRows = rows.slice(config.headerRow);
+  const headerRowIndex = Math.max(0, config.headerRow - 1);
+  const headers = (rows[headerRowIndex] ?? []) as string[];
+  const dataRows = rows.slice(config.headerRow) as string[][];
+  const resolution = resolveAndAssessIntakeSheet(config, headers, dataRows, {
+    label: options?.label,
+  });
+  const resolvedConfig = resolution.config;
+
   const tickets: Ticket[] = [];
-
-  const rowKeyCol = defaultRowKeyColumn(config);
+  const rowKeyCol = defaultRowKeyColumn(resolvedConfig);
 
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i] as string[];
-    const ticket = buildTicketFromSheetRow(row, i, config, timerSettings, rowKeyCol);
+    const ticket = buildTicketFromSheetRow(
+      row,
+      i,
+      resolvedConfig,
+      timerSettings,
+      rowKeyCol
+    );
     if (!ticket) continue;
     const sheetAirbnbUserId = ticket.airbnbUserId;
     tickets.push(mergeOverlayOntoTicket(ticket, sheetAirbnbUserId, timerSettings));
   }
 
   const merged = tickets.reverse();
-  void backfillAirbnbUserIdsFromColumnD(config, merged).catch(() => {
+  void backfillAirbnbUserIdsFromColumnD(resolvedConfig, merged).catch(() => {
     /* background backfill — must not block ticket list load */
   });
-  return merged;
+  return {
+    tickets: merged,
+    mappingWarnings: resolution.warnings,
+    resolvedConfig,
+  };
 }
 
 function buildTicketFromSheetRow(
@@ -226,18 +269,27 @@ export async function fetchTicketFromSheetRow(
   const dataRowIndex = rowNumber - config.headerRow - 1;
   if (dataRowIndex < 0) return null;
 
+  const { config: resolvedConfig } = await resolveLiveSheetConfig(config);
+
   const sheets = google.sheets({ version: "v4", auth });
   const res = await withOpsMetric("sheets", "values.get", () =>
     sheets.spreadsheets.values.get({
-      spreadsheetId: config.spreadsheetId,
-      range: `'${config.sheetName}'!A${rowNumber}:ZZ${rowNumber}`,
+      spreadsheetId: resolvedConfig.spreadsheetId,
+      range: `'${resolvedConfig.sheetName}'!A${rowNumber}:ZZ${rowNumber}`,
     })
   );
 
   const row = (res.data.values?.[0] ?? []) as string[];
-  const rowKeyCol = defaultRowKeyColumn(config);
+  const rowKeyCol = defaultRowKeyColumn(resolvedConfig);
 
-  return buildTicketFromSheetRow(row, dataRowIndex, config, timerSettings, rowKeyCol, options);
+  return buildTicketFromSheetRow(
+    row,
+    dataRowIndex,
+    resolvedConfig,
+    timerSettings,
+    rowKeyCol,
+    options
+  );
 }
 
 async function backfillAirbnbUserIdsFromColumnD(
@@ -318,13 +370,14 @@ export async function writeCaseSummaryOnSheet(
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google to update the sheet");
 
-  const col = requireColumnByRole(config, "caseSummary");
-  const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
+  const live = (await resolveLiveSheetConfig(config)).config;
+  const col = requireColumnByRole(live, "caseSummary");
+  const range = `'${live.sheetName}'!${col.letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
   await withOpsMetric("sheets", "values.update", () =>
     sheets.spreadsheets.values.update({
-      spreadsheetId: config.spreadsheetId,
+      spreadsheetId: live.spreadsheetId,
       range,
       valueInputOption: "RAW",
       requestBody: { values: [[fullText]] },
@@ -341,20 +394,21 @@ export async function appendAdminNoteOnSheet(
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google to update the sheet");
 
-  const col = requireColumnByRole(config, "caseSummary");
-  const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
+  const live = (await resolveLiveSheetConfig(config)).config;
+  const col = requireColumnByRole(live, "caseSummary");
+  const range = `'${live.sheetName}'!${col.letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
   const current = await withOpsMetric("sheets", "values.get", () =>
     sheets.spreadsheets.values.get({
-      spreadsheetId: config.spreadsheetId,
+      spreadsheetId: live.spreadsheetId,
       range,
     })
   );
   const existing = (current.data.values?.[0]?.[0] ?? "").toString();
   const updated = appendAdminNoteToText(existing, noteText);
 
-  await writeCaseSummaryOnSheet(config, rowNumber, updated);
+  await writeCaseSummaryOnSheet(live, rowNumber, updated);
   return updated;
 }
 
@@ -367,13 +421,14 @@ export async function updateSheetStatusOnSheet(
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google to update the sheet");
 
-  const col = requireColumnByRole(config, "status");
-  const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
+  const live = (await resolveLiveSheetConfig(config)).config;
+  const col = requireColumnByRole(live, "status");
+  const range = `'${live.sheetName}'!${col.letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
   await withOpsMetric("sheets", "values.update", () =>
     sheets.spreadsheets.values.update({
-      spreadsheetId: config.spreadsheetId,
+      spreadsheetId: live.spreadsheetId,
       range,
       valueInputOption: "RAW",
       requestBody: { values: [[statusValue]] },
@@ -390,13 +445,14 @@ export async function updateContactReasonOnSheet(
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google to update the sheet");
 
-  const col = requireColumnByRole(config, "contactReason");
-  const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
+  const live = (await resolveLiveSheetConfig(config)).config;
+  const col = requireColumnByRole(live, "contactReason");
+  const range = `'${live.sheetName}'!${col.letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
   await withOpsMetric("sheets", "values.update", () =>
     sheets.spreadsheets.values.update({
-      spreadsheetId: config.spreadsheetId,
+      spreadsheetId: live.spreadsheetId,
       range,
       valueInputOption: "RAW",
       requestBody: { values: [[value]] },
@@ -419,13 +475,14 @@ async function updateSheetCellByRole(
   const auth = await getGoogleAuthClient();
   if (!auth) throw new Error("Sign in with Google to update the sheet");
 
-  const col = requireColumnByRole(config, role);
-  const range = `'${config.sheetName}'!${col.letter}${rowNumber}`;
+  const live = (await resolveLiveSheetConfig(config)).config;
+  const col = requireColumnByRole(live, role);
+  const range = `'${live.sheetName}'!${col.letter}${rowNumber}`;
 
   const sheets = google.sheets({ version: "v4", auth });
   await withOpsMetric("sheets", "values.update", () =>
     sheets.spreadsheets.values.update({
-      spreadsheetId: config.spreadsheetId,
+      spreadsheetId: live.spreadsheetId,
       range,
       valueInputOption: "RAW",
       requestBody: { values: [[value]] },

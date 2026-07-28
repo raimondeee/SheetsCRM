@@ -62,6 +62,14 @@ export interface SheetConfig {
   columns: ColumnMapping[];
   /** Optional header-area fields under the ticket subject. */
   uiFieldSlots?: UiFieldSlot[];
+  /**
+   * Fixed text prepended to the editable CRM email subject (compose + sends).
+   * Not a sheet column — typed in Setup.
+   * - `undefined` / omitted → default “Form Submission Response - ”
+   * - `""` → prefix disabled
+   * - any other string → custom prefix
+   */
+  emailSubjectPrefix?: string;
   /** Workspace business schedule for timers and service metrics. */
   businessHours?: BusinessHoursConfig;
   /** When true, saved column roles are not auto-overwritten on load. */

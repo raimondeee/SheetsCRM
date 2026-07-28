@@ -52,9 +52,9 @@ import { ThreadMessageBody } from "./ThreadMessageBody";
 import { EmailRecipientInput } from "./EmailRecipientInput";
 import {
   buildEmailSubject,
-  EMAIL_SUBJECT_PREFIX,
   emailSubjectSuffixFromStored,
   isEmailSubjectSuffixFilled,
+  normalizeEmailSubjectPrefix,
   stripEmailSubjectPrefix,
 } from "@/lib/email-subject";
 import { isRichTextEmpty, normalizeDraftHtml, plainTextToHtml, stripHtmlToText } from "@/lib/html-utils";
@@ -80,6 +80,12 @@ import {
 } from "@/lib/outbound-attachments";
 import { activeExternalTools, type ExternalToolLink } from "@/lib/external-tools";
 import { buildSheetCellUrl } from "@/lib/sheet-urls";
+import {
+  isAttachmentFolderPickerSupported,
+  openAttachmentDownloadFolder,
+  pickAttachmentDownloadFolder,
+  rowAttachmentFolderName,
+} from "@/lib/attachment-download-folder";
 import {
   parseLinkedCase,
 } from "@/lib/linked-cases";
@@ -124,6 +130,7 @@ import {
   ChevronLeft,
   Copy,
   ExternalLink,
+  FolderOpen,
   Link2Off,
   LineChart,
   Loader2,
@@ -198,6 +205,8 @@ interface TicketDetailProps {
   onOpenSetup?: (tab?: SetupModalTab) => void;
   marketManagersVersion?: number;
   sheetUrl?: string | null;
+  /** CRM compose subject prefix from Setup → Sheet mapping. */
+  emailSubjectPrefix?: string | null;
 }
 
 function attachmentIdsKey(message: ThreadMessage): string {
@@ -271,7 +280,12 @@ export function TicketDetail({
   onOpenSetup,
   marketManagersVersion = 0,
   sheetUrl = null,
+  emailSubjectPrefix = null,
 }: TicketDetailProps) {
+  const subjectPrefix = useMemo(
+    () => normalizeEmailSubjectPrefix(emailSubjectPrefix),
+    [emailSubjectPrefix]
+  );
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [redactingMessageId, setRedactingMessageId] = useState<string | null>(null);
@@ -290,6 +304,10 @@ export function TicketDetail({
   const [gleanOpenedKind, setGleanOpenedKind] = useState<
     "summary" | "response" | "escalation" | null
   >(null);
+  const [attachmentFolderBusy, setAttachmentFolderBusy] = useState(false);
+  const [attachmentFolderOpenedHint, setAttachmentFolderOpenedHint] = useState<string | null>(
+    null
+  );
   const [savingUserId, setSavingUserId] = useState(false);
   const replyEditorRef = useRef<ReplyDraftEditorHandle>(null);
   const conversationPanelRef = useRef<HTMLDivElement>(null);
@@ -603,11 +621,11 @@ export function TicketDetail({
     setSubjectSuffix(
       ticket.forceNewGmailThreadOnSend
         ? saved?.subject
-          ? emailSubjectSuffixFromStored(saved.subject)
+          ? emailSubjectSuffixFromStored(saved.subject, emailSubjectPrefix)
           : ""
         : saved?.subject
-          ? emailSubjectSuffixFromStored(saved.subject)
-          : emailSubjectSuffixFromStored(ticket.subject)
+          ? emailSubjectSuffixFromStored(saved.subject, emailSubjectPrefix)
+          : emailSubjectSuffixFromStored(ticket.subject, emailSubjectPrefix)
     );
     setActionValidation(null);
     setPressedActionButton(null);
@@ -634,7 +652,7 @@ export function TicketDetail({
     setBccDraft("");
     setCcFieldOpen(false);
     setBccFieldOpen(false);
-    setSubjectSuffix(emailSubjectSuffixFromStored(ticket.subject));
+    setSubjectSuffix(emailSubjectSuffixFromStored(ticket.subject, emailSubjectPrefix));
     setReplyFocused(false);
   }, [composeClearedRowId, ticket?.rowId, ticket?.subject]);
 
@@ -660,7 +678,7 @@ export function TicketDetail({
     const timeout = setTimeout(() => {
       saveReplyDraft(ticket.rowId, {
         body: normalizeDraftHtml(replyBody),
-        subject: buildEmailSubject(subjectSuffix),
+        subject: buildEmailSubject(subjectSuffix, emailSubjectPrefix),
         cc: ccDraft,
         bcc: bccDraft,
       });
@@ -670,7 +688,7 @@ export function TicketDetail({
       clearTimeout(timeout);
       saveReplyDraft(ticket.rowId, {
         body: normalizeDraftHtml(replyBody),
-        subject: buildEmailSubject(subjectSuffix),
+        subject: buildEmailSubject(subjectSuffix, emailSubjectPrefix),
         cc: ccDraft,
         bcc: bccDraft,
       });
@@ -702,7 +720,7 @@ export function TicketDetail({
       if (!rowId) return;
       saveReplyDraft(rowId, {
         body,
-        subject: buildEmailSubject(subjectSuffixRef.current),
+        subject: buildEmailSubject(subjectSuffixRef.current, emailSubjectPrefix),
         cc: ccDraftRef.current,
         bcc: bccDraftRef.current,
       });
@@ -834,7 +852,7 @@ export function TicketDetail({
 
   async function saveSubject() {
     if (!ticket) return;
-    const fullSubject = buildEmailSubject(subjectSuffix);
+    const fullSubject = buildEmailSubject(subjectSuffix, emailSubjectPrefix);
     if (!subjectSuffix.trim() || fullSubject === ticket.subject) return;
     onSubjectChange(ticket.rowId, fullSubject);
   }
@@ -899,6 +917,46 @@ export function TicketDetail({
 
     setGleanOpenedKind(kind);
     window.setTimeout(() => setGleanOpenedKind(null), 2000);
+  }
+
+  async function openTicketAttachmentFolder() {
+    if (!ticket || attachmentFolderBusy) return;
+    if (!isAttachmentFolderPickerSupported()) {
+      window.alert("Opening the attachment folder requires Chrome or Edge.");
+      return;
+    }
+
+    setAttachmentFolderBusy(true);
+    try {
+      let result: Awaited<ReturnType<typeof openAttachmentDownloadFolder>>;
+      try {
+        result = await openAttachmentDownloadFolder({ rowNumber: ticket.rowNumber });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Could not open attachment folder";
+        if (!message.includes("No attachment folder configured")) throw error;
+        const chooseNow = window.confirm(
+          "No attachment downloads folder is configured. Choose one now?"
+        );
+        if (!chooseNow) return;
+        await pickAttachmentDownloadFolder();
+        result = await openAttachmentDownloadFolder({ rowNumber: ticket.rowNumber });
+      }
+
+      const hint =
+        result.opened === "row"
+          ? result.pathHint
+          : `${result.pathHint} (no ${rowAttachmentFolderName(ticket.rowNumber)} folder yet)`;
+      setAttachmentFolderOpenedHint(hint);
+      window.setTimeout(() => setAttachmentFolderOpenedHint(null), 2500);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      window.alert(
+        error instanceof Error ? error.message : "Could not open attachment folder"
+      );
+    } finally {
+      setAttachmentFolderBusy(false);
+    }
   }
 
   async function saveAirbnbUserId() {
@@ -1112,7 +1170,7 @@ export function TicketDetail({
       onQueueSend({
         ticketRowId: ticket.rowId,
         to: ticket.requesterEmail,
-        subject: buildEmailSubject(subjectSuffix),
+        subject: buildEmailSubject(subjectSuffix, emailSubjectPrefix),
         message: normalizeDraftHtml(replyEditorRef.current?.flush() ?? replyBody),
         cc: buildOutboundCc(ccDraft, {
           extra: ccMarketManager ? marketManagerEmail : null,
@@ -1130,9 +1188,6 @@ export function TicketDetail({
   const salesforceSearchUrl = buildSalesforceUnifiedSearchUrl(salesforceSearchQuery);
   const intakeAirbnbUserId = ticket ? intakeAirbnbUserIdFromTicket(ticket) : "";
   const configuredExternalTools = activeExternalTools(externalTools);
-  const novaReservationUrl = buildNovaReservationUrl(ticket.reservationCode);
-  const claimSearchUrl = buildClaimSalesforceSearchUrl(ticket.claimNumber);
-  const novaListingUrl = buildNovaListingUrl(ticket.listingId);
   const becomeUserId = getEffectiveAirbnbUserId();
   const becomeUserUrl = buildBecomeUserUrl(becomeUserId);
   const novaProfileUrl = buildNovaProfileUrl(becomeUserId);
@@ -1156,9 +1211,9 @@ export function TicketDetail({
     }
 
     if (template.subject?.trim()) {
-      const suffix = stripEmailSubjectPrefix(template.subject.trim());
+      const suffix = stripEmailSubjectPrefix(template.subject.trim(), emailSubjectPrefix);
       setSubjectSuffix(suffix);
-      onSubjectChange(ticket.rowId, buildEmailSubject(suffix));
+      onSubjectChange(ticket.rowId, buildEmailSubject(suffix, emailSubjectPrefix));
     }
     if (template.body?.trim()) {
       const body = normalizeDraftHtml(template.body);
@@ -1253,7 +1308,7 @@ export function TicketDetail({
     setReplyBody(body);
     saveReplyDraft(rowId, {
       body,
-      subject: buildEmailSubject(subjectSuffixRef.current),
+      subject: buildEmailSubject(subjectSuffixRef.current, emailSubjectPrefix),
       cc: ccDraftRef.current,
       bcc: bccDraftRef.current,
     });
@@ -1903,7 +1958,7 @@ export function TicketDetail({
           extra: ccMarketManager ? marketManagerEmail : null,
         }) ?? undefined,
       bcc: buildOutboundBcc(bccDraft) ?? undefined,
-      subject: buildEmailSubject(subjectSuffix),
+      subject: buildEmailSubject(subjectSuffix, emailSubjectPrefix),
       body: plainBody,
     });
     const popup = openGmailComposePopup(url);
@@ -1971,9 +2026,11 @@ export function TicketDetail({
                   : "border-zendesk-border"
               }`}
             >
-              <span className="shrink-0 border-r border-zendesk-border bg-gray-50 px-2 py-1 text-[10px] font-medium text-zendesk-muted">
-                {EMAIL_SUBJECT_PREFIX}
-              </span>
+              {subjectPrefix ? (
+                <span className="shrink-0 border-r border-zendesk-border bg-gray-50 px-2 py-1 text-[10px] font-medium text-zendesk-muted">
+                  {subjectPrefix}
+                </span>
+              ) : null}
               <input
                 type="text"
                 value={subjectSuffix}
@@ -1993,7 +2050,7 @@ export function TicketDetail({
                   }
                 }}
                 className="min-w-0 flex-1 px-2 py-1 text-sm font-medium outline-none"
-                placeholder="Subject (required)…"
+                placeholder={subjectPrefix ? "Subject (required)…" : "Email subject (required)…"}
               />
             </div>
             {subjectFieldError && (
@@ -2101,6 +2158,31 @@ export function TicketDetail({
                 ) : (
                   <>Row {ticket.rowNumber}</>
                 )}
+                {isAttachmentFolderPickerSupported() ? (
+                  <button
+                    type="button"
+                    onClick={() => void openTicketAttachmentFolder()}
+                    disabled={attachmentFolderBusy}
+                    className="ml-1.5 inline-flex items-center gap-0.5 rounded border border-zendesk-border px-1.5 py-px text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                    title={
+                      attachmentFolderOpenedHint
+                        ? `Opened ${attachmentFolderOpenedHint}`
+                        : `Open attachment folder (Row ${ticket.rowNumber} if it exists, otherwise the downloads root)`
+                    }
+                    aria-label={
+                      attachmentFolderOpenedHint
+                        ? `Opened ${attachmentFolderOpenedHint}`
+                        : `Open attachment folder for row ${ticket.rowNumber}`
+                    }
+                  >
+                    {attachmentFolderBusy ? (
+                      <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
+                    ) : (
+                      <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
+                    )}
+                    {attachmentFolderOpenedHint ? "Opened" : "Folder"}
+                  </button>
+                ) : null}
                 {ticket.needsInitialResponse && (
                   <span className="ml-1.5 rounded bg-red-100 px-1 py-px font-semibold text-red-700">
                     {initialResponseHours}h+
@@ -2413,14 +2495,14 @@ export function TicketDetail({
               <NovaSheetLinkField
                 label={columnLabels?.reservationCode || "Reso"}
                 value={ticket.reservationCode}
-                href={novaReservationUrl}
+                buildHref={buildNovaReservationUrl}
                 maxDisplayLength={10}
                 onSave={(value) => onReservationCodeChange(ticket.rowId, value)}
               />
               <NovaSheetLinkField
                 label={columnLabels?.claimNumber || "Claims"}
                 value={ticket.claimNumber}
-                href={claimSearchUrl}
+                buildHref={buildClaimSalesforceSearchUrl}
                 openInLabel="Salesforce"
                 maxDisplayLength={14}
                 onSave={(value) => onClaimNumberChange(ticket.rowId, value)}
@@ -2428,7 +2510,7 @@ export function TicketDetail({
               <NovaSheetLinkField
                 label={columnLabels?.listingId || "Listing"}
                 value={ticket.listingId}
-                href={novaListingUrl}
+                buildHref={buildNovaListingUrl}
                 onSave={(value) => onListingIdChange(ticket.rowId, value)}
               />
             </div>
@@ -3138,14 +3220,14 @@ function LinkedCaseField({
 function NovaSheetLinkField({
   label,
   value,
-  href,
+  buildHref,
   maxDisplayLength,
   openInLabel = "Nova",
   onSave,
 }: {
   label: string;
   value: string;
-  href: string | null;
+  buildHref?: (value: string) => string | null;
   maxDisplayLength?: number;
   openInLabel?: string;
   onSave?: (value: string) => void | Promise<void>;
@@ -3153,11 +3235,22 @@ function NovaSheetLinkField({
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  const trimmed = value.trim();
+  /** Keeps the last committed edit visible until the parent ticket prop catches up. */
+  const [optimisticValue, setOptimisticValue] = useState<string | null>(null);
+  const savingRef = useRef(false);
+
+  const trimmed = (optimisticValue ?? value).trim();
+  const linkHref = buildHref?.(trimmed) ?? null;
 
   useEffect(() => {
-    if (!isEditing) setDraft(value);
-  }, [value, isEditing]);
+    if (optimisticValue !== null && value.trim() === optimisticValue.trim()) {
+      setOptimisticValue(null);
+    }
+  }, [value, optimisticValue]);
+
+  useEffect(() => {
+    if (!isEditing) setDraft(optimisticValue ?? value);
+  }, [value, isEditing, optimisticValue]);
 
   const displayValue =
     maxDisplayLength && trimmed.length > maxDisplayLength
@@ -3171,18 +3264,31 @@ function NovaSheetLinkField({
     window.setTimeout(() => setCopied(false), 1500);
   }
 
-  async function saveDraft() {
-    const next = draft.trim();
+  async function commit(raw: string) {
+    const next = raw.trim();
     if (next === trimmed) {
       setIsEditing(false);
       return;
     }
-    await onSave?.(next);
+    if (savingRef.current) return;
+    savingRef.current = true;
+    // Commit from the DOM/string immediately so a fast paste→blur cannot lose
+    // text that React draft state has not flushed yet.
+    setOptimisticValue(next);
+    setDraft(next);
     setIsEditing(false);
+    try {
+      await onSave?.(next);
+    } catch {
+      setOptimisticValue(null);
+      setDraft(value);
+    } finally {
+      savingRef.current = false;
+    }
   }
 
   return (
-    <label className="flex items-center gap-1.5 text-xs">
+    <div className="flex items-center gap-1.5 text-xs">
       <span className="text-zendesk-muted">{label}</span>
       <span className="flex items-center gap-1">
         {isEditing ? (
@@ -3190,20 +3296,20 @@ function NovaSheetLinkField({
             type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => void saveDraft()}
+            onBlur={(e) => void commit(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();
               if (e.key === "Escape") {
-                setDraft(value);
+                setDraft(optimisticValue ?? value);
                 setIsEditing(false);
               }
             }}
             autoFocus
             className="w-28 rounded border border-zendesk-green px-1.5 py-0.5 font-mono text-xs outline-none"
           />
-        ) : href ? (
+        ) : linkHref ? (
           <a
-            href={href}
+            href={linkHref}
             target="_blank"
             rel="noopener noreferrer"
             title={
@@ -3237,7 +3343,11 @@ function NovaSheetLinkField({
         {onSave && !isEditing && (
           <button
             type="button"
-            onClick={() => setIsEditing(true)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setDraft(optimisticValue ?? value);
+              setIsEditing(true);
+            }}
             title={`Edit ${label}`}
             aria-label={`Edit ${label}`}
             className="rounded border border-zendesk-border p-1 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
@@ -3246,6 +3356,6 @@ function NovaSheetLinkField({
           </button>
         )}
       </span>
-    </label>
+    </div>
   );
 }

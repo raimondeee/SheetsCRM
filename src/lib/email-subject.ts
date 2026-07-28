@@ -1,18 +1,52 @@
-export const EMAIL_SUBJECT_PREFIX = "Form Submission Response - ";
+/** Default CRM compose subject prefix when Setup has not overridden it. */
+export const DEFAULT_EMAIL_SUBJECT_PREFIX = "Form Submission Response - ";
 
-const EMAIL_SUBJECT_PREFIX_TRIMMED = EMAIL_SUBJECT_PREFIX.trim();
+/** @deprecated Prefer DEFAULT_EMAIL_SUBJECT_PREFIX or a sheet-config prefix. */
+export const EMAIL_SUBJECT_PREFIX = DEFAULT_EMAIL_SUBJECT_PREFIX;
 
-export function stripEmailSubjectPrefix(subject: string): string {
+/**
+ * Normalize a typed Setup prefix.
+ * - `""` (empty string) = prefix disabled (no fixed text)
+ * - `null` / `undefined` / whitespace = use the default prefix
+ * - any other text = custom prefix (trailing space added for suffix join)
+ */
+export function normalizeEmailSubjectPrefix(prefix: string | null | undefined): string {
+  if (prefix === "") return "";
+  const trimmed = (prefix ?? "").trim();
+  if (!trimmed) return DEFAULT_EMAIL_SUBJECT_PREFIX;
+  return `${trimmed} `;
+}
+
+/** True when Setup has explicitly disabled the fixed subject prefix. */
+export function isEmailSubjectPrefixDisabled(prefix: string | null | undefined): boolean {
+  return prefix === "";
+}
+
+function prefixStripVariants(prefix: string | null | undefined): string[] {
+  const configured = normalizeEmailSubjectPrefix(prefix);
+  const variants = [
+    configured,
+    configured.trim(),
+    DEFAULT_EMAIL_SUBJECT_PREFIX,
+    DEFAULT_EMAIL_SUBJECT_PREFIX.trim(),
+  ];
+  return [...new Set(variants.filter(Boolean))];
+}
+
+export function stripEmailSubjectPrefix(
+  subject: string,
+  prefix?: string | null
+): string {
   let trimmed = subject.trim();
   if (!trimmed) return "";
 
-  const variants = [EMAIL_SUBJECT_PREFIX, EMAIL_SUBJECT_PREFIX_TRIMMED];
+  const variants = prefixStripVariants(prefix);
   let changed = true;
   while (changed) {
     changed = false;
-    for (const prefix of variants) {
-      if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
-        trimmed = trimmed.slice(prefix.length).trimStart();
+    for (const candidate of variants) {
+      if (trimmed.toLowerCase().startsWith(candidate.toLowerCase())) {
+        trimmed = trimmed.slice(candidate.length).trimStart();
         changed = true;
         break;
       }
@@ -26,26 +60,36 @@ export function isEmailSubjectSuffixFilled(suffix: string): boolean {
   return suffix.trim().length > 0;
 }
 
-export function isCompleteEmailSubject(subject: string): boolean {
-  return isEmailSubjectSuffixFilled(stripEmailSubjectPrefix(subject));
+export function isCompleteEmailSubject(
+  subject: string,
+  prefix?: string | null
+): boolean {
+  return isEmailSubjectSuffixFilled(stripEmailSubjectPrefix(subject, prefix));
 }
 
 /** Suffix for the compose input from a stored full subject or draft value. */
-export function emailSubjectSuffixFromStored(subject: string): string {
-  const suffix = stripEmailSubjectPrefix(subject);
+export function emailSubjectSuffixFromStored(
+  subject: string,
+  prefix?: string | null
+): string {
+  const suffix = stripEmailSubjectPrefix(subject, prefix);
   return isEmailSubjectSuffixFilled(suffix) ? suffix : "";
 }
 
-export function buildEmailSubject(suffix: string): string {
+export function buildEmailSubject(suffix: string, prefix?: string | null): string {
   const trimmed = suffix.trim();
   if (!trimmed) return "";
-  return `${EMAIL_SUBJECT_PREFIX}${trimmed}`;
+  const normalized = normalizeEmailSubjectPrefix(prefix);
+  return normalized ? `${normalized}${trimmed}` : trimmed;
 }
 
 /** Suffix saved in CRM overlay (empty when the agent has not set a subject). */
-export function crmSubjectLabelFromStored(crmSubject: string | null | undefined): string {
+export function crmSubjectLabelFromStored(
+  crmSubject: string | null | undefined,
+  prefix?: string | null
+): string {
   if (!crmSubject?.trim()) return "";
-  return emailSubjectSuffixFromStored(crmSubject);
+  return emailSubjectSuffixFromStored(crmSubject, prefix);
 }
 
 /** Primary title line in the ticket list — CRM suffix only, not sheet intake subject. */
@@ -63,9 +107,12 @@ export function ticketListPrimaryLine(ticket: {
   return "No subject";
 }
 
-export function ensureEmailSubjectPrefix(subject: string): string {
-  const suffix = stripEmailSubjectPrefix(subject);
-  return buildEmailSubject(suffix);
+export function ensureEmailSubjectPrefix(
+  subject: string,
+  prefix?: string | null
+): string {
+  const suffix = stripEmailSubjectPrefix(subject, prefix);
+  return buildEmailSubject(suffix, prefix);
 }
 
 /**
