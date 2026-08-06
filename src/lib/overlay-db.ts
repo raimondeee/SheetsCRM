@@ -351,6 +351,40 @@ function getDb(): Database.Database {
   }
 
   ensureCrmTicketEventsTable();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reply_drafts (
+      ticket_row_id TEXT PRIMARY KEY,
+      body TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      cc TEXT NOT NULL DEFAULT '',
+      bcc TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS admin_note_drafts (
+      ticket_row_id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS send_archive (
+      id TEXT PRIMARY KEY,
+      saved_at TEXT NOT NULL,
+      status TEXT NOT NULL,
+      ticket_row_id TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      to_addr TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      message TEXT NOT NULL,
+      cc TEXT,
+      bcc TEXT,
+      status_after_send TEXT NOT NULL,
+      intake_timestamp TEXT,
+      attachments_json TEXT NOT NULL DEFAULT '[]',
+      error_message TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_send_archive_saved
+      ON send_archive(saved_at DESC);
+  `);
   try {
     db.exec(`ALTER TABLE ticket_overlay ADD COLUMN bg_gmail_sync_enabled_at TEXT`);
   } catch {

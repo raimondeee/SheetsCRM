@@ -269,7 +269,7 @@ export function SendArchivePanel({ onExpandedChange }: SendArchivePanelProps) {
             {entries.length > 0 && (
               <button
                 type="button"
-                onClick={() => clearSendArchive()}
+                onClick={() => void clearSendArchive()}
                 title="Clear send archive"
                 aria-label="Clear send archive"
                 className="shrink-0 rounded border border-zendesk-border p-1.5 text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy"
@@ -289,7 +289,7 @@ export function SendArchivePanel({ onExpandedChange }: SendArchivePanelProps) {
           </div>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 pt-2">
             <p className="shrink-0 text-[10px] text-zendesk-muted">
-              Last {SEND_ARCHIVE_LIMIT} queued emails (full copy, this browser)
+              Last {SEND_ARCHIVE_LIMIT} queued emails (stored locally in SheetsCRM, not the browser)
             </p>
             <div className="mt-2 flex min-h-0 flex-1 flex-col">{listContent}</div>
           </div>

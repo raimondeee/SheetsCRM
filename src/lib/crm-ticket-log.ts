@@ -10,7 +10,15 @@ export type CrmTicketEventKind =
   | "gmail_link_archived"
   | "gmail_thread_reset"
   | "sheet_resync"
-  | "cover_ignore";
+  | "cover_ignore"
+  | "email_sent"
+  | "attachment_download"
+  | "dashboard_report_sent"
+  | "sheet_write"
+  | "message_redacted";
+
+/** Synthetic ticket id for non-ticket audit events (dashboard reports, etc.). */
+export const CRM_SYSTEM_AUDIT_TICKET_ID = "__system__";
 
 export interface CrmTicketEvent {
   id: string;

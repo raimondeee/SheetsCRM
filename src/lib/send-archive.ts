@@ -1,62 +1,35 @@
+/**
+ * Recent-send archive — client facade over SQLite via /api/send-archive.
+ * Migrates once from legacy localStorage key sheetscrm_send_archive.
+ */
 import { readFilesAsAttachmentPayload } from "./outbound-attachments";
 import { normalizeDraftHtml } from "./html-utils";
-import type { QueuedSendPayload, StatusAfterSend } from "./queued-send";
+import type { QueuedSendPayload } from "./queued-send";
+import { SEND_ARCHIVE_LIMIT } from "./composer-persistence-constants";
+import type { SendArchiveEntry } from "./send-archive-types";
 
-export const SEND_ARCHIVE_LIMIT = 10;
+export type {
+  SendArchiveAttachment,
+  SendArchiveEntry,
+  SendArchiveStatus,
+} from "./send-archive-types";
+export { SEND_ARCHIVE_LIMIT } from "./composer-persistence-constants";
 
-export type SendArchiveStatus = "queued" | "sent" | "failed" | "cancelled";
-
-export interface SendArchiveAttachment {
-  filename: string;
-  mimeType: string;
-  data: string;
-}
-
-export interface SendArchiveEntry {
-  id: string;
-  savedAt: string;
-  status: SendArchiveStatus;
-  ticketRowId: string;
-  label: string;
-  to: string;
-  subject: string;
-  message: string;
-  cc: string | null;
-  bcc: string | null;
-  statusAfterSend: StatusAfterSend;
-  intakeTimestamp?: string;
-  attachments: SendArchiveAttachment[];
-  errorMessage?: string;
-  completedAt?: string;
-}
-
-const STORAGE_KEY = "sheetscrm_send_archive";
+const LEGACY_STORAGE_KEY = "sheetscrm_send_archive";
 
 type SendArchiveListener = () => void;
 const listeners = new Set<SendArchiveListener>();
+let memoryCache: SendArchiveEntry[] | null = null;
+let hydratePromise: Promise<void> | null = null;
 
 function notifyListeners() {
-  for (const listener of listeners) {
-    listener();
-  }
+  for (const listener of listeners) listener();
 }
 
 export function subscribeSendArchive(listener: SendArchiveListener): () => void {
   listeners.add(listener);
+  void ensureHydrated();
   return () => listeners.delete(listener);
-}
-
-function loadRaw(): SendArchiveEntry[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isSendArchiveEntry);
-  } catch {
-    return [];
-  }
 }
 
 function isSendArchiveEntry(value: unknown): value is SendArchiveEntry {
@@ -73,31 +46,97 @@ function isSendArchiveEntry(value: unknown): value is SendArchiveEntry {
   );
 }
 
-function persist(entries: SendArchiveEntry[]): void {
+function readLegacyLocalStorage(): SendArchiveEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isSendArchiveEntry);
+  } catch {
+    return [];
+  }
+}
+
+function clearLegacyLocalStorage(): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, SEND_ARCHIVE_LIMIT)));
-  notifyListeners();
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
+}
+
+async function ensureHydrated(): Promise<void> {
+  if (memoryCache) return;
+  if (hydratePromise) return hydratePromise;
+  hydratePromise = (async () => {
+    try {
+      const res = await fetch("/api/send-archive", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const data = (await res.json()) as { entries?: SendArchiveEntry[] };
+      let entries = Array.isArray(data.entries) ? data.entries : [];
+
+      const legacy = readLegacyLocalStorage();
+      if (legacy.length > 0) {
+        for (const entry of legacy.slice().reverse()) {
+          await fetch("/api/send-archive", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entry }),
+          }).catch(() => undefined);
+        }
+        clearLegacyLocalStorage();
+        const refreshed = await fetch("/api/send-archive", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        const refreshedData = (await refreshed.json()) as { entries?: SendArchiveEntry[] };
+        if (Array.isArray(refreshedData.entries)) entries = refreshedData.entries;
+      }
+
+      memoryCache = entries.slice(0, SEND_ARCHIVE_LIMIT);
+      notifyListeners();
+    } catch {
+      memoryCache = readLegacyLocalStorage().slice(0, SEND_ARCHIVE_LIMIT);
+      notifyListeners();
+    }
+  })();
+  return hydratePromise;
 }
 
 export function loadSendArchive(): SendArchiveEntry[] {
-  return loadRaw().slice(0, SEND_ARCHIVE_LIMIT);
+  void ensureHydrated();
+  return (memoryCache ?? readLegacyLocalStorage()).slice(0, SEND_ARCHIVE_LIMIT);
 }
 
-export function clearSendArchive(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(STORAGE_KEY);
+export async function clearSendArchive(): Promise<void> {
+  memoryCache = [];
   notifyListeners();
+  clearLegacyLocalStorage();
+  await fetch("/api/send-archive", { method: "DELETE", credentials: "same-origin" }).catch(
+    () => undefined
+  );
 }
 
-export function updateSendArchiveEntry(
+export async function updateSendArchiveEntry(
   id: string,
   patch: Partial<Pick<SendArchiveEntry, "status" | "errorMessage" | "completedAt">>
-): void {
-  const entries = loadRaw();
+): Promise<void> {
+  await ensureHydrated();
+  const entries = [...(memoryCache ?? [])];
   const index = entries.findIndex((entry) => entry.id === id);
-  if (index < 0) return;
-  entries[index] = { ...entries[index], ...patch };
-  persist(entries);
+  if (index >= 0) {
+    entries[index] = { ...entries[index], ...patch };
+    memoryCache = entries;
+    notifyListeners();
+  }
+  await fetch("/api/send-archive", {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...patch }),
+  }).catch(() => undefined);
 }
 
 export function newSendArchiveId(): string {
@@ -107,7 +146,6 @@ export function newSendArchiveId(): string {
   return `send-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** Snapshot a queued send (full body + attachment payloads). Returns archive id. */
 export async function recordQueuedSend(
   payload: QueuedSendPayload,
   archiveId = newSendArchiveId()
@@ -133,14 +171,25 @@ export async function recordQueuedSend(
     attachments,
   };
 
-  const entries = loadRaw();
-  entries.unshift(entry);
-  persist(entries);
+  await ensureHydrated();
+  memoryCache = [entry, ...(memoryCache ?? []).filter((e) => e.id !== entry.id)].slice(
+    0,
+    SEND_ARCHIVE_LIMIT
+  );
+  notifyListeners();
+
+  await fetch("/api/send-archive", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entry }),
+  }).catch(() => undefined);
+
   return archiveId;
 }
 
 export function markSendArchiveSent(id: string): void {
-  updateSendArchiveEntry(id, {
+  void updateSendArchiveEntry(id, {
     status: "sent",
     completedAt: new Date().toISOString(),
     errorMessage: undefined,
@@ -148,7 +197,7 @@ export function markSendArchiveSent(id: string): void {
 }
 
 export function markSendArchiveFailed(id: string, errorMessage: string): void {
-  updateSendArchiveEntry(id, {
+  void updateSendArchiveEntry(id, {
     status: "failed",
     completedAt: new Date().toISOString(),
     errorMessage,
@@ -156,7 +205,7 @@ export function markSendArchiveFailed(id: string, errorMessage: string): void {
 }
 
 export function markSendArchiveCancelled(id: string): void {
-  updateSendArchiveEntry(id, {
+  void updateSendArchiveEntry(id, {
     status: "cancelled",
     completedAt: new Date().toISOString(),
   });

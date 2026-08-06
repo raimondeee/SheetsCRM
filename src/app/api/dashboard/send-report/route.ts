@@ -12,6 +12,10 @@ import { MAX_OUTBOUND_ATTACHMENT_BYTES } from "@/lib/gmail-attachments";
 import { sendStandaloneEmail } from "@/lib/gmail";
 import { getSignedInUser } from "@/lib/google-auth";
 import { requireOAuthSession } from "@/lib/api-auth";
+import {
+  CRM_SYSTEM_AUDIT_TICKET_ID,
+  logCrmTicketEvent,
+} from "@/lib/crm-ticket-log";
 import { parseRecipientList } from "@/lib/email-recipients";
 
 export const dynamic = "force-dynamic";
@@ -222,6 +226,22 @@ export async function POST(request: Request) {
       subject,
       body: html,
       attachments,
+    });
+
+    logCrmTicketEvent({
+      ticketRowId: CRM_SYSTEM_AUDIT_TICKET_ID,
+      kind: "dashboard_report_sent",
+      summary: `Emailed ${dashboard} dashboard report to ${recipients.join(", ")}`,
+      detail: {
+        dashboard,
+        recipients,
+        period,
+        attachCsv,
+        attachImages,
+        subject,
+        messageId: result.messageId,
+        sender: user.email,
+      },
     });
 
     return NextResponse.json({

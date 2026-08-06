@@ -50,6 +50,20 @@ function kindLabel(kind: string): string {
       return "Sheet resync";
     case "cover_ignore":
       return "Cover ignore";
+    case "email_sent":
+      return "Email sent";
+    case "attachment_download":
+      return "Attachment";
+    case "dashboard_report_sent":
+      return "Report emailed";
+    case "sheet_write":
+      return "Sheet write";
+    case "message_redacted":
+      return "Redacted";
+    case "gmail_link_archived":
+      return "Gmail archived";
+    case "gmail_thread_reset":
+      return "Gmail reset";
     default:
       return kind;
   }

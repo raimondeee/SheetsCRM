@@ -140,6 +140,32 @@ export async function hasActiveGoogleAuth(): Promise<boolean> {
   return Boolean(getServiceAccountAuth());
 }
 
+export const OAUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+export async function revokeGoogleRefreshToken(refreshToken: string): Promise<boolean> {
+  const client = createOAuthClient();
+  if (!client) {
+    try {
+      const res = await fetch(
+        `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refreshToken)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        }
+      );
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    await client.revokeToken(refreshToken);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const AUTH_COOKIES = {
   refresh: REFRESH_COOKIE,
   email: EMAIL_COOKIE,

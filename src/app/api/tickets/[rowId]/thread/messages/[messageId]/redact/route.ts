@@ -3,6 +3,7 @@ import { redactThreadMessage, resolveSheetConfigForRowId } from "@/lib/overlay-d
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
 import { writeCaseSummaryOnSheet } from "@/lib/sheets";
+import { logCrmTicketEvent } from "@/lib/crm-ticket-log";
 
 function queueSheetSync(label: string, task: () => Promise<void>): void {
   void task().catch((error) => {
@@ -24,6 +25,13 @@ export async function POST(
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+
+    logCrmTicketEvent({
+      ticketRowId,
+      kind: "message_redacted",
+      summary: "Redacted message in CRM (Gmail unchanged)",
+      detail: { messageId: threadMessageId },
+    });
 
     let sheetSyncQueued = false;
     if (process.env.USE_MOCK_DATA !== "true") {

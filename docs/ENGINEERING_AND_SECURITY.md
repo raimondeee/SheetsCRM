@@ -144,12 +144,12 @@ openid, email, profile
 
 | Cookie | Name | Flags | Content |
 |--------|------|-------|---------|
-| Refresh token | `google_refresh_token` | `httpOnly`, `sameSite=lax`, 1yr | Google OAuth refresh token |
-| Email display | `google_user_email` | **not** `httpOnly`, `sameSite=lax`, 1yr | User email string |
+| Refresh token | `google_refresh_token` | `httpOnly`, `sameSite=lax`, **30 days** | Google OAuth refresh token |
+| Email display | `google_user_email` | **not** `httpOnly`, `sameSite=lax`, **30 days** | User email string |
 
 On each Google API call, `getGoogleAuthClient()` reads the refresh cookie and constructs an OAuth2 client. Access tokens are obtained implicitly by the client library.
 
-**Logout:** `POST /api/auth/logout` clears both cookies locally. It does **not** revoke the token at Google.
+**Logout:** `POST /api/auth/logout` clears both cookies and **revokes** the refresh token at Google when possible.
 
 ### Service account (fallback)
 
@@ -284,11 +284,14 @@ Name → email directory for CC lookup and recipient suggestions. May contain em
 
 System of record for intake. CRM writes are limited to mapped columns (see README column reference). Dashboard analytics are **computed from sheet data** on each request — no separate analytics warehouse. Quality / team dashboards may also read additional shared sheets configured in source modules.
 
+### Composer persistence (SQLite)
+
+Reply drafts, admin-note drafts, and the recent-send archive live in `overlay.db` (`reply_drafts`, `admin_note_drafts`, `send_archive`), not browser `localStorage`. Legacy localStorage keys are migrated once then cleared.
+
 ### Browser storage (non-authoritative)
 
 | Key | Content | Survives cache clear? |
 |-----|---------|------------------------|
-| `sheetscrm_reply_drafts` | Unsent reply HTML/subject | No |
 | `sheetscrm_calendar_notified_v1` | Calendar reminder dedupe | No |
 | `crm.calendarCollapsed` | Sidebar calendar UI state | No |
 
@@ -391,7 +394,7 @@ Findings are ordered by severity for **non-localhost** or **shared-machine** sce
 
 #### 2. Google refresh token in cookie
 
-**Finding:** Long-lived refresh token (`google_refresh_token`, 1 year) grants offline access to Sheets, Gmail (including modify), Calendar, and Contacts/Directory scopes.
+**Finding:** Refresh token cookie (`google_refresh_token`, **30 days**) grants offline access to Sheets, Gmail (including modify), Calendar, and Contacts/Directory scopes. Logout revokes the token at Google when possible.
 
 **Mitigations:**
 

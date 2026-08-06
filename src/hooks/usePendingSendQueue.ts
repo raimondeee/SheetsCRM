@@ -134,7 +134,7 @@ export function usePendingSendQueue({
         markSendArchiveSent(pendingArchiveIdRef.current);
         pendingArchiveIdRef.current = null;
       }
-      clearReplyDraft(ticketRowId);
+      void clearReplyDraft(ticketRowId);
       await onTicketSentRef.current(ticketRowId, statusAfterSend);
       onSendSucceededRef.current?.(statusAfterSend);
       if (!isMountedRef.current) return;

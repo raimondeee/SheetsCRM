@@ -3,6 +3,7 @@ import { fetchGmailAttachment } from "@/lib/gmail";
 import { getMessageAttachmentById } from "@/lib/overlay-db";
 import { saveBufferToAttachmentRowFolder } from "@/lib/attachment-folder-path";
 import { parseTicketRowId } from "@/lib/types";
+import { logCrmTicketEvent } from "@/lib/crm-ticket-log";
 
 function sanitizeFilename(filename: string): string {
   const base = filename.replace(/[/\\?%*:|"<>]/g, "_").trim();
@@ -71,6 +72,19 @@ export async function GET(
         headers.set("X-SheetsCRM-Saved-Path", saved.absolutePath);
       }
     }
+
+    logCrmTicketEvent({
+      ticketRowId,
+      kind: "attachment_download",
+      summary: `Downloaded attachment ${attachment.filename}`,
+      detail: {
+        attachmentId: decodedAttachmentId,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        sizeBytes: data.length,
+        saveLocal,
+      },
+    });
 
     return new NextResponse(new Uint8Array(data), { status: 200, headers });
   } catch (error) {

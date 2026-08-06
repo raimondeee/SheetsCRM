@@ -28,6 +28,7 @@ import { loadTimerSettings } from "@/lib/crm-preferences-store";
 import { getSignedInUser } from "@/lib/google-auth";
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
+import { logCrmTicketEvent } from "@/lib/crm-ticket-log";
 
 function queueSheetSync(label: string, task: () => Promise<void>): void {
   void task().catch((error) => {
@@ -149,6 +150,21 @@ export async function POST(
           ? "pending"
           : null;
 
+    logCrmTicketEvent({
+      ticketRowId: decoded,
+      kind: "email_sent",
+      summary: `Sent email to ${to}`,
+      detail: {
+        to,
+        cc: cc?.trim() || null,
+        bcc: bcc?.trim() || null,
+        subject: subject.trim(),
+        attachmentCount: attachmentsResult.length,
+        statusAfterSend: statusAfterSend ?? "unchanged",
+        gmailMessageId: sent.gmailMessageId ?? null,
+      },
+    });
+
     if (statusAfterSend === "resolved") {
       const overlay = getTicketOverlay(decoded);
       if (
@@ -185,11 +201,23 @@ export async function POST(
             queueSheetSync("send-status", () =>
               updateSheetStatusOnSheet(config, parsed.rowNumber, sheetStatusValue)
             );
+            logCrmTicketEvent({
+              ticketRowId: decoded,
+              kind: "sheet_write",
+              summary: `Queued sheet status write (${sheetStatusValue})`,
+              detail: { field: "status", value: sheetStatusValue },
+            });
           }
         }
         queueSheetSync("userEmailed", () =>
           markUserEmailedOnSheet(config, parsed.rowNumber)
         );
+        logCrmTicketEvent({
+          ticketRowId: decoded,
+          kind: "sheet_write",
+          summary: "Queued sheet user-emailed flag",
+          detail: { field: "userEmailed", value: "Yes" },
+        });
       }
     }
 

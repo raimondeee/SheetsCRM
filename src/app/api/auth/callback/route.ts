@@ -1,9 +1,14 @@
 /**
  * OAuth callback: exchange code for tokens and set httpOnly refresh-token cookie
  * (plus email cookie for display). Refresh token never exposed to client JS.
+ * Session cookies expire after OAUTH_SESSION_MAX_AGE_SECONDS (30 days).
  */
 import { NextResponse } from "next/server";
-import { AUTH_COOKIES, exchangeCodeForTokens } from "@/lib/google-auth";
+import {
+  AUTH_COOKIES,
+  exchangeCodeForTokens,
+  OAUTH_SESSION_MAX_AGE_SECONDS,
+} from "@/lib/google-auth";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -29,7 +34,7 @@ export async function GET(request: Request) {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
+        maxAge: OAUTH_SESSION_MAX_AGE_SECONDS,
         path: "/",
       });
     }
@@ -39,7 +44,7 @@ export async function GET(request: Request) {
         httpOnly: false,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
+        maxAge: OAUTH_SESSION_MAX_AGE_SECONDS,
         path: "/",
       });
     }

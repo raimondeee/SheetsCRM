@@ -69,15 +69,17 @@ export function RedactMessageConfirmModal({
 
         <div id="redact-confirm-desc" className="space-y-3 px-4 py-4 text-sm text-zendesk-navy">
           <p>
-            This removes the message from the CRM and blocks Gmail from re-importing it. An admin
-            note will be added automatically.
+            This removes the message from the CRM view only and blocks Gmail from re-importing
+            it into SheetsCRM. An admin note will be added automatically.
           </p>
           <div className="rounded border border-zendesk-border bg-gray-50 px-3 py-2 text-xs">
             <p className="font-medium text-zendesk-navy">{messageSummary}</p>
             <p className="mt-1 text-zendesk-muted">{messageWhen}</p>
           </div>
-          <p className="text-xs text-zendesk-muted">
-            Delete the message in Gmail separately if it contained sensitive information.
+          <p className="text-xs text-amber-900/90">
+            This does <span className="font-semibold">not</span> delete the message from Gmail
+            or remove data from the Google Sheet. Delete or edit those separately if sensitive
+            information must be removed everywhere.
           </p>
         </div>
 

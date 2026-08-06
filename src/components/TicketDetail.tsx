@@ -637,24 +637,30 @@ export function TicketDetail({
     setStatusOnlyError(null);
     onClearSendError?.();
     setStatusChangeError(null);
-    const saved = loadReplyDraft(ticket.rowId);
-    setReplyBody(saved?.body ? normalizeDraftHtml(saved.body) : "");
-    setNewAdminNote(loadAdminNoteDraft(ticket.rowId) ?? "");
-    setSubjectSuffix(
-      ticket.forceNewGmailThreadOnSend
-        ? saved?.subject
-          ? emailSubjectSuffixFromStored(saved.subject, emailSubjectPrefix)
-          : ""
-        : saved?.subject
-          ? emailSubjectSuffixFromStored(saved.subject, emailSubjectPrefix)
-          : emailSubjectSuffixFromStored(ticket.subject, emailSubjectPrefix)
-    );
+    let cancelled = false;
+    void (async () => {
+      const saved = await loadReplyDraft(ticket.rowId);
+      const adminDraft = await loadAdminNoteDraft(ticket.rowId);
+      if (cancelled) return;
+      setReplyBody(saved?.body ? normalizeDraftHtml(saved.body) : "");
+      setNewAdminNote(adminDraft ?? "");
+      setSubjectSuffix(
+        ticket.forceNewGmailThreadOnSend
+          ? saved?.subject
+            ? emailSubjectSuffixFromStored(saved.subject, emailSubjectPrefix)
+            : ""
+          : saved?.subject
+            ? emailSubjectSuffixFromStored(saved.subject, emailSubjectPrefix)
+            : emailSubjectSuffixFromStored(ticket.subject, emailSubjectPrefix)
+      );
+      setCcDraft(saved?.cc ?? "");
+      setBccDraft(saved?.bcc ?? "");
+      setCcFieldOpen(Boolean(saved?.cc?.trim()));
+      setBccFieldOpen(Boolean(saved?.bcc?.trim()));
+      setReplyFocused(Boolean(saved?.body && !isRichTextEmpty(saved.body)));
+    })();
     setActionValidation(null);
     setPressedActionButton(null);
-    setCcDraft(saved?.cc ?? "");
-    setBccDraft(saved?.bcc ?? "");
-    setCcFieldOpen(Boolean(saved?.cc?.trim()));
-    setBccFieldOpen(Boolean(saved?.bcc?.trim()));
     void fetchComposePrefs(ticket.rowId).then((prefs) => {
       setCcMarketManager(prefs.ccMarketManager);
     });
@@ -662,7 +668,9 @@ export function TicketDetail({
     setNoUserIdExempt(ticket.airbnbUserIdExempt === true);
     setUiFieldDrafts(ticket.uiFields ?? {});
     setEmailCopied(false);
-    setReplyFocused(Boolean(saved?.body && !isRichTextEmpty(saved.body)));
+    return () => {
+      cancelled = true;
+    };
   }, [ticket?.rowId]);
 
   useEffect(() => {
@@ -700,7 +708,7 @@ export function TicketDetail({
     if (!ticket) return;
 
     const timeout = setTimeout(() => {
-      saveReplyDraft(ticket.rowId, {
+      void saveReplyDraft(ticket.rowId, {
         body: normalizeDraftHtml(replyBody),
         subject: buildEmailSubject(subjectSuffix, emailSubjectPrefix),
         cc: ccDraft,
@@ -710,7 +718,7 @@ export function TicketDetail({
 
     return () => {
       clearTimeout(timeout);
-      saveReplyDraft(ticket.rowId, {
+      void saveReplyDraft(ticket.rowId, {
         body: normalizeDraftHtml(replyBody),
         subject: buildEmailSubject(subjectSuffix, emailSubjectPrefix),
         cc: ccDraft,
@@ -723,12 +731,12 @@ export function TicketDetail({
     if (!ticket) return;
 
     const timeout = setTimeout(() => {
-      saveAdminNoteDraft(ticket.rowId, newAdminNote);
+      void saveAdminNoteDraft(ticket.rowId, newAdminNote);
     }, 300);
 
     return () => {
       clearTimeout(timeout);
-      saveAdminNoteDraft(ticket.rowId, newAdminNote);
+      void saveAdminNoteDraft(ticket.rowId, newAdminNote);
     };
   }, [ticket?.rowId, newAdminNote]);
 
@@ -742,13 +750,13 @@ export function TicketDetail({
       replyBodyRef.current = body;
       const rowId = ticketRowIdRef.current;
       if (!rowId) return;
-      saveReplyDraft(rowId, {
+      void saveReplyDraft(rowId, {
         body,
         subject: buildEmailSubject(subjectSuffixRef.current, emailSubjectPrefix),
         cc: ccDraftRef.current,
         bcc: bccDraftRef.current,
       });
-      saveAdminNoteDraft(rowId, newAdminNoteRef.current);
+      void saveAdminNoteDraft(rowId, newAdminNoteRef.current);
     }
 
     function hasUnsavedComposeWork(): boolean {
@@ -889,7 +897,7 @@ export function TicketDetail({
     try {
       await onAppendAdminNote(ticketRowId, newAdminNote.trim());
       if (ticket?.rowId !== ticketRowId) return;
-      clearAdminNoteDraft(ticketRowId);
+      void clearAdminNoteDraft(ticketRowId);
       setNewAdminNote("");
       await loadThread("admin-note");
     } catch (error) {
@@ -1392,7 +1400,7 @@ export function TicketDetail({
     const body = normalizeDraftHtml(replyEditorRef.current?.flush() ?? replyBodyRef.current);
     replyBodyRef.current = body;
     setReplyBody(body);
-    saveReplyDraft(rowId, {
+    void saveReplyDraft(rowId, {
       body,
       subject: buildEmailSubject(subjectSuffixRef.current, emailSubjectPrefix),
       cc: ccDraftRef.current,
@@ -2015,7 +2023,7 @@ export function TicketDetail({
       setGmailOpenUrl(null);
       setForceNewGmailThreadOnSend(true);
       setSubjectSuffix("");
-      saveReplyDraft(ticket.rowId, {
+      void saveReplyDraft(ticket.rowId, {
         body: replyBodyRef.current,
         subject: "",
         cc: ccDraftRef.current,

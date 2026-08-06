@@ -1,58 +1,86 @@
-export interface AdminNoteDraft {
-  text: string;
-  updatedAt: number;
-}
+/**
+ * Admin note drafts — SQLite via /api/admin-note-drafts (migrates off localStorage).
+ */
+const LEGACY_STORAGE_KEY = "sheetscrm_admin_note_drafts";
+const memory = new Map<string, string>();
 
-const STORAGE_KEY = "sheetscrm_admin_note_drafts";
-const MAX_DRAFTS = 200;
-
-function loadAll(): Record<string, AdminNoteDraft> {
-  if (typeof window === "undefined") return {};
+function readLegacy(rowId: string): string | null {
+  if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, AdminNoteDraft>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, { text?: string }>;
+    const text = parsed?.[rowId]?.text;
+    return typeof text === "string" && text.trim() ? text : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
-function persistAll(drafts: Record<string, AdminNoteDraft>): void {
+function removeLegacy(rowId: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!(rowId in parsed)) return;
+    delete parsed[rowId];
+    if (Object.keys(parsed).length === 0) localStorage.removeItem(LEGACY_STORAGE_KEY);
+    else localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    /* ignore */
+  }
 }
 
-export function loadAdminNoteDraft(rowId: string): string | null {
-  const draft = loadAll()[rowId];
-  if (!draft || typeof draft.text !== "string") return null;
-  return draft.text.trim() ? draft.text : null;
+export async function loadAdminNoteDraft(rowId: string): Promise<string | null> {
+  if (memory.has(rowId)) {
+    const text = memory.get(rowId) ?? "";
+    return text.trim() ? text : null;
+  }
+  try {
+    const res = await fetch(`/api/admin-note-drafts/${encodeURIComponent(rowId)}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const data = (await res.json()) as { text?: string | null };
+    if (res.ok && typeof data.text === "string" && data.text.trim()) {
+      memory.set(rowId, data.text);
+      removeLegacy(rowId);
+      return data.text;
+    }
+  } catch {
+    /* fall through */
+  }
+  const legacy = readLegacy(rowId);
+  if (legacy) {
+    memory.set(rowId, legacy);
+    void saveAdminNoteDraft(rowId, legacy).then(() => removeLegacy(rowId));
+    return legacy;
+  }
+  return null;
 }
 
-export function saveAdminNoteDraft(rowId: string, text: string): void {
+export async function saveAdminNoteDraft(rowId: string, text: string): Promise<void> {
   if (typeof window === "undefined") return;
-
   if (!text.trim()) {
-    clearAdminNoteDraft(rowId);
+    await clearAdminNoteDraft(rowId);
     return;
   }
-
-  const all = loadAll();
-  all[rowId] = { text, updatedAt: Date.now() };
-
-  const entries = Object.entries(all).sort(([, a], [, b]) => b.updatedAt - a.updatedAt);
-  if (entries.length > MAX_DRAFTS) {
-    persistAll(Object.fromEntries(entries.slice(0, MAX_DRAFTS)));
-    return;
-  }
-
-  persistAll(all);
+  memory.set(rowId, text);
+  await fetch(`/api/admin-note-drafts/${encodeURIComponent(rowId)}`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  }).catch(() => undefined);
 }
 
-export function clearAdminNoteDraft(rowId: string): void {
+export async function clearAdminNoteDraft(rowId: string): Promise<void> {
   if (typeof window === "undefined") return;
-  const all = loadAll();
-  if (!(rowId in all)) return;
-  delete all[rowId];
-  persistAll(all);
+  memory.delete(rowId);
+  removeLegacy(rowId);
+  await fetch(`/api/admin-note-drafts/${encodeURIComponent(rowId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  }).catch(() => undefined);
 }

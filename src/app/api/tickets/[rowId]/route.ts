@@ -45,9 +45,20 @@ import { markTicketGmailThreadAsRead } from "@/lib/gmail";
 import { getSignedInUser } from "@/lib/google-auth";
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
+import { logCrmTicketEvent } from "@/lib/crm-ticket-log";
 
 /** Fire-and-forget sheet write; failures are logged, not returned to the client. */
-function queueSheetSync(label: string, task: () => Promise<void>): void {
+function queueSheetSync(
+  ticketRowId: string,
+  label: string,
+  task: () => Promise<void>
+): void {
+  logCrmTicketEvent({
+    ticketRowId,
+    kind: "sheet_write",
+    summary: `Queued sheet write (${label})`,
+    detail: { field: label },
+  });
   void task().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[SheetsCRM sheet sync] ${label}:`, message);
@@ -176,7 +187,7 @@ export async function PATCH(request: Request) {
 
       const sheetStatusValue = mapCrmStatusToSheetValue(normalizedStatus);
       if (sheetStatusValue && canSyncSheet) {
-        queueSheetSync("status", () =>
+        queueSheetSync(rowId, "status", () =>
           updateSheetStatusOnSheet(config!, rowNumber!, sheetStatusValue)
         );
       }
@@ -203,7 +214,7 @@ export async function PATCH(request: Request) {
       const trimmed = contactReason.trim();
       updateTicketContactReason(rowId, trimmed);
       if (canSyncSheet) {
-        queueSheetSync("contactReason", () =>
+        queueSheetSync(rowId, "contactReason", () =>
           updateContactReasonOnSheet(config!, rowNumber!, trimmed)
         );
       }
@@ -220,7 +231,7 @@ export async function PATCH(request: Request) {
       updatedAdminNotes = appendAdminNoteToOverlay(rowId, note);
       addAdminNoteThreadMessage(rowId, note, email ?? undefined);
       if (canSyncSheet) {
-        queueSheetSync("adminNote", () =>
+        queueSheetSync(rowId, "adminNote", () =>
           writeCaseSummaryOnSheet(config!, rowNumber!, updatedAdminNotes!)
         );
       }
@@ -229,7 +240,7 @@ export async function PATCH(request: Request) {
     if (airbnbUserIdExempt === true) {
       markTicketAirbnbUserIdExempt(rowId);
       if (canSyncSheet) {
-        queueSheetSync("airbnbUserId", () =>
+        queueSheetSync(rowId, "airbnbUserId", () =>
           updateAirbnbUserIdOnSheet(config!, rowNumber!, "")
         );
       }
@@ -237,32 +248,32 @@ export async function PATCH(request: Request) {
       const trimmed = airbnbUserId.trim();
       updateTicketAirbnbUserId(rowId, trimmed);
       if (canSyncSheet) {
-        queueSheetSync("airbnbUserId", () =>
+        queueSheetSync(rowId, "airbnbUserId", () =>
           updateAirbnbUserIdOnSheet(config!, rowNumber!, trimmed)
         );
       }
     }
 
     if (typeof reservationCode === "string" && canSyncSheet) {
-      queueSheetSync("reservationCode", () =>
+      queueSheetSync(rowId, "reservationCode", () =>
         updateReservationCodeOnSheet(config!, rowNumber!, reservationCode.trim())
       );
     }
 
     if (typeof claimNumber === "string" && canSyncSheet) {
-      queueSheetSync("claimNumber", () =>
+      queueSheetSync(rowId, "claimNumber", () =>
         updateClaimNumberOnSheet(config!, rowNumber!, claimNumber.trim())
       );
     }
 
     if (typeof listingId === "string" && canSyncSheet) {
-      queueSheetSync("listingId", () =>
+      queueSheetSync(rowId, "listingId", () =>
         updateListingIdOnSheet(config!, rowNumber!, listingId.trim())
       );
     }
 
     if (typeof headerField === "string" && canSyncSheet) {
-      queueSheetSync("headerField", () =>
+      queueSheetSync(rowId, "headerField", () =>
         updateTicketHeaderFieldOnSheet(config!, rowNumber!, headerField.trim())
       );
     }
@@ -274,7 +285,7 @@ export async function PATCH(request: Request) {
     ) {
       const col = resolveUiFieldColumn(config!, uiFieldSlotId);
       if (col) {
-        queueSheetSync(`uiField:${uiFieldSlotId}`, () =>
+        queueSheetSync(rowId, `uiField:${uiFieldSlotId}`, () =>
           updateUiFieldOnSheet(config!, rowNumber!, col.index, uiFieldValue.trim())
         );
       }
