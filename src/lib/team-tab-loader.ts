@@ -4,6 +4,8 @@ import {
   type TeamTabColumnLetters,
   type TeamTabSource,
 } from "@/lib/team-dashboard-sources";
+import type { HostProfileNameMap } from "@/lib/host-profiles";
+import { loadHostProfileMapsForSources } from "@/lib/host-profiles-loader";
 import { fetchSheetTabsBatch } from "@/lib/sheet-tabs";
 import { parseTeamTab, type TeamIntakeRecord } from "@/lib/team-metrics";
 import {
@@ -20,6 +22,9 @@ export interface ColleagueTeamLoadResult {
   /** Header/data mapping warnings for the Team Dashboard banner. */
   mappingWarnings: string[];
   sourceHealth: TeamSourceMappingHealth[];
+  hostProfiles: HostProfileNameMap;
+  hostProfilesLoaded: number;
+  hostProfileSheetNames: string[];
 }
 
 function fallbackLettersFromSource(source: TeamTabSource): TeamTabColumnLetters {
@@ -28,6 +33,8 @@ function fallbackLettersFromSource(source: TeamTabSource): TeamTabColumnLetters 
     status: indexToLetter(source.columns.status),
     owner: indexToLetter(source.columns.owner),
     category: indexToLetter(source.columns.category),
+    userId:
+      source.columns.userId >= 0 ? indexToLetter(source.columns.userId) : undefined,
   };
 }
 
@@ -47,6 +54,9 @@ export async function loadColleagueTeamRecords(): Promise<ColleagueTeamLoadResul
   let loadError: string | null = null;
   const mappingWarnings: string[] = [];
   const sourceHealth: TeamSourceMappingHealth[] = [];
+  let hostProfiles: HostProfileNameMap = {};
+  let hostProfilesLoaded = 0;
+  let hostProfileSheetNames: string[] = [];
 
   try {
     const sourcesBySpreadsheet = new Map<string, typeof sources>();
@@ -91,6 +101,24 @@ export async function loadColleagueTeamRecords(): Promise<ColleagueTeamLoadResul
         sourcesLoaded += 1;
       }
     }
+
+    const profileLoad = await loadHostProfileMapsForSources({
+      spreadsheetId: config.spreadsheetId,
+      sources: sources.map((entry) => ({
+        id: entry.source.id,
+        sheetName: entry.source.sheetName,
+        region: entry.source.region,
+        spreadsheetId: entry.spreadsheetId,
+      })),
+    });
+    hostProfiles = profileLoad.merged;
+    hostProfilesLoaded = profileLoad.loadedSheetNames.length;
+    hostProfileSheetNames = profileLoad.loadedSheetNames;
+    for (const region of profileLoad.missingFor) {
+      mappingWarnings.push(
+        `${region}: no companion profiles tab found (expected “SheetXX profiles” or Dashboard Sheet Profiles).`
+      );
+    }
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Failed to load team sheet tabs";
   }
@@ -102,6 +130,9 @@ export async function loadColleagueTeamRecords(): Promise<ColleagueTeamLoadResul
     loadError,
     mappingWarnings,
     sourceHealth,
+    hostProfiles,
+    hostProfilesLoaded,
+    hostProfileSheetNames,
   };
 }
 

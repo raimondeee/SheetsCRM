@@ -63,7 +63,7 @@ export const HELP_TOUR_SPOTS: HelpTourSpot[] = [
   {
     id: "draft",
     title: "Draft window",
-    body: "Compose your reply under Email draft (plus Admin notes and CRM log tabs). Write freeform, insert Mixmax templates from the right rail, then send or update status with the action buttons below the editor.",
+    body: "Compose your reply under Email draft (plus Admin notes, Attachments, and CRM log tabs). Write freeform, insert Mixmax templates from the right rail, then send or update status with the action buttons below the editor.",
     match: { text: "Email draft", tagNames: ["button", "span"] },
     missingHint: "Select a ticket to open the draft composer.",
   },
@@ -162,15 +162,27 @@ export const HELP_TOUR_SPOTS: HelpTourSpot[] = [
     missingHint: "Expand Internal tools at the bottom of the right rail.",
   },
   {
+    id: "gso-triage",
+    title: "GSO Triage",
+    body: "Opens the GSO Escalations Triage playbook so you can search Homes escalation cases, teams, and host scripts without leaving the ticket workspace.",
+    match: {
+      text: "GSO Triage",
+      ariaLabel: "GSO Triage",
+      tagNames: ["button", "span"],
+      dataHelpTour: "gso-triage",
+    },
+    missingHint: "Expand Internal tools at the bottom of the right rail.",
+  },
+  {
     id: "recent-sends",
     title: "Recent Sends",
-    body: "Shows a short archive of emails you recently sent from SheetsCRM. Use it to confirm delivery, reopen a prior send, or copy context for follow-up.",
+    body: "Shows a short archive of emails you recently sent from SheetsCRM. Use it to confirm delivery, reopen a prior send, or copy context for follow-up. Enable the panel in Preferences → Ticket right rail (sends are still archived when the panel is hidden).",
     match: {
       text: ["Recent sends", "Recent Sends"],
       ariaLabel: "Recent sends",
       tagNames: ["button", "span", "p", "h3"],
       dataHelpTour: "recent-sends",
     },
-    missingHint: "Expand Internal tools at the bottom of the right rail.",
+    missingHint: "Enable Recent sends in Preferences → Ticket right rail, then open Internal tools on the right rail.",
   },
 ];

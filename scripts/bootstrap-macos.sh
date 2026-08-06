@@ -215,6 +215,11 @@ install_project() {
   echo ""
   echo "Preparing the local database folder…"
   npm run db:migrate
+
+  if [ ! -f data/market-managers.json ] && [ -f data/market-managers.example.json ]; then
+    cp data/market-managers.example.json data/market-managers.json
+    echo "Created data/market-managers.json from the example file (replace with your MM directory)."
+  fi
 }
 
 main() {
@@ -239,8 +244,13 @@ main() {
   install_project
 
   echo ""
+  echo "Installing attachments folder + Finder opener (crmfolder://)…"
+  bash "$ROOT/scripts/install-crmfolder-helper.sh"
+
+  echo ""
   echo "Setup complete."
   echo "Next: double-click 'Open SheetsCRM.command' to start the CRM."
+  echo "Attachments save under ~/Documents/SheetsCRM-Attachments (Row {n} subfolders)."
   echo "For live Google data, configure OAuth credentials in the app's Setup → Environment screen."
   pause_before_exit
 }

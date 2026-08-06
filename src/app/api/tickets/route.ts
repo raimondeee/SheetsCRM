@@ -8,7 +8,8 @@
  * - Queues background Gmail sync + archives stale Gmail links
  * - Enriches last-response timestamps from overlay thread cache
  *
- * Mock path: USE_MOCK_DATA=true or missing Google credentials.
+ * Mock path: USE_MOCK_DATA=true only (opt-in). Requires OAuth session otherwise
+ * (middleware); unsigned callers get 401 — service account alone is not enough.
  */
 import { NextResponse } from "next/server";
 import { buildDefaultSheetConfig } from "@/lib/default-sheet-config";
@@ -47,7 +48,7 @@ export async function GET() {
     }
 
     const hasAuth = await hasGoogleCredentials();
-    const useMock = process.env.USE_MOCK_DATA === "true" || !hasAuth;
+    const useMock = process.env.USE_MOCK_DATA === "true";
     const { email } = await getSignedInUser();
     const timerSettings = loadTimerSettings(email);
     const coverSheets = loadCoverSheets();
@@ -56,7 +57,7 @@ export async function GET() {
     let tickets = useMock ? getMockTickets(timerSettings) : [];
     let mappingWarnings: string[] = [];
 
-    if (!useMock) {
+    if (!useMock && hasAuth) {
       const primary = await fetchTicketsFromSheet(config, timerSettings, {
         label: "Intake sheet",
       });
@@ -94,11 +95,12 @@ export async function GET() {
     const legacySlaCleared = migrateLegacyInitialResponseSla(tickets);
     tickets = enrichTicketsWithLastResponse(tickets, timerSettings);
 
+    const source = useMock ? "mock" : hasAuth ? "sheets" : "unauthenticated";
     recordOpsAppEvent({
       name: "ticket_list_refresh",
       ok: true,
       durationMs: Date.now() - started,
-      detail: `${tickets.length} tickets · ${useMock ? "mock" : "sheets"}`,
+      detail: `${tickets.length} tickets · ${source}`,
     });
 
     return NextResponse.json(
@@ -106,7 +108,7 @@ export async function GET() {
         tickets,
         config,
         coverSheets,
-        source: useMock ? "mock" : "sheets",
+        source,
         hasCredentials: hasAuth,
         syncedAt: new Date().toISOString(),
         mappingWarnings,

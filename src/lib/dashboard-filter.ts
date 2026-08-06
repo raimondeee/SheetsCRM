@@ -15,6 +15,8 @@ export interface DashboardFilter {
   marketManager?: string;
   requesterName?: string;
   requesterEmail?: string;
+  /** Filter by Airbnb / host user ID on the ticket. */
+  airbnbUserId?: string;
   statusBucket?: "Resolved" | "Pending";
   weekLabel?: string;
 }
@@ -49,6 +51,11 @@ export function applyDashboardFilter(tickets: Ticket[], filter: DashboardFilter 
       !ticket.requesterEmail.toLowerCase().includes(filter.requesterEmail.toLowerCase())
     ) {
       return false;
+    }
+    if (filter.airbnbUserId) {
+      const wanted = filter.airbnbUserId.trim();
+      const ticketId = (ticket.airbnbUserId || ticket.headerField || "").trim();
+      if (!wanted || ticketId !== wanted) return false;
     }
     if (filter.statusBucket) {
       const resolved = /resolved|solved|closed|complete|done/i.test(ticket.sheetStatus);
@@ -90,6 +97,7 @@ export function dashboardFilterLabel(filter: DashboardFilter | null): string | n
   if (filter.marketManager) parts.push(`MM: ${filter.marketManager}`);
   if (filter.requesterName) parts.push(`Host: ${filter.requesterName}`);
   if (filter.requesterEmail) parts.push(`Email: ${filter.requesterEmail}`);
+  if (filter.airbnbUserId) parts.push(`User ID: ${filter.airbnbUserId}`);
   if (filter.statusBucket) parts.push(`Status: ${filter.statusBucket}`);
   if (filter.weekLabel) parts.push(`Week: ${filter.weekLabel}`);
   return parts.length > 0 ? parts.join(" · ") : null;

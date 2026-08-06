@@ -37,6 +37,7 @@ interface TicketListProps {
   onToggleCollapsed: () => void;
   initialResponseHours: number;
   fontScale?: number;
+  emptyMessage?: string;
 }
 
 function statusLabel(id: string) {
@@ -60,6 +61,7 @@ export function TicketList({
   onToggleCollapsed,
   initialResponseHours,
   fontScale = 1,
+  emptyMessage = "No tickets match this view.",
 }: TicketListProps) {
   const text = panelTextSizes(fontScale);
   const initialResponseLabel = `${initialResponseHours}h+`;
@@ -223,7 +225,7 @@ export function TicketList({
           <p className={`p-4 ${text.body} text-zendesk-muted`}>Loading tickets...</p>
         )}
         {!loading && tickets.length === 0 && (
-          <p className={`p-4 ${text.body} text-zendesk-muted`}>No tickets match this view.</p>
+          <p className={`p-4 ${text.body} text-zendesk-muted`}>{emptyMessage}</p>
         )}
         {tickets.map((ticket) => {
           const lastResponseLabel = formatLastResponseHours(ticket.lastResponseAt);

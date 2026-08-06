@@ -5,7 +5,17 @@ import {
   dateMatchesDashboardPeriod,
 } from "./dashboard-period";
 import {
+  buildTopParentAccounts,
+  normalizeHostUserId,
+  parentAccountsToCountItems,
+  type HostProfileNameMap,
+  type ParentAccountVolumeItem,
+} from "./host-profiles";
+import {
   LOCAL_TEAM_REGION,
+  TEAM_STATUS_BLANK_MAPPING_KEY,
+  teamStatusMappingKey,
+  type TeamStatusMappings,
   type TeamTabColumnMap,
   type TeamTabSource,
 } from "./team-dashboard-sources";
@@ -21,6 +31,8 @@ export interface TeamIntakeRecord {
   category: string;
   region: string;
   sourceId: string;
+  /** Normalized Airbnb / host user ID when the intake tab has one. */
+  userId: string;
 }
 
 export interface TeamRegionSummary {
@@ -53,7 +65,10 @@ export interface TeamMetricsSnapshot {
   statusByWeek: WeekSeriesPoint[];
   regionSummaries: TeamRegionSummary[];
   statusSummaries: TeamStatusSummary[];
+  topParentAccounts: ParentAccountVolumeItem[];
+  topParentAccountBars: CountItem[];
   sourcesLoaded: number;
+  hostProfilesLoaded: number;
 }
 
 function cell(row: string[], index: number): string {
@@ -99,6 +114,7 @@ export function parseTeamTab(
       category: cell(row, columns.category),
       region: source.region,
       sourceId: source.id,
+      userId: normalizeHostUserId(cell(row, columns.userId)),
     });
   }
 
@@ -113,7 +129,24 @@ export function ticketsToTeamRecords(tickets: Ticket[]): TeamIntakeRecord[] {
     category: ticket.contactReason,
     region: LOCAL_TEAM_REGION,
     sourceId: "local-intake",
+    userId: normalizeHostUserId(ticket.airbnbUserId || ticket.headerField || ""),
   }));
+}
+
+/**
+ * Merge CRM inbox tickets with regional team-tab records.
+ * When a configured source already covers {@link LOCAL_TEAM_REGION}, skip the
+ * local Form Responses injection so that region is not counted twice in full CRM.
+ */
+export function mergeLocalAndColleagueTeamRecords(
+  tickets: Ticket[],
+  colleagueRecords: TeamIntakeRecord[]
+): TeamIntakeRecord[] {
+  const colleagueCoversLocalRegion = colleagueRecords.some(
+    (record) => record.region === LOCAL_TEAM_REGION
+  );
+  if (colleagueCoversLocalRegion) return colleagueRecords;
+  return [...ticketsToTeamRecords(tickets), ...colleagueRecords];
 }
 
 function filterRecords(
@@ -308,7 +341,7 @@ function isPendingSheetStatus(status: string): boolean {
 }
 
 /** Preferred order for status overview cards (sheet + CRM labels). */
-const TEAM_STATUS_CARD_ORDER = [
+export const TEAM_STATUS_BUCKET_OPTIONS = [
   "Blank",
   "New",
   "Open",
@@ -318,31 +351,62 @@ const TEAM_STATUS_CARD_ORDER = [
   "Longterm Hold/Bugs",
 ] as const;
 
-function normalizeTeamStatusLabel(status: string): string {
+export function normalizeTeamStatusLabel(
+  status: string,
+  mappings: TeamStatusMappings = {}
+): string {
+  const mapped = mappings[teamStatusMappingKey(status)]?.trim();
+  if (mapped) return mapped;
   const trimmed = status.trim();
   if (!trimmed) return "Blank";
   const lower = trimmed.toLowerCase();
-  for (const known of TEAM_STATUS_CARD_ORDER) {
+  for (const known of TEAM_STATUS_BUCKET_OPTIONS) {
     if (known.toLowerCase() === lower) return known;
   }
   return trimmed;
 }
 
-function buildStatusSummaries(records: TeamIntakeRecord[]): TeamStatusSummary[] {
+/** Distinct raw sheet statuses (before bucket mapping) for the mapping editor. */
+export function listRawTeamStatusesInPeriod(
+  records: TeamIntakeRecord[],
+  period: DashboardPeriod,
+  regionFilter: string | "all" = "all",
+  ownerFilter: string | "all" = "all"
+): CountItem[] {
+  const counts = new Map<string, number>();
+  for (const record of filterRecords(records, period, regionFilter, ownerFilter)) {
+    const raw = record.status.trim() || TEAM_STATUS_BLANK_MAPPING_KEY;
+    counts.set(raw, (counts.get(raw) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+}
+
+function buildStatusSummaries(
+  records: TeamIntakeRecord[],
+  mappings: TeamStatusMappings
+): TeamStatusSummary[] {
   const counts = new Map<string, number>();
   for (const record of records) {
-    const label = normalizeTeamStatusLabel(record.status);
+    const label = normalizeTeamStatusLabel(record.status, mappings);
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
 
+  // Only show buckets that have volume after mapping (empty preferred tiles hide).
   const summaries: TeamStatusSummary[] = [];
   const seen = new Set<string>();
-  for (const status of TEAM_STATUS_CARD_ORDER) {
-    summaries.push({ status, periodCount: counts.get(status) ?? 0 });
+  for (const status of TEAM_STATUS_BUCKET_OPTIONS) {
+    const periodCount = counts.get(status) ?? 0;
+    if (periodCount <= 0) {
+      seen.add(status);
+      continue;
+    }
+    summaries.push({ status, periodCount });
     seen.add(status);
   }
   const extras = [...counts.entries()]
-    .filter(([status]) => !seen.has(status))
+    .filter(([status, periodCount]) => !seen.has(status) && periodCount > 0)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   for (const [status, periodCount] of extras) {
     summaries.push({ status, periodCount });
@@ -350,7 +414,10 @@ function buildStatusSummaries(records: TeamIntakeRecord[]): TeamStatusSummary[] 
   return summaries;
 }
 
-function buildStatusByWeek(records: TeamIntakeRecord[]): WeekSeriesPoint[] {
+function buildStatusByWeek(
+  records: TeamIntakeRecord[],
+  mappings: TeamStatusMappings
+): WeekSeriesPoint[] {
   const weekMap = new Map<string, { resolved: number; pending: number }>();
 
   for (const record of records) {
@@ -359,8 +426,9 @@ function buildStatusByWeek(records: TeamIntakeRecord[]): WeekSeriesPoint[] {
     const weekKey = getWeekStartSunday(d).toISOString();
     if (!weekMap.has(weekKey)) weekMap.set(weekKey, { resolved: 0, pending: 0 });
     const bucket = weekMap.get(weekKey)!;
-    if (isResolvedSheetStatus(record.status)) bucket.resolved += 1;
-    else if (isPendingSheetStatus(record.status)) bucket.pending += 1;
+    const label = normalizeTeamStatusLabel(record.status, mappings);
+    if (isResolvedSheetStatus(label)) bucket.resolved += 1;
+    else if (isPendingSheetStatus(label)) bucket.pending += 1;
   }
 
   return [...weekMap.entries()]
@@ -407,9 +475,14 @@ export function buildTeamMetrics(params: {
   regionFilter?: string | "all";
   ownerFilter?: string | "all";
   sourcesLoaded?: number;
+  statusMappings?: TeamStatusMappings;
+  hostProfiles?: HostProfileNameMap;
+  hostProfilesLoaded?: number;
 }): TeamMetricsSnapshot {
   const regionFilter = params.regionFilter ?? "all";
   const ownerFilter = params.ownerFilter ?? "all";
+  const statusMappings = params.statusMappings ?? {};
+  const hostProfiles = params.hostProfiles ?? {};
   const inPeriod = filterRecords(params.records, params.period, regionFilter, ownerFilter);
   const allTimeScoped = filterRecordsAllTime(params.records, regionFilter, ownerFilter);
 
@@ -452,7 +525,11 @@ export function buildTeamMetrics(params: {
     allTimeCount: allTimeByRegion.get(region) ?? 0,
   }));
 
-  const statusSummaries = buildStatusSummaries(inPeriod);
+  const statusSummaries = buildStatusSummaries(inPeriod, statusMappings);
+  const topParentAccounts = buildTopParentAccounts({
+    userIds: inPeriod.map((record) => record.userId),
+    profiles: hostProfiles,
+  });
 
   return {
     period: params.period,
@@ -470,9 +547,12 @@ export function buildTeamMetrics(params: {
     casesByWeek: buildWeeklyTotals(inPeriod),
     casesByMonth: buildMonthlyTotals(inPeriod),
     casesByDayOfWeek: buildDayOfWeekTotals(inPeriod),
-    statusByWeek: buildStatusByWeek(inPeriod),
+    statusByWeek: buildStatusByWeek(inPeriod, statusMappings),
     regionSummaries,
     statusSummaries,
+    topParentAccounts,
+    topParentAccountBars: parentAccountsToCountItems(topParentAccounts),
     sourcesLoaded: params.sourcesLoaded ?? 0,
+    hostProfilesLoaded: params.hostProfilesLoaded ?? 0,
   };
 }

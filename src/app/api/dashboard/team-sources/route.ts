@@ -7,16 +7,13 @@ import {
   normalizeTeamDashboardSourcesFile,
   type TeamDashboardSourcesFile,
 } from "@/lib/team-dashboard-sources";
-import { getSignedInUser } from "@/lib/google-auth";
-import { hasGoogleCredentials } from "@/lib/sheets";
+import { requireOAuthSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
 
   const config = getTeamDashboardSourcesFile();
   return NextResponse.json({
@@ -26,10 +23,8 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
 
   let body: { config?: Partial<TeamDashboardSourcesFile> };
   try {

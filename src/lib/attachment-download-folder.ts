@@ -1,10 +1,21 @@
 /**
- * Chrome/Edge File System Access API helpers for saving ticket attachments into
- * a user-chosen root folder as `Row {n}/{filename}`.
+ * Attachment folder client helpers.
  *
- * Directory handles are stored in IndexedDB (not server preferences) because they
- * cannot be serialized to JSON.
+ * Downloads are written by the local Next server into
+ * `{configuredRoot}/Row {n}/` (default `~/Documents/SheetsCRM-Attachments`;
+ * changeable in Preferences). See attachment-folder-path + `?saveLocal=1`.
+ * Finder open uses the macOS `crmfolder://` helper against that same path.
+ *
+ * Legacy Chrome File System Access API helpers remain below for compatibility
+ * but are no longer used for ticket attachment downloads.
  */
+
+import {
+  ATTACHMENT_DOWNLOADS_ROOT_DISPLAY,
+  rowAttachmentFolderName,
+} from "./attachment-folder-shared";
+
+export { rowAttachmentFolderName, ATTACHMENT_DOWNLOADS_ROOT_DISPLAY };
 
 type WellKnownDirectory =
   | "desktop"
@@ -57,10 +68,6 @@ function canUseFolderPicker(): boolean {
 
 export function isAttachmentFolderPickerSupported(): boolean {
   return canUseFolderPicker();
-}
-
-export function rowAttachmentFolderName(rowNumber: number): string {
-  return `Row ${rowNumber}`;
 }
 
 export function readAttachmentFolderDisplayName(): string | null {
@@ -155,7 +162,12 @@ export async function pickAttachmentDownloadFolder(): Promise<{ name: string }> 
   if (!canUseFolderPicker()) {
     throw new Error("Folder picker requires Chrome or Edge.");
   }
-  const handle = await window.showDirectoryPicker!({ mode: "readwrite" });
+  // Prefer Documents so agents can select SheetsCRM-Attachments quickly.
+  const handle = await window.showDirectoryPicker!({
+    mode: "readwrite",
+    startIn: "documents",
+    id: "sheetscrm-attachment-root",
+  });
   const allowed = await ensureReadWritePermission(handle);
   if (!allowed) {
     throw new Error("Permission to write to that folder was denied.");
@@ -163,6 +175,140 @@ export async function pickAttachmentDownloadFolder(): Promise<{ name: string }> 
   await idbSetHandle(handle);
   writeAttachmentFolderDisplayName(handle.name);
   return { name: handle.name };
+}
+
+export interface AttachmentFolderStatus {
+  rootPath: string;
+  displayRoot: string;
+  defaultRootPath: string;
+  defaultDisplayRoot: string;
+  isDefault: boolean;
+}
+
+export interface OpenAttachmentFolderInFinderResult {
+  opened: "row" | "root";
+  pathHint: string;
+  openPath: string;
+  displayRoot: string;
+  isDefault: boolean;
+}
+
+async function readAttachmentFolderApi(
+  qs?: URLSearchParams
+): Promise<Record<string, unknown>> {
+  const url = qs?.toString()
+    ? `/api/attachment-folder?${qs.toString()}`
+    : "/api/attachment-folder";
+  const res = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+  const data = (await res.json()) as Record<string, unknown> & { error?: string };
+  if (!res.ok || data.error) {
+    throw new Error(
+      typeof data.error === "string" ? data.error : "Attachment folder request failed"
+    );
+  }
+  return data;
+}
+
+export async function fetchAttachmentFolderStatus(): Promise<AttachmentFolderStatus> {
+  const data = await readAttachmentFolderApi();
+  return {
+    rootPath: String(data.rootPath || ""),
+    displayRoot: String(data.displayRoot || `~/${ATTACHMENT_DOWNLOADS_ROOT_DISPLAY}`),
+    defaultRootPath: String(data.defaultRootPath || ""),
+    defaultDisplayRoot: String(
+      data.defaultDisplayRoot || `~/${ATTACHMENT_DOWNLOADS_ROOT_DISPLAY}`
+    ),
+    isDefault: data.isDefault !== false,
+  };
+}
+
+/** Open macOS folder picker and persist the chosen downloads root. */
+export async function pickAttachmentDownloadsRoot(): Promise<AttachmentFolderStatus> {
+  const res = await fetch("/api/attachment-folder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ action: "pick" }),
+  });
+  const data = (await res.json()) as Record<string, unknown> & {
+    error?: string;
+    cancelled?: boolean;
+  };
+  if (data.cancelled || data.error === "cancelled") {
+    const err = new Error("cancelled");
+    err.name = "AttachmentFolderPickCancelled";
+    throw err;
+  }
+  if (!res.ok || data.error) {
+    throw new Error(
+      typeof data.error === "string" ? data.error : "Could not change attachment folder"
+    );
+  }
+  return {
+    rootPath: String(data.rootPath || ""),
+    displayRoot: String(data.displayRoot || ""),
+    defaultRootPath: String(data.defaultRootPath || ""),
+    defaultDisplayRoot: String(data.defaultDisplayRoot || ""),
+    isDefault: data.isDefault === true,
+  };
+}
+
+/** Restore ~/Documents/SheetsCRM-Attachments as the downloads root. */
+export async function resetAttachmentDownloadsRoot(): Promise<AttachmentFolderStatus> {
+  const res = await fetch("/api/attachment-folder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ action: "reset" }),
+  });
+  const data = (await res.json()) as Record<string, unknown> & { error?: string };
+  if (!res.ok || data.error) {
+    throw new Error(
+      typeof data.error === "string" ? data.error : "Could not reset attachment folder"
+    );
+  }
+  return {
+    rootPath: String(data.rootPath || ""),
+    displayRoot: String(data.displayRoot || ""),
+    defaultRootPath: String(data.defaultRootPath || ""),
+    defaultDisplayRoot: String(data.defaultDisplayRoot || ""),
+    isDefault: true,
+  };
+}
+
+/**
+ * Open the configured attachments folder (or Row {n} subfolder) in macOS Finder
+ * via the crmfolder:// helper installed by scripts/install-crmfolder-helper.sh.
+ */
+export async function openAttachmentFolderInFinder(params?: {
+  rowNumber?: number;
+  /** When true (default for ticket button), create Row {n} if missing. */
+  createRowFolder?: boolean;
+}): Promise<OpenAttachmentFolderInFinderResult> {
+  const qs = new URLSearchParams();
+  if (params?.rowNumber != null && Number.isFinite(params.rowNumber)) {
+    qs.set("rowNumber", String(params.rowNumber));
+  }
+  if (params?.createRowFolder !== false && params?.rowNumber != null) {
+    qs.set("createRowFolder", "1");
+  }
+
+  const data = await readAttachmentFolderApi(qs);
+  const crmfolderUrl = data.crmfolderUrl;
+  if (typeof crmfolderUrl !== "string" || !crmfolderUrl) {
+    throw new Error("Could not resolve attachment folder path");
+  }
+
+  // Hand off to the local helper app (does not navigate away from the CRM).
+  window.location.href = crmfolderUrl;
+
+  return {
+    opened: data.opened === "row" ? "row" : "root",
+    pathHint: String(data.pathHint || data.displayRoot || ATTACHMENT_DOWNLOADS_ROOT_DISPLAY),
+    openPath: String(data.openPath || ""),
+    displayRoot: String(data.displayRoot || ATTACHMENT_DOWNLOADS_ROOT_DISPLAY),
+    isDefault: data.isDefault !== false,
+  };
 }
 
 export async function clearAttachmentDownloadFolder(): Promise<void> {
@@ -242,11 +388,10 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Opens a system file/folder picker starting at the ticket's `Row {n}` folder when
+ * Opens a Chrome/Edge file picker starting at the ticket's `Row {n}` folder when
  * that subfolder already exists; otherwise starts at the configured root.
  *
- * Browsers cannot reveal folders in Finder/Explorer, so this is the closest
- * equivalent via the File System Access API `startIn` option.
+ * Prefer `openAttachmentFolderInFinder` for revealing the folder in macOS Finder.
  */
 export async function openAttachmentDownloadFolder(params?: {
   rowNumber?: number;

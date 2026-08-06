@@ -6,6 +6,8 @@
  * Primary path: user OAuth2 (offline refresh token in an httpOnly cookie). That
  * unlocks Sheets + Gmail + Calendar + People with the signed-in operator's access.
  * Optional service-account JWT is Sheets-only and cannot send mail or read Calendar.
+ * HTTP APIs require an OAuth refresh-token cookie (see middleware + api-auth); a
+ * service account alone must not unlock ticket/PII routes for anonymous callers.
  *
  * There are no application user accounts — whoever signed in on this machine is
  * the operator. Scopes are listed in GOOGLE_SCOPES; after pulling new scopes,
@@ -16,6 +18,7 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 import { cookies } from "next/headers";
+import { GOOGLE_EMAIL_COOKIE, GOOGLE_REFRESH_COOKIE } from "@/lib/auth-cookies";
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets",
@@ -32,8 +35,8 @@ export const GOOGLE_SCOPES = [
   "profile",
 ];
 
-const REFRESH_COOKIE = "google_refresh_token";
-const EMAIL_COOKIE = "google_user_email";
+const REFRESH_COOKIE = GOOGLE_REFRESH_COOKIE;
+const EMAIL_COOKIE = GOOGLE_EMAIL_COOKIE;
 
 function getOAuthConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID;

@@ -112,7 +112,7 @@ Architecture-oriented file headers live at the top of these hubs (and a few rela
 - **Development:** `npm run dev` → Next.js dev server (typically localhost-only).
 - **Production:** `npm run build && npm start` — not the primary intended mode today; see [Deployment posture](#deployment-posture).
 
-There is **no `middleware.ts`** and **no global auth guard** on API routes.
+There is **`src/middleware.ts`** which requires a Google OAuth refresh-token cookie for `/api/**` (except `/api/auth/*` and `/api/env`). Service-account credentials alone do **not** unlock HTTP ticket/PII routes. `USE_MOCK_DATA=true` bypasses the gate for synthetic demos.
 
 ---
 
@@ -164,20 +164,18 @@ Scope is **Sheets only** (no Gmail, Calendar, or People). Used when OAuth is abs
 
 ### Application authorization
 
-**There is none.** Any HTTP client that can reach the Next.js server can:
+**OAuth session required for APIs.** Middleware rejects `/api/**` without a `google_refresh_token` cookie (401), except:
 
-- List all tickets (`GET /api/tickets`)
-- Patch any ticket (`PATCH /api/tickets/[rowId]`)
-- Send email (`POST .../thread`) if Google credentials are available on the server
-- Read calendar / contacts proxies when OAuth credentials are present
-- Email dashboard reports (`POST /api/dashboard/send-report`)
-- Rewrite `.env` via `PATCH /api/env` when the `Host` header is `localhost`
+- `/api/auth/*` — sign-in / status / logout
+- `/api/env` — localhost Host-gated `.env` editor (needed before first OAuth)
 
-The **implicit security model** is:
+Service-account JWT may still be used **server-side** by `getGoogleAuthClient()` after a user has an OAuth session (or for internal Sheets calls once authenticated), but it is **not** a substitute for signing in via the browser.
+
+The **implicit security model** remains:
 
 > Only the operator on the same machine should be able to reach the app, and the app acts with that operator’s Google privileges.
 
-This is appropriate for **single-user localhost** use. It is **not** appropriate for shared hosting or LAN exposure without additional controls.
+Plus: the process must bind **localhost only** (`next dev -H localhost` / launcher `SHEETSCRM_BIND`). This is appropriate for **single-user localhost** use. It is **not** appropriate for shared hosting or LAN exposure without additional controls.
 
 ### Preferences identity
 
@@ -187,7 +185,7 @@ This is appropriate for **single-user localhost** use. It is **not** appropriate
 
 ## API surface
 
-All routes live under `src/app/api/`. None enforce session checks before handling requests. Many Google-backed routes fail closed when credentials are missing.
+All routes live under `src/app/api/`. Middleware requires an OAuth session cookie except for `/api/auth/*` and `/api/env`. Many Google-backed routes additionally fail closed when credentials are missing.
 
 ### Auth & config
 
@@ -280,7 +278,7 @@ Contains OAuth client secret, optional service account private key, Mixmax token
 
 ### `data/market-managers.json`
 
-Name → email directory for CC lookup and recipient suggestions. May contain employee emails; **may be committed to git** in team repos.
+Name → email directory for CC lookup and recipient suggestions. May contain employee emails; **gitignored** (seed from `market-managers.example.json`).
 
 ### Google Sheet(s)
 
@@ -380,14 +378,16 @@ Findings are ordered by severity for **non-localhost** or **shared-machine** sce
 
 ### Critical / high
 
-#### 1. No API authentication
+#### 1. Localhost trust + OAuth API gate
 
-**Finding:** All `/api/*` routes are unauthenticated. Anyone who can HTTP to the process can mutate tickets, send mail (with stored Google creds), read calendar/contacts proxies, email reports, and change config.
+**Finding (mitigated):** APIs previously had no session check. Middleware now requires an OAuth refresh cookie for `/api/**` (except auth + `/api/env`). Service account alone no longer unlocks ticket/PII HTTP reads.
+
+**Remaining risk:** Anyone who can reach the process **and** steal/use the operator’s browser cookies can still act as the operator. Binding to `0.0.0.0` would still expose the app on the LAN.
 
 **Mitigations:**
 
-- **Required today:** Run only on `localhost`; do not bind to `0.0.0.0` or deploy without a redesign.
-- **If deploying:** Add session middleware, bind OAuth to app sessions, reject unauthenticated mutations, consider mTLS or VPN.
+- **Required today:** Run only on `localhost` (`npm run dev` / launcher use `-H localhost`; refuse non-loopback `SHEETSCRM_BIND`).
+- **If deploying:** Full session redesign, mTLS/VPN, RBAC — see hosted roadmap.
 
 #### 2. Google refresh token in cookie
 
@@ -451,12 +451,12 @@ Findings are ordered by severity for **non-localhost** or **shared-machine** sce
 
 #### 8. PII in repository
 
-**Finding:** `data/market-managers.json` may contain real employee emails and is tracked in git.
+**Finding:** `data/market-managers.json` may contain real employee emails. It is **gitignored**; commit only `market-managers.example.json`.
 
 **Mitigations:**
 
-- Move to gitignored local file only (`MARKET_MANAGERS_PATH`).
-- Use example data in repo; document team import via Setup UI.
+- Local file via Setup UI or copy from example on first install.
+- Optional `MARKET_MANAGERS_PATH` for a path outside the repo.
 
 #### 9. CSRF on state-changing APIs
 

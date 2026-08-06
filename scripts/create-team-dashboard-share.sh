@@ -146,7 +146,7 @@ const pkgPath=process.argv[1];
 const pkg=JSON.parse(fs.readFileSync(pkgPath,'utf8'));
 pkg.name='team-dashboard';
 pkg.description='SheetsCRM Team Dashboard (shareable) — regional intake metrics + source sheet tools';
-pkg.scripts={dev:'next dev',build:'next build',start:'next start',lint:'next lint','db:migrate':'node scripts/init-db.mjs'};
+pkg.scripts={dev:'next dev -H localhost',build:'next build',start:'next start -H localhost',lint:'next lint','db:migrate':'node scripts/init-db.mjs'};
 fs.writeFileSync(pkgPath, JSON.stringify(pkg,null,2)+'\n');
 " "$DEST/package.json"
 
@@ -177,6 +177,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT="${PORT:-3000}"
+# Next.js defaults to 0.0.0.0 — bind loopback only.
+BIND_HOST="${SHEETSCRM_BIND:-localhost}"
+case "$BIND_HOST" in
+  localhost|127.0.0.1|::1) ;;
+  *)
+    echo "Refusing to bind to '${BIND_HOST}' — Team Dashboard must listen on localhost only."
+    read -r -p "Press Enter to close…"
+    exit 1
+    ;;
+esac
 URL="http://localhost:${PORT}"
 
 # Remember this window so we can minimize it after the dashboard opens in the browser.
@@ -275,7 +285,7 @@ echo ""
   fi
 ) &
 
-npm run dev
+npm run dev -- -H "$BIND_HOST" -p "$PORT"
 EOF
 chmod +x "$DEST/Open TeamDashboard.command"
 

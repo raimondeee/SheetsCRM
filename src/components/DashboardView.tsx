@@ -52,6 +52,10 @@ import {
   formatAgentDashboardReportPlain,
 } from "@/lib/dashboard-report-export";
 import type { ServiceMetricsSnapshot } from "@/lib/service-metrics";
+import {
+  normalizeHostUserId,
+  type HostProfileNameMap,
+} from "@/lib/host-profiles";
 import { IntegrationsHealthPanel } from "./IntegrationsHealthPanel";
 import { ServiceMetricsSection } from "./ServiceMetricsSection";
 import { ReviewEscalationsSection } from "./ReviewEscalationsSection";
@@ -93,14 +97,16 @@ export function DashboardView({
   const [serviceMetrics, setServiceMetrics] = useState<ServiceMetricsSnapshot | null>(null);
   const [reviewMetrics, setReviewMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(null);
   const [qualityMetrics, setQualityMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
+  const [hostProfiles, setHostProfiles] = useState<HostProfileNameMap>({});
+  const [hostProfilesSheetName, setHostProfilesSheetName] = useState<string | null>(null);
   const [metricsRefreshKey, setMetricsRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const dashboardPrintRef = useRef<HTMLDivElement>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
 
   const stats = useMemo(
-    () => buildDashboardStats(tickets, period, marketManagerFilter),
-    [tickets, period, marketManagerFilter]
+    () => buildDashboardStats(tickets, period, marketManagerFilter, hostProfiles),
+    [tickets, period, marketManagerFilter, hostProfiles]
   );
   const periodNote = stats.periodLabel;
   const singleMarketManagerView = marketManagerFilter !== "all";
@@ -156,12 +162,19 @@ export function DashboardView({
           return data as QualityAppealMetricsSnapshot;
         }
       ),
+      fetch("/api/dashboard/host-profiles", { cache: "no-store" }).then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load host profiles");
+        return data as { profiles?: HostProfileNameMap; sheetName?: string | null };
+      }),
     ])
-      .then(([service, review, quality]) => {
+      .then(([service, review, quality, profiles]) => {
         if (!cancelled) {
           setServiceMetrics(service);
           setReviewMetrics(review);
           setQualityMetrics(quality);
+          setHostProfiles(profiles.profiles ?? {});
+          setHostProfilesSheetName(profiles.sheetName ?? null);
         }
       })
       .catch(() => {
@@ -169,6 +182,8 @@ export function DashboardView({
           setServiceMetrics(null);
           setReviewMetrics(null);
           setQualityMetrics(null);
+          setHostProfiles({});
+          setHostProfilesSheetName(null);
         }
       });
 
@@ -504,6 +519,29 @@ export function DashboardView({
               else onFilter?.(dashFilter({ requesterName: name }));
             }}
           />
+        </ChartCard>
+
+        <ChartCard
+          title="Top parent accounts"
+          subtitle={`${periodNote} · by user ID${
+            hostProfilesSheetName ? ` · names from ${hostProfilesSheetName}` : ""
+          }`}
+          info={DASHBOARD_CHART_INFO.topParentAccounts}
+        >
+          {stats.topParentAccountBars.length === 0 ? (
+            <p className="py-8 text-center text-sm text-zendesk-muted">
+              No user IDs on tickets in this period
+            </p>
+          ) : (
+            <HorizontalBarChart
+              data={stats.topParentAccountBars}
+              onBarClick={(name) => {
+                const match = stats.topParentAccounts.find((item) => item.name === name);
+                const userId = normalizeHostUserId(match?.userId ?? "");
+                if (userId) onFilter?.(dashFilter({ airbnbUserId: userId }));
+              }}
+            />
+          )}
         </ChartCard>
 
         <ChartCard

@@ -91,6 +91,7 @@ rsync -a \
   --exclude '.env.*' \
   --exclude 'data/*.db' \
   --exclude 'data/*.db-*' \
+  --exclude 'data/attachment-folder-config.json' \
   --exclude '.DS_Store' \
   --exclude 'coverage' \
   --exclude 'sheets-crm-tmp' \

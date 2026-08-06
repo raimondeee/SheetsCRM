@@ -34,6 +34,7 @@ import {
 } from "@/lib/nova-urls";
 import {
   intakeAirbnbUserIdFromTicket,
+  NO_AIRBNB_USER_ID_CONFIRM_MESSAGE,
   resolveSalesforceSearchQuery,
 } from "@/lib/airbnb-user-id";
 import { ADMIN_LOGOUT_URL, buildBecomeUserUrl, isNumericUserId } from "@/lib/become-user-url";
@@ -44,6 +45,7 @@ import { MixmaxTemplatePicker, type MixmaxTemplateApplyPayload } from "./MixmaxT
 import { ComposeAttachmentList, ThreadAttachmentList } from "./CollapsibleAttachmentList";
 import { SendArchivePanel } from "./SendArchivePanel";
 import { TrustEscalationsModal } from "./TrustEscalationsModal";
+import { GsoTriageModal } from "./GsoTriageModal";
 import { RedactMessageConfirmModal } from "./RedactMessageConfirmModal";
 import { ResetGmailLinkConfirmModal } from "./ResetGmailLinkConfirmModal";
 import { LinkedCaseEditModal } from "./LinkedCaseEditModal";
@@ -68,7 +70,9 @@ import {
 } from "@/lib/admin-notes";
 import {
   REQUIRED_FIELD_MISSING_MESSAGE,
+  AIRBNB_USER_ID_REQUIRED_MESSAGE,
   hasAirbnbUserIdForResolve,
+  passesAirbnbUserIdResolveGate,
   type TicketActionRequiredField,
   type TicketActionValidation,
 } from "@/lib/ticket-action-validation";
@@ -76,15 +80,13 @@ import {
   MAX_OUTBOUND_ATTACHMENTS,
 } from "@/lib/gmail-attachments";
 import {
+  REPLY_ATTACHMENT_ACCEPT,
   validateReplyAttachmentFiles,
 } from "@/lib/outbound-attachments";
 import { activeExternalTools, type ExternalToolLink } from "@/lib/external-tools";
 import { buildSheetCellUrl } from "@/lib/sheet-urls";
 import {
-  isAttachmentFolderPickerSupported,
-  openAttachmentDownloadFolder,
-  pickAttachmentDownloadFolder,
-  rowAttachmentFolderName,
+  openAttachmentFolderInFinder,
 } from "@/lib/attachment-download-folder";
 import {
   parseLinkedCase,
@@ -104,6 +106,7 @@ import {
   logCrmTiming,
 } from "@/lib/crm-debug-log";
 import { CrmTicketLogPanel } from "./CrmTicketLogPanel";
+import { ConversationAttachmentsPanel } from "./ConversationAttachmentsPanel";
 import { usePersistedBoolean } from "@/hooks/usePersistedBoolean";
 import { loadReplyDraft, saveReplyDraft } from "@/lib/reply-drafts";
 import {
@@ -145,6 +148,7 @@ import {
   Send,
   Sparkles,
   ShieldAlert,
+  BookOpen,
   Undo2,
   UserRound,
   Wrench,
@@ -161,7 +165,11 @@ interface TicketDetailProps {
   onContactReasonChange: (rowId: string, contactReason: string) => void;
   onAppendAdminNote: (rowId: string, note: string) => Promise<void>;
   onAdminNotesChange?: (rowId: string, adminNotes: string) => void;
-  onAirbnbUserIdChange: (rowId: string, airbnbUserId: string) => Promise<void>;
+  onAirbnbUserIdChange: (
+    rowId: string,
+    airbnbUserId: string,
+    options?: { exempt?: boolean }
+  ) => Promise<void>;
   onReservationCodeChange: (rowId: string, reservationCode: string) => Promise<void>;
   onClaimNumberChange: (rowId: string, claimNumber: string) => Promise<void>;
   onListingIdChange: (rowId: string, listingId: string) => Promise<void>;
@@ -189,10 +197,18 @@ interface TicketDetailProps {
   onSetStatusWithoutEmail: (
     rowId: string,
     status: string,
-    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string; closeTicket?: boolean }
+    options?: {
+      adminNote?: string;
+      pendingHours?: number;
+      airbnbUserId?: string;
+      airbnbUserIdExempt?: boolean;
+      closeTicket?: boolean;
+    }
   ) => Promise<void>;
   onLinkedCaseChange: (rowId: string, index: 0 | 1 | 2, url: string) => Promise<void>;
   externalTools?: ExternalToolLink[];
+  /** When true, show the Recent sends panel (archive capture always runs). */
+  recentSendsPanelEnabled?: boolean;
   ticketUiFields?: { slotId: string; label: string; value: string }[];
   onUiFieldChange?: (rowId: string, slotId: string, value: string) => Promise<void>;
   columnLabels?: {
@@ -274,6 +290,7 @@ export function TicketDetail({
   onSetStatusWithoutEmail,
   onLinkedCaseChange,
   externalTools = [],
+  recentSendsPanelEnabled = false,
   ticketUiFields = [],
   onUiFieldChange,
   columnLabels,
@@ -298,6 +315,7 @@ export function TicketDetail({
   const [addingNote, setAddingNote] = useState(false);
   const [adminNoteError, setAdminNoteError] = useState<string | null>(null);
   const [airbnbUserIdDraft, setAirbnbUserIdDraft] = useState("");
+  const [noUserIdExempt, setNoUserIdExempt] = useState(false);
   const [uiFieldDrafts, setUiFieldDrafts] = useState<Record<string, string>>({});
   const [emailCopied, setEmailCopied] = useState(false);
   const [conversationCopied, setConversationCopied] = useState(false);
@@ -327,7 +345,9 @@ export function TicketDetail({
   const ccFieldRef = useRef<HTMLDivElement>(null);
   const bccFieldRef = useRef<HTMLDivElement>(null);
   const [replyFocused, setReplyFocused] = useState(false);
-  const [composeTab, setComposeTab] = useState<"reply" | "admin-notes" | "crm-log">("reply");
+  const [composeTab, setComposeTab] = useState<
+    "reply" | "admin-notes" | "attachments" | "crm-log"
+  >("reply");
   const [composePanelView, setComposePanelView] = useState<ComposePanelView>("split");
   const [markingStatusOnly, setMarkingStatusOnly] = useState<string | null>(null);
   const [markingPendingHours, setMarkingPendingHours] = useState<number | null>(null);
@@ -339,6 +359,7 @@ export function TicketDetail({
   const [mixmaxExpanded, setMixmaxExpanded] = useState(false);
   const [sendArchiveExpanded, setSendArchiveExpanded] = useState(false);
   const [trustEscalationsOpen, setTrustEscalationsOpen] = useState(false);
+  const [gsoTriageOpen, setGsoTriageOpen] = useState(false);
   const internalToolsOverlayOpen = mixmaxExpanded || sendArchiveExpanded;
   const [headerDetailsOpen, setHeaderDetailsOpen] = usePersistedBoolean(
     "crm.ticketHeaderDetailsOpen",
@@ -584,6 +605,7 @@ export function TicketDetail({
       setAddingNote(false);
       setAdminNoteError(null);
       setAirbnbUserIdDraft("");
+      setNoUserIdExempt(false);
       setUiFieldDrafts({});
       setEmailCopied(false);
       setReplyFocused(false);
@@ -637,6 +659,7 @@ export function TicketDetail({
       setCcMarketManager(prefs.ccMarketManager);
     });
     setAirbnbUserIdDraft(ticket.crmAirbnbUserId ?? "");
+    setNoUserIdExempt(ticket.airbnbUserIdExempt === true);
     setUiFieldDrafts(ticket.uiFields ?? {});
     setEmailCopied(false);
     setReplyFocused(Boolean(saved?.body && !isRichTextEmpty(saved.body)));
@@ -659,8 +682,9 @@ export function TicketDetail({
   useEffect(() => {
     if (!ticket) return;
     setAirbnbUserIdDraft(ticket.crmAirbnbUserId ?? "");
+    setNoUserIdExempt(ticket.airbnbUserIdExempt === true);
     setUserIdSaveError(null);
-  }, [ticket?.rowId, ticket?.airbnbUserId]);
+  }, [ticket?.rowId, ticket?.airbnbUserId, ticket?.crmAirbnbUserId, ticket?.airbnbUserIdExempt]);
 
   useEffect(() => {
     if (!ticket) return;
@@ -921,38 +945,20 @@ export function TicketDetail({
 
   async function openTicketAttachmentFolder() {
     if (!ticket || attachmentFolderBusy) return;
-    if (!isAttachmentFolderPickerSupported()) {
-      window.alert("Opening the attachment folder requires Chrome or Edge.");
-      return;
-    }
 
     setAttachmentFolderBusy(true);
     try {
-      let result: Awaited<ReturnType<typeof openAttachmentDownloadFolder>>;
-      try {
-        result = await openAttachmentDownloadFolder({ rowNumber: ticket.rowNumber });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Could not open attachment folder";
-        if (!message.includes("No attachment folder configured")) throw error;
-        const chooseNow = window.confirm(
-          "No attachment downloads folder is configured. Choose one now?"
-        );
-        if (!chooseNow) return;
-        await pickAttachmentDownloadFolder();
-        result = await openAttachmentDownloadFolder({ rowNumber: ticket.rowNumber });
-      }
-
-      const hint =
-        result.opened === "row"
-          ? result.pathHint
-          : `${result.pathHint} (no ${rowAttachmentFolderName(ticket.rowNumber)} folder yet)`;
-      setAttachmentFolderOpenedHint(hint);
+      const result = await openAttachmentFolderInFinder({
+        rowNumber: ticket.rowNumber,
+        createRowFolder: true,
+      });
+      setAttachmentFolderOpenedHint(result.pathHint);
       window.setTimeout(() => setAttachmentFolderOpenedHint(null), 2500);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
       window.alert(
-        error instanceof Error ? error.message : "Could not open attachment folder"
+        error instanceof Error
+          ? error.message
+          : "Could not open attachment folder in Finder. Run Install SheetsCRM.command (or Open SheetsCRM.command) once to install the folder helper."
       );
     } finally {
       setAttachmentFolderBusy(false);
@@ -960,15 +966,58 @@ export function TicketDetail({
   }
 
   async function saveAirbnbUserId() {
-    if (!ticket) return;
+    if (!ticket || noUserIdExempt) return;
     const trimmed = airbnbUserIdDraft.trim();
-    if (trimmed === (ticket.crmAirbnbUserId ?? "").trim()) return;
+    if (trimmed === (ticket.crmAirbnbUserId ?? "").trim() && !ticket.airbnbUserIdExempt) {
+      return;
+    }
+    if (trimmed && !isNumericUserId(trimmed)) {
+      setUserIdSaveError("Manual User ID must be numeric only");
+      return;
+    }
     setSavingUserId(true);
     setUserIdSaveError(null);
     try {
       await onAirbnbUserIdChange(ticket.rowId, trimmed);
+      setNoUserIdExempt(false);
     } catch (error) {
       setUserIdSaveError(error instanceof Error ? error.message : "Failed to save user ID");
+    } finally {
+      setSavingUserId(false);
+    }
+  }
+
+  async function setNoUserIdExemptChecked(checked: boolean) {
+    if (!ticket) return;
+    if (checked) {
+      const confirmed = window.confirm(NO_AIRBNB_USER_ID_CONFIRM_MESSAGE);
+      if (!confirmed) return;
+      setSavingUserId(true);
+      setUserIdSaveError(null);
+      try {
+        await onAirbnbUserIdChange(ticket.rowId, "", { exempt: true });
+        setAirbnbUserIdDraft("");
+        setNoUserIdExempt(true);
+        clearActionFieldError("airbnbUserId");
+      } catch (error) {
+        setUserIdSaveError(
+          error instanceof Error ? error.message : "Failed to save No user ID"
+        );
+      } finally {
+        setSavingUserId(false);
+      }
+      return;
+    }
+
+    setSavingUserId(true);
+    setUserIdSaveError(null);
+    try {
+      await onAirbnbUserIdChange(ticket.rowId, "");
+      setNoUserIdExempt(false);
+    } catch (error) {
+      setUserIdSaveError(
+        error instanceof Error ? error.message : "Failed to clear No user ID"
+      );
     } finally {
       setSavingUserId(false);
     }
@@ -1035,9 +1084,12 @@ export function TicketDetail({
     return airbnbUserIdDraft.trim() || ticket?.crmAirbnbUserId?.trim() || "";
   }
 
+  /** Numeric Manual User ID (B) for tools; falls back to form value (A) only when B is empty. */
   function getEffectiveAirbnbUserId(): string {
     if (!ticket) return "";
+    if (noUserIdExempt) return intakeAirbnbUserIdFromTicket(ticket);
     const manual = getManualAirbnbUserId();
+    if (isNumericUserId(manual)) return manual;
     if (manual) return manual;
     return intakeAirbnbUserIdFromTicket(ticket);
   }
@@ -1051,9 +1103,16 @@ export function TicketDetail({
   }
 
   function collectResolvedValidation(): TicketActionValidation | null {
-    if (hasAirbnbUserIdForResolve(getEffectiveAirbnbUserId())) return null;
+    if (
+      passesAirbnbUserIdResolveGate({
+        manualUserId: getManualAirbnbUserId(),
+        exempt: noUserIdExempt,
+      })
+    ) {
+      return null;
+    }
     return {
-      message: REQUIRED_FIELD_MISSING_MESSAGE,
+      message: AIRBNB_USER_ID_REQUIRED_MESSAGE,
       fields: ["airbnbUserId"],
     };
   }
@@ -1063,7 +1122,10 @@ export function TicketDetail({
     for (const field of collectSendValidation()?.fields ?? []) fields.add(field);
     for (const field of collectResolvedValidation()?.fields ?? []) fields.add(field);
     if (!fields.size) return null;
-    return { message: REQUIRED_FIELD_MISSING_MESSAGE, fields: [...fields] };
+    const message = fields.has("airbnbUserId")
+      ? AIRBNB_USER_ID_REQUIRED_MESSAGE
+      : REQUIRED_FIELD_MISSING_MESSAGE;
+    return { message, fields: [...fields] };
   }
 
   function showActionValidation(validation: TicketActionValidation) {
@@ -1078,12 +1140,29 @@ export function TicketDetail({
 
   async function ensureAirbnbUserIdBeforeResolve(): Promise<boolean> {
     if (!ticket) return false;
-    const effective = getEffectiveAirbnbUserId();
-    if (!hasAirbnbUserIdForResolve(effective)) return false;
+    if (noUserIdExempt) {
+      if (ticket.airbnbUserIdExempt) return true;
+      setSavingUserId(true);
+      setUserIdSaveError(null);
+      try {
+        await onAirbnbUserIdChange(ticket.rowId, "", { exempt: true });
+        return true;
+      } catch (error) {
+        setUserIdSaveError(
+          error instanceof Error ? error.message : "Failed to save No user ID"
+        );
+        return false;
+      } finally {
+        setSavingUserId(false);
+      }
+    }
+
+    const manual = getManualAirbnbUserId();
+    if (!hasAirbnbUserIdForResolve(manual)) return false;
     setSavingUserId(true);
     setUserIdSaveError(null);
     try {
-      await onAirbnbUserIdChange(ticket.rowId, effective);
+      await onAirbnbUserIdChange(ticket.rowId, manual);
     } catch (error) {
       setUserIdSaveError(error instanceof Error ? error.message : "Failed to save user ID");
       return false;
@@ -1127,7 +1206,9 @@ export function TicketDetail({
       await onSetStatusWithoutEmail(ticket.rowId, status, {
         ...options,
         ...(status === "resolved"
-          ? { airbnbUserId: getEffectiveAirbnbUserId() }
+          ? noUserIdExempt
+            ? { airbnbUserIdExempt: true }
+            : { airbnbUserId: getManualAirbnbUserId() }
           : {}),
       });
     } catch (error) {
@@ -1184,7 +1265,12 @@ export function TicketDetail({
     })();
   }
 
-  const salesforceSearchQuery = ticket ? resolveSalesforceSearchQuery(ticket) : "";
+  const salesforceSearchQuery = ticket
+    ? resolveSalesforceSearchQuery(
+        { ...ticket, airbnbUserIdExempt: noUserIdExempt },
+        noUserIdExempt ? "" : airbnbUserIdDraft
+      )
+    : "";
   const salesforceSearchUrl = buildSalesforceUnifiedSearchUrl(salesforceSearchQuery);
   const intakeAirbnbUserId = ticket ? intakeAirbnbUserIdFromTicket(ticket) : "";
   const configuredExternalTools = activeExternalTools(externalTools);
@@ -1323,7 +1409,7 @@ export function TicketDetail({
     setComposePanelView("split");
   }
 
-  function switchComposeTab(tab: "reply" | "admin-notes" | "crm-log") {
+  function switchComposeTab(tab: "reply" | "admin-notes" | "attachments" | "crm-log") {
     if (tab !== "reply") {
       replyEditorRef.current?.flush();
       if (composePanelView === "draft-full") {
@@ -1543,7 +1629,7 @@ export function TicketDetail({
                       ref={attachmentInputRef}
                       type="file"
                       multiple
-                      accept="image/*,.pdf,.txt,.csv"
+                      accept={REPLY_ATTACHMENT_ACCEPT}
                       className="hidden"
                       onChange={handleAttachmentPick}
                     />
@@ -1856,7 +1942,7 @@ export function TicketDetail({
   }
 
   function composeTabButton(
-    tab: "reply" | "admin-notes" | "crm-log",
+    tab: "reply" | "admin-notes" | "attachments" | "crm-log",
     label: string
   ) {
     const active = composeTab === tab;
@@ -2158,31 +2244,29 @@ export function TicketDetail({
                 ) : (
                   <>Row {ticket.rowNumber}</>
                 )}
-                {isAttachmentFolderPickerSupported() ? (
-                  <button
-                    type="button"
-                    onClick={() => void openTicketAttachmentFolder()}
-                    disabled={attachmentFolderBusy}
-                    className="ml-1.5 inline-flex items-center gap-0.5 rounded border border-zendesk-border px-1.5 py-px text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
-                    title={
-                      attachmentFolderOpenedHint
-                        ? `Opened ${attachmentFolderOpenedHint}`
-                        : `Open attachment folder (Row ${ticket.rowNumber} if it exists, otherwise the downloads root)`
-                    }
-                    aria-label={
-                      attachmentFolderOpenedHint
-                        ? `Opened ${attachmentFolderOpenedHint}`
-                        : `Open attachment folder for row ${ticket.rowNumber}`
-                    }
-                  >
-                    {attachmentFolderBusy ? (
-                      <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
-                    ) : (
-                      <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
-                    )}
-                    {attachmentFolderOpenedHint ? "Opened" : "Folder"}
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void openTicketAttachmentFolder()}
+                  disabled={attachmentFolderBusy}
+                  className="ml-1.5 inline-flex items-center gap-0.5 rounded border border-zendesk-border px-1.5 py-px text-[10px] font-medium text-zendesk-muted hover:bg-gray-100 hover:text-zendesk-navy disabled:opacity-50"
+                  title={
+                    attachmentFolderOpenedHint
+                      ? `Opened ${attachmentFolderOpenedHint} in Finder`
+                      : `Open Documents/SheetsCRM-Attachments/Row ${ticket.rowNumber} in Finder`
+                  }
+                  aria-label={
+                    attachmentFolderOpenedHint
+                      ? `Opened ${attachmentFolderOpenedHint} in Finder`
+                      : `Open attachment folder for row ${ticket.rowNumber} in Finder`
+                  }
+                >
+                  {attachmentFolderBusy ? (
+                    <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
+                  ) : (
+                    <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
+                  )}
+                  {attachmentFolderOpenedHint ? "Opened" : "Folder"}
+                </button>
                 {ticket.needsInitialResponse && (
                   <span className="ml-1.5 rounded bg-red-100 px-1 py-px font-semibold text-red-700">
                     {initialResponseHours}h+
@@ -2770,10 +2854,11 @@ export function TicketDetail({
                     }`
             }
           >
-            {/* Compose: email draft / admin notes / CRM log — send queues via CrmShell */}
+            {/* Compose: email draft / admin notes / attachments / CRM log — send queues via CrmShell */}
             <div className="relative z-10 flex shrink-0 items-center border-b border-zendesk-border bg-slate-100 px-2.5">
               {composeTabButton("reply", "Email draft")}
               {composeTabButton("admin-notes", "Admin notes")}
+              {composeTabButton("attachments", "Attachments")}
               {composeTabButton("crm-log", "CRM log")}
               <button
                 type="button"
@@ -2848,6 +2933,20 @@ export function TicketDetail({
 
               <div
                 className={`absolute inset-0 overflow-hidden ${
+                  composeTab === "attachments" ? "" : "pointer-events-none invisible"
+                }`}
+                aria-hidden={composeTab !== "attachments"}
+              >
+                <ConversationAttachmentsPanel
+                  messages={messages}
+                  rowId={ticket.rowId}
+                  rowNumber={ticket.rowNumber}
+                  fillHeight
+                />
+              </div>
+
+              <div
+                className={`absolute inset-0 overflow-hidden ${
                   composeTab === "crm-log" ? "" : "pointer-events-none invisible"
                 }`}
                 aria-hidden={composeTab !== "crm-log"}
@@ -2914,7 +3013,7 @@ export function TicketDetail({
                   </a>
                 ) : (
                   <p className="text-sm text-zendesk-muted">
-                    No form User ID or manual override to search
+                    No form User ID or numeric Manual User ID to search
                   </p>
                 )}
               </li>
@@ -2928,11 +3027,13 @@ export function TicketDetail({
               >
                 <label className="block text-[10px]">
                   <span className="font-medium text-zendesk-muted">
-                    {columnLabels?.airbnbUserId || "Manual User ID override"}
+                    {columnLabels?.airbnbUserId || "Manual User ID"}
                   </span>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={airbnbUserIdDraft}
+                    disabled={noUserIdExempt || savingUserId}
                     onChange={(e) => {
                       setAirbnbUserIdDraft(e.target.value);
                       if (hasAirbnbUserIdForResolve(e.target.value)) {
@@ -2943,9 +3044,25 @@ export function TicketDetail({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                     }}
-                    placeholder={intakeAirbnbUserId ? `Form: ${intakeAirbnbUserId}` : "Override form User ID…"}
-                    className="mt-1 w-full rounded border border-zendesk-border px-2 py-1 font-mono text-xs outline-none focus:border-zendesk-green"
+                    placeholder={
+                      noUserIdExempt
+                        ? "No user ID for this case"
+                        : intakeAirbnbUserId
+                          ? `Form: ${intakeAirbnbUserId}`
+                          : "Enter numeric User ID…"
+                    }
+                    className="mt-1 w-full rounded border border-zendesk-border px-2 py-1 font-mono text-xs outline-none focus:border-zendesk-green disabled:bg-gray-50 disabled:text-zendesk-muted"
                   />
+                  <label className="mt-1.5 flex cursor-pointer items-start gap-1.5 text-[10px] text-zendesk-muted">
+                    <input
+                      type="checkbox"
+                      checked={noUserIdExempt}
+                      disabled={savingUserId}
+                      onChange={(e) => void setNoUserIdExemptChecked(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>No user ID</span>
+                  </label>
                   {(savingUserId || userIdSaveError) && (
                     <span
                       className={`mt-1 block text-[10px] ${
@@ -3105,14 +3222,34 @@ export function TicketDetail({
               </span>
             </button>
           </div>
-          <SendArchivePanel
-            onExpandedChange={(open) => {
-              setSendArchiveExpanded(open);
-              if (open) setMixmaxExpanded(false);
-            }}
-          />
+          {recentSendsPanelEnabled && (
+            <SendArchivePanel
+              onExpandedChange={(open) => {
+                setSendArchiveExpanded(open);
+                if (open) setMixmaxExpanded(false);
+              }}
+            />
+          )}
+          <div className="shrink-0 border-t border-zendesk-border bg-zendesk-sidebar p-3">
+            <button
+              type="button"
+              onClick={() => setGsoTriageOpen(true)}
+              title="GSO Escalations Triage — search Homes escalation playbooks"
+              aria-label="GSO Triage"
+              data-help-tour="gso-triage"
+              className="flex w-full items-start gap-1.5 text-left"
+            >
+              <BookOpen className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zendesk-teal" />
+              <span className="block text-xs font-semibold uppercase text-zendesk-muted">
+                GSO Triage
+              </span>
+            </button>
+          </div>
           {trustEscalationsOpen && (
             <TrustEscalationsModal onClose={() => setTrustEscalationsOpen(false)} />
+          )}
+          {gsoTriageOpen && (
+            <GsoTriageModal onClose={() => setGsoTriageOpen(false)} />
           )}
         </aside>
         )}

@@ -22,7 +22,19 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   pdf: "application/pdf",
   txt: "text/plain",
   csv: "text/csv",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  rtf: "application/rtf",
+  zip: "application/zip",
 };
+
+/** HTML `accept` for the compose attachment picker (Chrome/macOS greys out non-matching files). */
+export const REPLY_ATTACHMENT_ACCEPT =
+  "image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.rtf,.zip";
 
 export function inferAttachmentMimeType(filename: string, reportedType?: string): string {
   const trimmed = reportedType?.trim();

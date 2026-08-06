@@ -100,6 +100,7 @@ Double-click **`Install SheetsCRM.command`** once on each Mac before opening the
 2. Checks for Homebrew and, with the user's confirmation, runs Homebrew's official installer if it is missing.
 3. Installs Node.js 22 LTS (not the latest Homebrew `node`, which can be too new for the SQLite package), installing Xcode Command Line Tools when macOS needs them.
 4. Creates `.env` from `.env.example` when needed, installs the locked npm packages, and prepares the local data folder.
+5. Creates **`~/Documents/SheetsCRM-Attachments`** (default download root; changeable later in Preferences) and registers a small **`crmfolder://`** helper so the CRM’s **Folder** button opens that path in Finder (for Drive/Slack uploads). **Open SheetsCRM.command** re-runs this step if needed.
 
 The installer cannot bypass macOS security controls, approve Gatekeeper prompts, or enter an administrator password. If the installer itself is blocked before it starts, right-click **`Install SheetsCRM.command`** → **Open** → **Open**, or go to **System Settings → Privacy & Security** and select **Open Anyway**. Review and accept the Homebrew installer only if you trust the copy of SheetsCRM you received.
 
@@ -355,7 +356,7 @@ file is intentionally gitignored because it can contain private Google Sheet lin
 
 1. **Gear icon** → **Market managers** tab.
 2. Paste or edit the name → email list (one per line: `Name, email@…`).
-3. **Save** — stored in `data/market-managers.json`.
+3. **Save** — stored locally in `data/market-managers.json` (gitignored; seed from `market-managers.example.json`).
 
 The team directory is also committed in git as a starting point; each machine can update it via Setup.
 
@@ -435,7 +436,8 @@ SheetsCRM/
 ├── data/
 │   ├── overlay.db                # CRM overlay: status, threads, prefs, sheet mapping,
 │   │                             # cover sheets, business hours, CRM log, holiday cache
-│   └── market-managers.json      # MM name → email directory
+│   ├── market-managers.example.json  # Example MM directory (safe to commit)
+│   └── market-managers.json           # Local MM name → email (gitignored)
 └── (Google Sheet)                # Intake rows + selected column writes
 ```
 

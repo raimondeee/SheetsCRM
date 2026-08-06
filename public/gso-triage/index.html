@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GSO Escalations Triage Assistant</title>
+<style>
+  :root{
+    --coral:#FF385C; --coral-dk:#E00B41; --ink:#222; --muted:#717171;
+    --line:#EBEBEB; --bg:#F7F7F7; --card:#FFFFFF; --chip:#F0F0F0;
+    --cs:#3B82F6; --trust:#8B5CF6; --pay:#0EA5A0; --reg:#D97706;
+    --safety:#DC2626; --claims:#0891B2; --coll:#65A30D; --hq:#7C3AED;
+    --swat:#DB2777; --none:#6B7280; --depends:#9CA3AF;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.5;}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:22px 20px 14px;position:sticky;top:0;z-index:20;}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px;}
+  h1{font-size:22px;margin:0 0 2px;display:flex;align-items:center;gap:10px}
+  h1 .dot{width:12px;height:12px;border-radius:50%;background:var(--coral)}
+  .sub{color:var(--muted);font-size:13px;margin:0}
+  .disclaimer{background:#FFF6E9;border:1px solid #F5D9A8;color:#7a4e00;border-radius:12px;
+    padding:10px 14px;font-size:12.5px;margin:14px auto 0;max-width:1080px}
+  .disclaimer b{color:#7a4e00}
+  .searchbar{position:relative;margin-top:14px}
+  #q{width:100%;padding:13px 44px 13px 44px;font-size:15px;border:1px solid var(--line);
+    border-radius:30px;outline:none;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  #q:focus{border-color:var(--coral)}
+  .searchbar .ic{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:16px}
+  #clear{position:absolute;right:12px;top:50%;transform:translateY(-50%);border:none;background:var(--chip);
+    color:var(--muted);border-radius:50%;width:26px;height:26px;cursor:pointer;display:none;font-size:15px}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 12px;font-size:12.5px;
+    cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;transition:.12s}
+  .chip .sw{width:9px;height:9px;border-radius:50%}
+  .chip[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:#fff}
+  .chip[aria-pressed="true"] .sw{outline:2px solid #fff}
+  main{max-width:1080px;margin:0 auto;padding:18px 20px 60px}
+  .count{color:var(--muted);font-size:13px;margin:4px 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .card summary::-webkit-details-marker{display:none}
+  .card summary:hover{background:#fafafa}
+  .cname{font-weight:600;font-size:15.5px;flex:1;min-width:200px}
+  .badge{font-size:11px;font-weight:600;color:#fff;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .chev{color:var(--muted);font-size:13px;transition:transform .15s}
+  details[open] .chev{transform:rotate(90deg)}
+  .body{padding:2px 18px 18px;border-top:1px solid var(--line)}
+  .row{margin-top:14px}
+  .row h4{margin:0 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:6px}
+  .row p{margin:0;font-size:14px;white-space:pre-wrap}
+  .host-script{background:#F5F7FF;border-left:3px solid var(--cs);padding:10px 12px;border-radius:6px;
+    font-style:italic;font-size:14px}
+  .links a{display:inline-block;font-size:13px;color:var(--coral-dk);text-decoration:none;margin:2px 12px 2px 0;
+    border-bottom:1px dotted var(--coral)}
+  .links a:hover{color:var(--coral)}
+  .noesc{background:#FFF0F0;border-left-color:var(--safety)}
+  .empty{text-align:center;color:var(--muted);padding:50px 0}
+  .empty b{color:var(--ink)}
+  details.grp{margin-top:26px}
+  details.grp>summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--muted);padding:6px 0}
+  .teamgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:10px}
+  .team{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .team h5{margin:0 0 4px;font-size:14px}
+  .team p{margin:0;font-size:13px;color:var(--muted)}
+  footer{max-width:1080px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:12px}
+  kbd{background:var(--chip);border-radius:4px;padding:1px 6px;font-size:11px;border:1px solid var(--line)}
+  @media(max-width:600px){.cname{min-width:auto}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1><span class="dot"></span> GSO Escalations Triage Assistant</h1>
+    <p class="sub">Homes / Pro Host cases &middot; find the right team, the escalation path, and what to tell the host.</p>
+    <div class="searchbar">
+      <span class="ic">&#128269;</span>
+      <input id="q" type="text" placeholder="Describe the case… (e.g. 'can't log in', 'payout frozen', 'guest won't leave', 'chargeback')" autocomplete="off">
+      <button id="clear" title="Clear">&times;</button>
+    </div>
+    <div class="filters" id="filters"></div>
+  </div>
+</header>
+
+<div class="disclaimer wrap">
+  <b>Directional only.</b> This tool points you toward the likely team and next step based on the GSO Escalations Guide — it is <b>not exhaustive and not a substitute for the source docs</b>. Always confirm the current process in Highspot / Confluence / NOVA before acting, and defer to your Territory Manager on judgment calls.
+</div>
+
+<main>
+  <div class="count" id="count"></div>
+  <div id="results"></div>
+  <div class="empty" id="empty" style="display:none">
+    No case matches <b id="eterm"></b>.<br>Try a simpler keyword, or browse by clearing filters.
+  </div>
+
+  <details class="grp">
+    <summary>▸ Support team reference — who handles what</summary>
+    <div class="teamgrid" id="teams"></div>
+  </details>
+</main>
+
+<footer>
+  Source: GSO Homes Escalations Guide. Tip: press <kbd>/</kbd> to jump to search. Data is a point-in-time snapshot — verify links and processes before relying on them.
+</footer>
+
+<script>
+const TEAMS = {
+  cs:{label:"Community Support (CS)", color:"var(--cs)"},
+  trust:{label:"Trust", color:"var(--trust)"},
+  pay:{label:"Payment Compliance", color:"var(--pay)"},
+  reg:{label:"Regulatory Response", color:"var(--reg)"},
+  safety:{label:"Safety", color:"var(--safety)"},
+  claims:{label:"Claims", color:"var(--claims)"},
+  coll:{label:"Collections", color:"var(--coll)"},
+  hq:{label:"Host Quality / Mkt Quality", color:"var(--hq)"},
+  swat:{label:"Prohost SWAT", color:"var(--swat)"},
+  none:{label:"No escalation / self-serve", color:"var(--none)"},
+  depends:{label:"Depends on source", color:"var(--depends)"}
+};
+
+const TEAM_INFO = [
+  ["Community Support (CS)","Frontline, 24/7. First contact for guest/reservation/payout/account questions and mediations. Route Pro Host CS concerns to prohost-swat@airbnb.com."],
+  ["Trust","Protects user data & platform integrity — screening, payments abuse, account takeovers, ghostings, fraud. First stop is the Trust Service Desk (Trust Ops Jira). Sub-teams: Payment Fraud, ACI, UKO, RSE, IDO."],
+  ["Payment Compliance","Escheatments, garnishments, KYC, PEP screening, money-laundering/terrorist-financing referrals. Escalate via the official Compliance Referral Form (Payments Compliance Toolkit on Highspot)."],
+  ["Regulatory Response","Data privacy, tax info, discrimination, legal/press inquiries, listing-ownership authority. Go through CS first, then RegulatoryResponse-Support@airbnb.com."],
+  ["Safety","Sensitive personal-safety cases: privacy violations, surveillance devices, assault, parties, gas leaks, squatters. Escalate to cs.global.safety.sds@airbnb.com only when criteria are met."],
+  ["Claims","Damaged/stolen property & bodily-injury AirCover claims. Escalate through Salesforce (Related > Claims > Escalate to Claim's Agent)."],
+  ["Collections","Payment collections & minimizing Airbnb's potential loss. Direct host to the agent who contacted them; escalate to collections@airbnb.com only after 15 days of no response."],
+  ["Payments","Only handles processor/engineering bugs. No direct escalation — everything routes through CS, escalated internally in NOVA."],
+  ["Host Quality / Market Quality","Educates & rehabilitates hosts causing poor guest experiences (low reviews, cancellations, hospitality tickets). See air.bb/min-standards."],
+  ["Prohost SWAT","Handles forwarded CS concerns and listing address updates for Pro Hosts. prohost-swat@airbnb.com · #prohost-swat_expart."]
+];
+
+const CASES = [
+  {name:"Account / Listing Deactivation & Access Issues", team:"depends",
+   kw:"blocked reservations cannot activate listing ghosted suspended hosting standard admin flag access blocker login log in cant can't cannot locked out disabled deactivated reactivate unlock no access shut out",
+   identify:"NOVA Admin Flags tab. Four account-level blockers: Blocked From Making Reservations, Cannot Activate Listings, Ghosted, Suspended for Hosting Standard. Listing-level: 'Cannot Be Activated' in the listing's Quality tab (usually links the review/ticket).",
+   escalate:"Depends on the source of the blocker. Identify which team placed it (via the linked ticket / ghosting tab), then escalate to that team. Not all blockers need escalating — some are correct and needed during an investigation.",
+   include:"Host ID, the specific blocker, any affected listing IDs, and any notes/flags on the account.",
+   host:"I don't have visibility into why you're experiencing issues accessing your account, but let me see if I can find someone on our support team who can assist."},
+
+  {name:"Account Takeover (ATO)", team:"trust",
+   kw:"ato account takeover compromised bad actor password payout method hacked recover rya",
+   identify:"Host reports someone has access to their account. If confirmed, noted in the Admin section of the NOVA profile — often an admin note about the self-serve Recover Your Account (RYA) flow.",
+   escalate:"Trust Ops Jira → Escalate to Account and Content Integrity (ACI).",
+   include:"Host ID and how the host became aware. If ongoing, state the desired outcome (password reset, listing removal, cancel unauthorized reservations, etc.).",
+   host:"I'm sorry for any inconvenience this has caused you. I've reached out to our support team that handles these issues and requested they reach out at their earliest convenience.",
+   note:"Very sensitive — stay vague about specifics."},
+
+  {name:"Add Payout Blocked", team:"trust",
+   kw:"add payout blocked update payout method large host fraud block",
+   identify:"Block applied to large hosts to reduce fraud; surfaces when the host tries to add/update a payout method.",
+   escalate:"Follow the Hosting Geos Add Payout Request steps to remove the blocker.",
+   include:"Host ID and the payout method the host needs to add/update.",
+   host:"Let me get the payout block reviewed so you can update your payout method."},
+
+  {name:"Address Dodging", team:"trust",
+   kw:"address dodging confirm location exact address cannot activate regulation short term rental",
+   identify:"Open Trust ticket re: address dodging, or 'Cannot Activate Listing' admin flag on the NOVA account. Placed when a host won't/can't confirm a listing's exact address.",
+   escalate:"Handled by Regulatory Standards & Proactive Enforcement (RSE) in Trust. Use category 'Address Dodging'.",
+   include:"Why the address wasn't provided originally (host may have missed the request). NOVA profile link, ticket link, or listing link.",
+   host:"It appears a member of our Trust team asked to confirm the address of one of your listings. Let me see if I can get them to reach back out to resolve this."},
+
+  {name:"API Issues (sync, bookings, alterations)", team:"none",
+   kw:"api pms cm channel manager sync data discrepancy software partner integration double booking rates availability test booking",
+   identify:"Host mentions info not populating in their PMS/CM, or errors on the NOVA profile / when Becoming User related to their software connection.",
+   escalate:"No direct escalation. Hosts cannot escalate to the API team — only the API partner can. Direct the host to their PMS/CM partner, who can contact Airbnb Technical Support.",
+   include:"Have the host screenshot error messages and outline the expected outcome to their software provider.",
+   host:"Our CS and Account Management teams aren't equipped to answer technical questions about the partner connection. The best path is to contact your API partner — if the issue is on Airbnb's side, they can reach the right team to fix it.",
+   note:"Common sub-cases: rejected reservations, missing reservations/cancellations, alterations, test bookings, address changes, registration, rates/availability — all route to the partner."},
+
+  {name:"Bait and Switch", team:"trust",
+   kw:"bait and switch misleading listing different space strike violation matrix ghost",
+   identify:"Account-level: Ghost flag + 'Unable to use Airbnb' alert, plus a Strike in the Admin Flag section. Listing-level: Strike + admin flag + a blocker on the listing in Old Admin view.",
+   escalate:"Actions follow repeat-violation thresholds in policy. No escalation for listing-level actions. If you believe an account was removed incorrectly, ask for an appeal → Escalate to Regulatory Standards & Proactive Enforcement (RSE).",
+   include:"NOVA ticket links, Host User ID, or reservation codes, and the desired outcome.",
+   host:"I don't have visibility into this specific case, but I'll see if I can get someone from our Trust team to reach out."},
+
+  {name:"Bed Bugs / Vermin", team:"cs",
+   kw:"bed bugs vermin pests cannot activate flag treatment inspection documentation",
+   identify:"'Cannot Activate' flag in the NOVA Admin Flag section (use the Filter function). The ticket/reservation is in the flag details.",
+   escalate:"Direct the host to contact CS with documentation showing a treatment or inspection with no findings — CS removes the blocker.",
+   include:"Reservation code, or date/time of CS's last contact if the case is still open, so the host can respond to the case manager.",
+   host:"Airbnb takes these situations seriously — we just need assurance the issue has been resolved and is no longer present before the listing can be reactivated."},
+
+  {name:"CBA Requests (admin cancellations)", team:"cs",
+   kw:"cba penalty free cancellation out of business property management jurisdiction travel ban ec extenuating circumstances rental ban api error",
+   identify:"Host needs to cancel multiple reservations penalty-free for: going out of business, property no longer managed, local jurisdiction mandates, travel bans, confirmed API errors (Jira link), or an EC-covered area.",
+   escalate:"2021 onward: all CBA requests go from the host to CS. Host provides documentation directly to CS and indicates which reservations to remove penalties from.",
+   include:"For API errors: partner documentation (timestamped double bookings, errors, bug links). EC: incident docs. Sale/removal from management: exact date range + reservations. Rental bans: notice/link.",
+   host:"Please contact CS with your documentation and note exactly which reservations you need the penalties removed from."},
+
+  {name:"Courtesy Loss to be issued", team:"depends",
+   kw:"courtesy loss make good spending budget territory manager",
+   identify:"You need a Courtesy Loss issued for a host.",
+   escalate:"Ask your Territory Manager (or equivalent) to escalate using the 2021 GSO Escalations Form. Reference the Hosting Geos Make Good Spending One Pager & Budget.",
+   include:"The case details and rationale for the make-good.",
+   host:"(Internal process — no specific host script.)"},
+
+  {name:"Double Adjustments", team:"cs",
+   kw:"double adjustment negative payout cancellation two adjustments resolutions cba refund",
+   identify:"Host reports two adjustments on the same reservation → negative overall payout. Confirm in the Payouts section of the Reservation page (look for a negative payout). Caused by an open Resolutions refund/offer plus a CBA.",
+   escalate:"General CS contact resolves this.",
+   include:"Reservation code.",
+   host:"I'm sorry about this payment issue — please contact our Customer Support team and they'll get this resolved for you."},
+
+  {name:"Extractions (Guest refuses to leave)", team:"cs",
+   kw:"extraction guest refuses to leave squatter missed checkout eviction won't leave stay",
+   identify:"Host reports a guest has refused to leave or stated intent not to leave.",
+   escalate:"Direct the host to contact CS. CS mediates until 36 hours after check-in; if the guest still hasn't left, the case transfers to Safety. Airbnb can't physically remove a guest.",
+   include:"Have the host be explicit: if they're fine with the guest staying if they pay, say so; if they need the guest out regardless, they must state that to CS.",
+   host:"I'm very sorry you're dealing with this guest. As I can't communicate with guests, please keep communicating with your case manager. These cases involve coordination across teams and may take time, but we'll be in touch throughout."},
+
+  {name:"Fake Inventory", team:"trust",
+   kw:"fake inventory duplicate listing ownership dispute copied photos hotel real estate",
+   identify:"Account Restrictions notice on the NOVA profile, or a listing admin flag blocking activation citing fake-inventory concerns.",
+   escalate:"Escalate to the Account and Content Integrity (ACI) team in Trust.",
+   include:"Host ID and affected listing IDs. If you need accounts exempted from the Fake Inventory queue, call that out.",
+   host:"If a Trust ticket exists, respond to the Trust agent directly. Otherwise: I apologize, I'm limited in what I can see about this blocker. I've reached out to our Trust team to get additional information."},
+
+  {name:"Frozen Payouts", team:"cs",
+   kw:"frozen payout freeze stuck payout upcoming transactions not issued 2021 finance",
+   identify:"Upcoming Payouts in Transaction History showing past-dated payouts not yet processed (can date back to 2016); or on a Reservation page's Payouts section. Caused by a 'Freeze' on the line item.",
+   escalate:"The freeze-review form is deprecated and one-off reviews are no longer performed (Stuck Payout Project). Route through CS. Do NOT promise a 'rush'.",
+   include:"Reservation code / payout details for CS.",
+   host:"I'm very sorry for the inconvenience — I don't have visibility into the payment info. Our Community Support team is best prepared to give an update or escalate to a specialty team if needed."},
+
+  {name:"Ghosted Users", team:"depends",
+   kw:"ghosted ghost unable to use airbnb removed account ghosting tab responsible team",
+   identify:"'Unable to use Airbnb' + 'Ghost' flag on the NOVA profile. Identify the responsible team via Legacy NOVA → More Actions → Ghosting tab (Started Date, Notes, Ghoster).",
+   escalate:"Escalate to the responsible team — Safety, Trust, or Market Quality — depending on who ghosted the user.",
+   include:"NOVA ticket link, Host ID, any info the host provided.",
+   host:"DO NOT use the word 'ghosted'. I don't have visibility into why you can't access your account. I'll reach out to our support team to see what additional information they can provide.",
+   note:"Never say 'ghosted' to the host."},
+
+  {name:"Global Party Ban (Parties in Listing)", team:"depends",
+   kw:"party parties ban gathering occupancy 16 people event neighbor report facebook",
+   identify:"Admin Flag indicating the account is being evaluated for a Party in Listing violation. Investigation determines whether the blocker stays.",
+   escalate:"Party already happened / ongoing → direct host to CS (they escalate to Safety); removed accounts → cs.global.safety.sds@airbnb.com. Reported current/upcoming party (ad, tip, witnessed) or official reports → Escalate to the UKO Trust team.",
+   include:"Host ID, reservation code, and any evidence a party is planned.",
+   host:"I'll notify our internal team about this. A member of our support team will reach out after investigating."},
+
+  {name:"Government ID Threshold", team:"trust",
+   kw:"government id threshold duplicate id uploaded same id multiple accounts",
+   identify:"Admin Flag referencing the Duplicate Govt. ID Threshold (same ID uploaded on multiple accounts).",
+   escalate:"Escalate to User Knowledge Operations (UKO). Category: 'Identity verification exemptions and Manual reviews'.",
+   include:"NOVA profile link, host user ID, any known reason the same ID is on different accounts.",
+   host:"I apologize for the inconvenience — let me get someone on our internal support team to take a look and provide an update."},
+
+  {name:"Hotel Arbitrage", team:"depends",
+   kw:"hotel arbitrage unauthorized listing rooms trademark restricted prohibited listings",
+   identify:"A hotel reports an Airbnb user listing their rooms without permission (violates Restricted & Prohibited Listings policy — deception, liability, trademark).",
+   escalate:"Escalate via the designated sheet ('MM Input' tab) and tag Asher Ahmed and Aanchal Mishra. SLA 7 days.",
+   include:"Fill out all columns of the sheet and tag Asher Ahmed + Aanchal Mishra in your row.",
+   host:"Thank you for reporting this. I'll escalate to our team to see if we can remove this host, and I'll get back to you in a week with a decision."},
+
+  {name:"ID Verification or Removal", team:"trust",
+   kw:"id verification remove gov id update identity reservations cancelled message",
+   identify:"Host wants to update/remove the ID on the account and sees an alarming message that removing it will cancel upcoming reservations (only true for reservations booked as a guest, not as host).",
+   escalate:"Trust Ops Jira → Escalate to Identity Operations (IDO).",
+   include:"State the host wants to remove the ID for (reason) and upload a new ID for (reason).",
+   host:"Let me see if I can get the existing ID on the account removed by our internal teams — I'll let you know when I have an update."},
+
+  {name:"Listing Suspensions", team:"depends",
+   kw:"listing suspension suspended cannot be activated hosting standard blocker old admin unavailable",
+   identify:"Host says something's wrong with a listing. Check Old Admin view — the Unavailable reason, or a listing-level 'Cannot be Activated' flag. Hosting-standard suspensions also show in the NOVA Admin Flag section.",
+   escalate:"Hosting-standards blocker → Market Quality escalation flow. 'Cannot be Activated' flag → find the linked NOVA ticket (or the admin who added it) and escalate to the appropriate team (Safety or Trust).",
+   include:"Listing ID and Host ID affected; any glaring flags/notes on the account.",
+   host:"I don't have visibility into why the listing can't be active, but I'll reach out to another member of our support team to get you some answers."},
+
+  {name:"Red Error Messages", team:"depends",
+   kw:"red error message booking not completed payout not issued reservation status payment error",
+   identify:"Errors when a booking couldn't complete (reservation status not updated, or a payment error). No payout issues while a red error is on the reservation page — verify on that page.",
+   escalate:"Submit the 'Red Error Reservations To Be Cleared' Form. The reviewing team won't notify you — check the reservation page for status (typically 3–5 business days).",
+   include:"Fill out the form completely and accurately.",
+   host:"I've forwarded the payout issue to a dedicated team to see what can be done to expedite your payout."},
+
+  {name:"Taxes being collected incorrectly", team:"reg",
+   kw:"tax taxes withholding incorrect vat collected wrong amount discrepancy",
+   identify:"Host reports a discrepancy in taxes withheld or charged on a listing. Verify on the reservation page / transaction history (tax withholding transactions).",
+   escalate:"Escalate to RegulatoryResponse-Support@airbnb.com.",
+   include:"Host ID, associated reservation codes, and the desired outcome.",
+   host:"I've reached out to a dedicated team to gather additional information — I don't have visibility into private documents like taxpayer information."},
+
+  {name:"KYC (Know Your Customer)", team:"pay",
+   kw:"kyc know your customer compliance tier unable to use airbnb referral form",
+   identify:"Refer to the KYC Confluence page. Host may have an 'Unable to use Airbnb' notification with suspension reason 'Tier x: compliance' or 'Tier x: compliance gtp'.",
+   escalate:"Submit the official Compliance Referral Form (see the KYC Escalations Process Guide in the Payments Compliance Toolkit on Highspot). The compliance_help_extpart Slack channel no longer accepts general escalations. (KYC Account Linking via kyc-propagation-requests_extpart is unchanged.)",
+   include:"Any user ID or affected reservation codes plus the desired outcome.",
+   host:"Avoid any communication with the host until Compliance responds — we may not be allowing them on Airbnb going forward."},
+
+  {name:"Payment Compliance (Escheatments, Garnishments, PEP, AML)", team:"pay",
+   kw:"payment compliance escheatment garnishment pep politically exposed money laundering terrorist financing restrictions",
+   identify:"Compliance signals: notes in the Restrictions tab (under the host's name), KYC NOVA flags in User Flags, Admin Flags, messages from 'Compliance Support' in the host inbox, NOVA tickets assigned to 'Compliance', or reservation-level payout freezes.",
+   escalate:"Submit the official Compliance Referral Form (Payments Compliance Toolkit on Highspot). The compliance_help_extpart channel no longer accepts general escalations.",
+   include:"User ID / affected reservation codes and the desired outcome.",
+   host:"Avoid communication until the Compliance team responds."},
+
+  {name:"Connected Account Policy", team:"trust",
+   kw:"connected account policy bad actor removed connected heavily linked",
+   identify:"NOVA Admin Flag section (account heavily connected to previously removed bad actors).",
+   escalate:"Escalate to User Knowledge Operations (UKO) under Trust. Category = 'Connected Account Policy Escalation'.",
+   include:"User ID, NOVA profile link.",
+   host:"I don't have visibility into any blocker on the account. I'll see if I can get someone from our support team to contact you about its status."},
+
+  {name:"Negative Balance", team:"none",
+   kw:"negative balance adjustment refund future payouts not receiving payout routing rules",
+   identify:"Host says they haven't received payouts for a period. Check Upcoming Payouts in Transaction History for adjustments. Behavior depends on whether the host has one or multiple payout methods / routing rules.",
+   escalate:"No escalation normally. Only if a host evades repayment by adding a new default payout method → wws-escalations@airbnb.com.",
+   include:"Host ID, desired outcome.",
+   host:"Airbnb already paid you for reservations that were later cancelled and refunded to the guest. Those refunds create adjustments on future payouts. Once accounted for with new payouts, you'll receive payouts as normal."},
+
+  {name:"Pets & Service Animals", team:"none",
+   kw:"pets service animal emotional support assistance animal discrimination nondiscrimination hoa fee",
+   identify:"Assistance animals include service animals and emotional support animals. Hosts must allow service animals even if pets aren't allowed; can't charge extra or require documentation/disclosure.",
+   escalate:"No violation for a guest bringing a service animal → no escalation. Rare exception: host fined by their HOA for the animal → escalate to WWS-Escalations for review.",
+   include:"Specific reservation and receipt/invoice of any financial impact.",
+   host:"We protect service animals under our non-discrimination policy. A host may not decline the guest, impose different terms/conditions, or make statements indicating a preference against any guest."},
+
+  {name:"Resolutions Center Cases / Host Damage Protection", team:"claims",
+   kw:"resolutions center host damage protection aircover claim refund extra services cleanliness fees damages",
+   identify:"Existing case shows at the bottom of the Reservation page and on the NOVA profile — split into 'Host Damage Protection' (damages) and 'Resolutions Tool' (extra services / refunds / cleanliness / fees).",
+   escalate:"For AirCover cases assigned to a case manager but unresponded to for 10+ business days → escalate to Claims: aircover.global.support@airbnb.com.",
+   include:"Links to the reservation and CS ticket, any context the host gave, and the desired next steps.",
+   host:"I understand this is a serious situation. Please communicate with the assigned case manager as much as possible — they're closest to the situation. These cases can take a while to resolve.",
+   note:"Host Damage Protection cases not involving damages are auto-denied and closed."},
+
+  {name:"Claims (AirCover for Hosts)", team:"claims",
+   kw:"claims aircover damaged stolen property bodily injury salesforce claim number denied",
+   identify:"NOVA Ticket — Assigned Group = Claims; also the Resolutions section of the Reservation page.",
+   escalate:"Escalate through Salesforce: Related > Claims > Escalate to Claim's Agent. (Do NOT ask Claims to make exceptions or issue payouts beyond AirCover / Host Damage Protection policy.)",
+   include:"Reservation codes and payment details; any host documentation (receipts/invoices) and the desired outcome.",
+   host:"I've asked our internal team to review this specific case. I can't guarantee a different resolution, but I'll be able to provide additional context on the decision either way."},
+
+  {name:"Collections", team:"coll",
+   kw:"collections payment collection past reservation potential loss open ticket",
+   identify:"NOVA Ticket — Assigned Group = Collections.",
+   escalate:"If the host has an open ticket, direct them to the agent who reached out. Only if the ticket has had no response for 15+ days → collections@airbnb.com. If denied for the reservation being too old, reference the Hosting Geos Make Good Spending One Pager & Budget.",
+   include:"Reservation codes / payment details.",
+   host:"I apologize for the situation. I don't have visibility into these payment concerns, but I'll see if I can get an update."},
+
+  {name:"Suspicious Reviews", team:"none",
+   kw:"suspicious reviews fake reviews superhost search results removed final",
+   identify:"NOVA profile page under account restrictions (fake reviews flagged in periodic evaluations).",
+   escalate:"No internal escalation process. Hosts are notified by email from the Trust ACI team about the removal decision.",
+   include:"N/A.",
+   host:"These decisions are determined by our Trust and Policy departments and are considered final. Cease communication when applicable."},
+
+  {name:"Phone Verification", team:"depends",
+   kw:"phone verification request weekly thursday number country",
+   identify:"Host needs phone verification processed.",
+   escalate:"Add a request to the designated doc (handled weekly on Thursdays). Leave 'Verification Method' blank. Number format +1123422342; country as the short code (US, IE, UK, FR…). POC: Brandon Fritz.",
+   include:"Phone number (correct format) and country code in the doc.",
+   host:"(Internal process — completed request appears on the doc's completed tab.)"},
+
+  {name:"Phone to EMAIL Verification", team:"depends",
+   kw:"phone to email verification airlock voip phone tree cannot satisfy",
+   identify:"Host can't satisfy phone-verification airlocks because their phone is VOIP or a phone-tree setup.",
+   escalate:"Notify the GoJira goalie in Slack #prohost-whitelists and request email verification instead.",
+   include:"The exact phone-verification problem and the request to switch the host to email verification.",
+   host:"I apologize for the inconvenience — let me see if we can get you verified through a different means. I'll follow up once I hear back from our team."},
+
+  {name:"Restricted Access (Limited Use of Airbnb)", team:"depends",
+   kw:"restricted access limited use of airbnb red text blocker listing account level login log in message cant can't cannot locked out disabled no access shut out suspended",
+   identify:"Red text indicator on the NOVA profile ('Limited Use of Airbnb'). Listing-level: can't activate a listing / not showing in search. Account-level: can't log in, message guests, or manage listings.",
+   escalate:"Depends on the source of the blocker. Not all blockers need escalation — some are correct during an investigation. Escalate only if the account hasn't been contacted or the blocker seems unwarranted.",
+   include:"Host ID, the blocker, and any associated listing IDs.",
+   host:"I don't have visibility into why you're having access issues, but let me see if I can find someone on our support team who can assist."},
+
+  {name:"Strong Customer Authentication (SCA / 2FA)", team:"trust",
+   kw:"sca 2fa strong customer authentication psd2 eea uk sms payout airlock error",
+   identify:"EEA/UK host says the system isn't recognizing their SMS number (error message). 2FA triggers on payout-related actions (accessing Payouts tab, saving a new payout method, changing routing rules).",
+   escalate:"Account and Content Integrity (ACI) team, category: 'Airlock'.",
+   include:"Note the host is trying to solve SCA but is blocked by an error message / site complications (whichever applies).",
+   host:"I've submitted you to an internal agent to review and help solve the requirement."},
+
+  {name:"Review Removal Escalations", team:"depends",
+   kw:"review removal escalation market coordinator google form escalation tracker managed accounts",
+   identify:"Market Manager wants a review escalated for removal (limited to Managed Accounts).",
+   escalate:"Submit via the Google Form 'Supply - Review Escalations'. The responsible Market Coordinator updates the Escalation Tracker within 48 hrs. Depending on the issue, escalate to CS or to Community & Commercial Policy for the final decision. (Live since April 13, 2025.)",
+   include:"The review details and rationale for removal in the form.",
+   host:"(Directional: final decision may take longer than 48 hrs.)"},
+
+  {name:"Payments (processor / engineering bugs)", team:"none",
+   kw:"payments processor bug engineering internal nova no escalation",
+   identify:">90% of payments issues are handled by general CS. The Payments team only deals with processor bugs or engineering issues.",
+   escalate:"No escalation available. All cases go through CS and, if applicable, are escalated internally via NOVA.",
+   include:"Route details through CS.",
+   host:"Please work with Customer Support — they can escalate internally if needed."},
+
+  {name:"Regulatory Response (privacy, discrimination, legal/press, ownership)", team:"reg",
+   kw:"regulatory response data privacy tax withholding vat discrimination legal press listing ownership authority",
+   identify:"Host raises tax withholding (federal/local), VAT, discrimination, legal/press, or listing-ownership authority; or the CS NOVA ticket is assigned to the Regulatory Response group.",
+   escalate:"Go through CS first, then escalate to R/R. If that hasn't happened or R/R hasn't resolved it → RegulatoryResponse-Support@airbnb.com.",
+   include:"CS ticket links, Host User ID, or reservation codes, plus the desired outcome.",
+   host:"I don't have visibility into this specific case, but I'll see if I can get someone from our support team to reach out."},
+
+  {name:"Safety (privacy, surveillance, assault, gas leak, squatter)", team:"safety",
+   kw:"safety privacy violation surveillance camera sexual assault gas leak squatter party sensitive",
+   identify:"Host raises a sensitive safety case, or the CS NOVA ticket is assigned to the Safety group.",
+   escalate:"Escalate only if: agent is out of SLA (48 hrs no response); an open ticket set to 'Safety' or the issue is on the Escalations-to-Safety list; the assigned agent is OoO 2+ days; or you're disputing a ghosting/restriction. Then email cs.global.safety.sds@airbnb.com.",
+   include:"CS ticket links, Host User ID, or reservation codes, plus the desired outcome.",
+   host:"I don't have visibility into this specific case, but I'll see if I can get someone from our Safety team to reach out."},
+
+  {name:"Payment Fraud (chargebacks, stolen cards, coupon abuse)", team:"trust",
+   kw:"payment fraud chargeback cbk stolen credit card coupon abuse fraudulent",
+   identify:"Admin Notes on the Reservation page or NOVA profile referencing Chargebacks (CBK).",
+   escalate:"Trust Ops Jira → Escalate to Payments Fraud.",
+   include:"NOVA ticket links, Host User ID, or reservation codes, plus the desired outcome.",
+   host:"I don't have visibility into this specific case, but I'll see if I can get someone from our Trust team to reach out."},
+
+  {name:"Regulatory Standards & Enforcement (RSE)", team:"trust",
+   kw:"rse regulatory standards enforcement bait and switch hosting standards listing removed",
+   identify:"Admin Notes referencing Bait & Switch violations; or a listing removed due to hosting standards (listing admin notes).",
+   escalate:"Trust Ops Jira → Escalate to Regulatory Standards and Proactive Enforcement.",
+   include:"NOVA ticket links, Host User ID, or reservation codes, plus the desired outcome.",
+   host:"I don't have visibility into this specific case, but I'll see if I can get someone from our Trust team to reach out."},
+
+  {name:"Identity Operations (IDO)", team:"trust",
+   kw:"ido identity operations government id legal name address illegitimate excess id uploads limited use",
+   identify:"NOVA 'Limited Use of Airbnb' flags involving ID misuse, illegitimate identity, or excess ID uploads.",
+   escalate:"Trust Ops Jira → Escalate to Identity Operations (also via their Jira portal). Use for exceptions to ID upload limits.",
+   include:"NOVA ticket links, Host User ID, or reservation codes, plus the desired outcome.",
+   host:"I don't have visibility into this specific case, but I'll see if I can get someone from our Trust team to reach out."},
+
+  {name:"Host Quality", team:"hq",
+   kw:"host quality minimum standards rehabilitation low reviews cancellations trip experience hospitality admin flag activate",
+   identify:"Admin flag on the NOVA profile — an account-level blocker preventing the host from activating listings. Host also gets an email on the suspension date.",
+   escalate:"5-day soft suspensions: no way to expedite — the host must wait out the period, then reactivate under Manage Listings. Removals (30-day/permanent): host appeals in-product; if they miss the window, Field Team can escalate internally via the Highspot steps.",
+   include:"Host ID and why the host shouldn't be experiencing the 30-day/permanent suspension.",
+   host:"Log in and follow the prompts in Manage Listings — and I'll see if there's any way to appeal the 30-day suspension."},
+
+  {name:"Address Update Requests", team:"swat",
+   kw:"address update listing address change swat coordinates bulk",
+   identify:"Host needs a listing address updated.",
+   escalate:"Processed by the SWAT team: prohost-swat@airbnb.com or Slack #prohost-swat_expart. For bulk requests, use a public g-sheet.",
+   include:"Listing ID and the new desired address or coordinates (g-sheet for bulk).",
+   host:"I'll get your listing address update submitted to the right team."}
+];
+
+// ---- render ----
+const results = document.getElementById('results');
+const countEl = document.getElementById('count');
+const emptyEl = document.getElementById('empty');
+const qEl = document.getElementById('q');
+const clearBtn = document.getElementById('clear');
+const filtersEl = document.getElementById('filters');
+let active = new Set();
+
+// filter chips
+Object.entries(TEAMS).forEach(([key,t])=>{
+  const b=document.createElement('button');
+  b.className='chip'; b.setAttribute('aria-pressed','false'); b.dataset.k=key;
+  b.innerHTML=`<span class="sw" style="background:${t.color}"></span>${t.label}`;
+  b.onclick=()=>{ b.getAttribute('aria-pressed')==='true' ? (active.delete(key),b.setAttribute('aria-pressed','false')) : (active.add(key),b.setAttribute('aria-pressed','true')); render(); };
+  filtersEl.appendChild(b);
+});
+
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function card(c){
+  const t=TEAMS[c.team];
+  const noesc = c.team==='none';
+  return `<details class="card">
+    <summary>
+      <span class="chev">&#9656;</span>
+      <span class="cname">${esc(c.name)}</span>
+      <span class="badge" style="background:${t.color}">${t.label}</span>
+    </summary>
+    <div class="body">
+      <div class="row"><h4>&#128269; How to identify</h4><p>${esc(c.identify)}</p></div>
+      <div class="row"><h4>&#9193; Escalation / next step</h4><p>${esc(c.escalate)}</p></div>
+      <div class="row"><h4>&#128206; What to include</h4><p>${esc(c.include)}</p></div>
+      <div class="row"><h4>&#128172; What to tell the host</h4><p class="host-script${noesc?' noesc':''}">${esc(c.host)}</p></div>
+      ${c.note?`<div class="row"><h4>&#9888;&#65039; Note</h4><p>${esc(c.note)}</p></div>`:''}
+    </div>
+  </details>`;
+}
+
+function render(){
+  const q=qEl.value.trim().toLowerCase();
+  clearBtn.style.display=q?'block':'none';
+  let list=CASES.filter(c=>{
+    const teamOk = active.size===0 || active.has(c.team);
+    if(!teamOk) return false;
+    if(!q) return true;
+    const hay=(c.name+' '+c.kw+' '+c.identify+' '+c.escalate+' '+TEAMS[c.team].label).toLowerCase();
+    return q.split(/\s+/).every(w=>hay.includes(w));
+  });
+  list.sort((a,b)=>a.name.localeCompare(b.name));
+  if(list.length===0){
+    results.innerHTML=''; emptyEl.style.display='block';
+    document.getElementById('eterm').textContent=q||'these filters';
+    countEl.textContent='';
+  } else {
+    emptyEl.style.display='none';
+    results.innerHTML=list.map(card).join('');
+    countEl.textContent=`${list.length} case${list.length>1?'s':''}${q||active.size?' matching':''}`;
+  }
+}
+
+qEl.addEventListener('input',render);
+clearBtn.onclick=()=>{qEl.value='';render();qEl.focus();};
+document.addEventListener('keydown',e=>{ if(e.key==='/'&&document.activeElement!==qEl){e.preventDefault();qEl.focus();} });
+
+// team reference
+document.getElementById('teams').innerHTML=TEAM_INFO.map(([h,p])=>`<div class="team"><h5>${esc(h)}</h5><p>${esc(p)}</p></div>`).join('');
+
+render();
+</script>
+</body>
+</html>

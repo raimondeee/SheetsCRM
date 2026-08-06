@@ -17,7 +17,8 @@ import {
   ticketForceNewGmailThreadOnSend,
   updateTicketStatus,
 } from "@/lib/overlay-db";
-import { hasAirbnbUserIdForResolve } from "@/lib/ticket-action-validation";
+import { passesAirbnbUserIdResolveGate } from "@/lib/ticket-action-validation";
+import { isAirbnbUserIdExempt } from "@/lib/airbnb-user-id";
 import { sendReplyEmail, syncGmailThreadForTicket } from "@/lib/gmail";
 import { parseOutboundAttachments } from "@/lib/outbound-attachments";
 import { isCompleteEmailSubject } from "@/lib/email-subject";
@@ -150,9 +151,17 @@ export async function POST(
 
     if (statusAfterSend === "resolved") {
       const overlay = getTicketOverlay(decoded);
-      if (!hasAirbnbUserIdForResolve(overlay.crmAirbnbUserId ?? "")) {
+      if (
+        !passesAirbnbUserIdResolveGate({
+          manualUserId: overlay.crmAirbnbUserId ?? "",
+          exempt: isAirbnbUserIdExempt(overlay),
+        })
+      ) {
         return NextResponse.json(
-          { error: "Airbnb User ID is required before marking resolved." },
+          {
+            error:
+              "A numeric Airbnb User ID is required in Internal tools before marking resolved (or confirm No user ID).",
+          },
           { status: 400 }
         );
       }

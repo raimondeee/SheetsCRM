@@ -11,7 +11,7 @@ import { normalizeDashboardPeriod } from "@/lib/dashboard-period";
 import { MAX_OUTBOUND_ATTACHMENT_BYTES } from "@/lib/gmail-attachments";
 import { sendStandaloneEmail } from "@/lib/gmail";
 import { getSignedInUser } from "@/lib/google-auth";
-import { hasGoogleCredentials } from "@/lib/sheets";
+import { requireOAuthSession } from "@/lib/api-auth";
 import { parseRecipientList } from "@/lib/email-recipients";
 
 export const dynamic = "force-dynamic";
@@ -103,10 +103,9 @@ async function parseSendReportRequest(request: Request): Promise<{
 }
 
 export async function POST(request: Request) {
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
   const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
   if (user.method !== "oauth") {
     return NextResponse.json(
       { error: "Sign in with Google (OAuth) to email dashboard reports" },
@@ -167,7 +166,13 @@ export async function POST(request: Request) {
       const ownerRaw = parseOptionalString(payload.owner) ?? "all";
       const region = regionRaw === "" ? "all" : regionRaw;
       const owner = ownerRaw === "" ? "all" : ownerRaw;
-      const { records: colleagueRecords, sourcesLoaded } = await loadColleagueTeamRecords();
+      const {
+        records: colleagueRecords,
+        sourcesLoaded,
+        statusMappings,
+        hostProfiles,
+        hostProfilesLoaded,
+      } = await loadColleagueTeamRecords();
       const bundle = buildTeamDashboardReportBundle({
         period,
         region,
@@ -175,6 +180,9 @@ export async function POST(request: Request) {
         tickets,
         colleagueRecords,
         sourcesLoaded,
+        statusMappings,
+        hostProfiles,
+        hostProfilesLoaded,
       });
       subject = bundle.subject;
       html = bundle.html;

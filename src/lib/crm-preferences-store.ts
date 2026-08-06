@@ -30,6 +30,7 @@ export interface StoredUserPreferences
   calendarReminderFullscreen: boolean;
   unreadInboxBindToSelectedEnabled: boolean;
   unreadInboxAppendToSelectedEnabled: boolean;
+  recentSendsPanelEnabled: boolean;
   externalTools: ExternalToolLink[];
   mixmaxStarredTemplateIds: string[];
   dismissedMappingWarningsFingerprint: string | null;
@@ -87,6 +88,10 @@ function parseStoredPreferences(raw: string | null): StoredUserPreferences {
         typeof parsed.unreadInboxAppendToSelectedEnabled === "boolean"
           ? parsed.unreadInboxAppendToSelectedEnabled
           : DEFAULT_STORED_PREFERENCES.unreadInboxAppendToSelectedEnabled,
+      recentSendsPanelEnabled:
+        typeof parsed.recentSendsPanelEnabled === "boolean"
+          ? parsed.recentSendsPanelEnabled
+          : DEFAULT_STORED_PREFERENCES.recentSendsPanelEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
       mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
         parsed.mixmaxStarredTemplateIds

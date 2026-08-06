@@ -8,15 +8,15 @@ import { buildServiceMetrics } from "@/lib/service-metrics";
 import { fetchTicketsFromSheet, hasGoogleCredentials } from "@/lib/sheets";
 import { getMockTickets } from "@/lib/mock-data";
 import { getSignedInUser } from "@/lib/google-auth";
+import { requireOAuthSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(request: Request) {
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
   const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
 
   const url = new URL(request.url);
   const period = normalizeDashboardPeriod(url.searchParams.get("period"));
@@ -26,14 +26,16 @@ export async function GET(request: Request) {
   if (!config) config = buildDefaultSheetConfig();
 
   const hasAuth = await hasGoogleCredentials();
-  const useMock = process.env.USE_MOCK_DATA === "true" || !hasAuth;
+  const useMock = process.env.USE_MOCK_DATA === "true";
   const timerSettings = loadTimerSettings(user.email);
 
   await refreshWorkspaceHolidayCache();
 
   const tickets = useMock
     ? getMockTickets(timerSettings)
-    : (await fetchTicketsFromSheet(config, timerSettings)).tickets;
+    : hasAuth
+      ? (await fetchTicketsFromSheet(config, timerSettings)).tickets
+      : [];
 
   const metrics = buildServiceMetrics({
     tickets,

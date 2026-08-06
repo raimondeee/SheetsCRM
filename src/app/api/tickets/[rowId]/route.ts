@@ -16,11 +16,13 @@ import {
   updateTicketSla,
   updateTicketSubject,
   updateTicketAirbnbUserId,
+  markTicketAirbnbUserIdExempt,
   updateTicketContactReason,
   updateTicketLinkedCase,
   resolveSheetConfigForRowId,
 } from "@/lib/overlay-db";
-import { hasAirbnbUserIdForResolve } from "@/lib/ticket-action-validation";
+import { passesAirbnbUserIdResolveGate } from "@/lib/ticket-action-validation";
+import { isAirbnbUserIdExempt } from "@/lib/airbnb-user-id";
 import {
   crmStatusLabel,
   mapCrmStatusToSheetValue,
@@ -76,6 +78,7 @@ export async function PATCH(request: Request) {
       subject,
       appendAdminNote,
       airbnbUserId,
+      airbnbUserIdExempt,
       reservationCode,
       claimNumber,
       listingId,
@@ -97,6 +100,7 @@ export async function PATCH(request: Request) {
       subject?: string;
       appendAdminNote?: string;
       airbnbUserId?: string;
+      airbnbUserIdExempt?: boolean;
       reservationCode?: string;
       claimNumber?: string;
       listingId?: string;
@@ -134,9 +138,14 @@ export async function PATCH(request: Request) {
           typeof airbnbUserId === "string" ? airbnbUserId.trim() : "";
         const overlay = getTicketOverlay(rowId);
         const resolvedUserId = pendingUserId || overlay.crmAirbnbUserId?.trim() || "";
-        if (!hasAirbnbUserIdForResolve(resolvedUserId)) {
+        const exempt =
+          airbnbUserIdExempt === true || isAirbnbUserIdExempt(overlay);
+        if (!passesAirbnbUserIdResolveGate({ manualUserId: resolvedUserId, exempt })) {
           return NextResponse.json(
-            { error: "Airbnb User ID is required before marking resolved." },
+            {
+              error:
+                "A numeric Airbnb User ID is required in Internal tools before marking resolved (or confirm No user ID).",
+            },
             { status: 400 }
           );
         }
@@ -217,7 +226,14 @@ export async function PATCH(request: Request) {
       }
     }
 
-    if (typeof airbnbUserId === "string") {
+    if (airbnbUserIdExempt === true) {
+      markTicketAirbnbUserIdExempt(rowId);
+      if (canSyncSheet) {
+        queueSheetSync("airbnbUserId", () =>
+          updateAirbnbUserIdOnSheet(config!, rowNumber!, "")
+        );
+      }
+    } else if (typeof airbnbUserId === "string") {
       const trimmed = airbnbUserId.trim();
       updateTicketAirbnbUserId(rowId, trimmed);
       if (canSyncSheet) {

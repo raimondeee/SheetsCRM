@@ -5,17 +5,14 @@ import {
   loadReviewEscalationSheetTab,
   parseReviewEscalationRecords,
 } from "@/lib/quality-report-loader";
-import { getSignedInUser } from "@/lib/google-auth";
-import { hasGoogleCredentials } from "@/lib/sheets";
+import { requireOAuthSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(request: Request) {
-  const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
 
   const url = new URL(request.url);
   const period = normalizeDashboardPeriod(url.searchParams.get("period"));

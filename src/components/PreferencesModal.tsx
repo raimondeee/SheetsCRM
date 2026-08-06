@@ -31,12 +31,11 @@ import {
   patchUserPreferences,
 } from "@/lib/user-preferences";
 import {
-  clearAttachmentDownloadFolder,
-  getAttachmentDownloadFolderInfo,
-  isAttachmentFolderPickerSupported,
-  openAttachmentDownloadFolder,
-  pickAttachmentDownloadFolder,
-  readAttachmentFolderDisplayName,
+  fetchAttachmentFolderStatus,
+  openAttachmentFolderInFinder,
+  pickAttachmentDownloadsRoot,
+  resetAttachmentDownloadsRoot,
+  type AttachmentFolderStatus,
 } from "@/lib/attachment-download-folder";
 import {
   POMODORO_SCHEDULES,
@@ -87,6 +86,9 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
   const [unreadInboxAppendToSelectedEnabled, setUnreadInboxAppendToSelectedEnabled] = useState(
     preferences.unreadInboxAppendToSelectedEnabled
   );
+  const [recentSendsPanelEnabled, setRecentSendsPanelEnabled] = useState(
+    preferences.recentSendsPanelEnabled
+  );
   const [inboundSoundId, setInboundSoundId] = useState(preferences.inboundSoundId);
   const [outboundSoundId, setOutboundSoundId] = useState(preferences.outboundSoundId);
   const [calendarSoundId, setCalendarSoundId] = useState(preferences.calendarSoundId);
@@ -104,9 +106,8 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
   const [soundError, setSoundError] = useState<string | null>(null);
   const [uploadingSound, setUploadingSound] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [attachmentFolderName, setAttachmentFolderName] = useState<string | null>(() =>
-    readAttachmentFolderDisplayName()
-  );
+  const [attachmentFolderStatus, setAttachmentFolderStatus] =
+    useState<AttachmentFolderStatus | null>(null);
   const [attachmentFolderBusy, setAttachmentFolderBusy] = useState(false);
   const [attachmentFolderError, setAttachmentFolderError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -136,60 +137,60 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
   }, []);
 
   useEffect(() => {
-    if (!isAttachmentFolderPickerSupported()) return;
     let cancelled = false;
-    void getAttachmentDownloadFolderInfo()
-      .then((info) => {
-        if (!cancelled) setAttachmentFolderName(info?.name ?? null);
+    void fetchAttachmentFolderStatus()
+      .then((status) => {
+        if (!cancelled) setAttachmentFolderStatus(status);
       })
       .catch(() => {
-        if (!cancelled) setAttachmentFolderName(null);
+        /* optional — Preferences still usable */
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  async function chooseAttachmentFolder() {
-    setAttachmentFolderError(null);
-    setAttachmentFolderBusy(true);
-    try {
-      const info = await pickAttachmentDownloadFolder();
-      setAttachmentFolderName(info.name);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setAttachmentFolderError(
-        err instanceof Error ? err.message : "Could not choose attachment folder"
-      );
-    } finally {
-      setAttachmentFolderBusy(false);
-    }
-  }
-
-  async function removeAttachmentFolder() {
-    setAttachmentFolderError(null);
-    setAttachmentFolderBusy(true);
-    try {
-      await clearAttachmentDownloadFolder();
-      setAttachmentFolderName(null);
-    } catch (err) {
-      setAttachmentFolderError(
-        err instanceof Error ? err.message : "Could not clear attachment folder"
-      );
-    } finally {
-      setAttachmentFolderBusy(false);
-    }
-  }
-
   async function openConfiguredAttachmentFolder() {
     setAttachmentFolderError(null);
     setAttachmentFolderBusy(true);
     try {
-      await openAttachmentDownloadFolder();
+      await openAttachmentFolderInFinder();
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
       setAttachmentFolderError(
-        err instanceof Error ? err.message : "Could not open attachment folder"
+        err instanceof Error
+          ? err.message
+          : "Could not open attachment folder in Finder. Run Install or Open SheetsCRM.command once to install the folder helper."
+      );
+    } finally {
+      setAttachmentFolderBusy(false);
+    }
+  }
+
+  async function changeAttachmentFolder() {
+    setAttachmentFolderError(null);
+    setAttachmentFolderBusy(true);
+    try {
+      const status = await pickAttachmentDownloadsRoot();
+      setAttachmentFolderStatus(status);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AttachmentFolderPickCancelled") return;
+      setAttachmentFolderError(
+        err instanceof Error ? err.message : "Could not change attachment folder"
+      );
+    } finally {
+      setAttachmentFolderBusy(false);
+    }
+  }
+
+  async function useDefaultAttachmentFolder() {
+    setAttachmentFolderError(null);
+    setAttachmentFolderBusy(true);
+    try {
+      const status = await resetAttachmentDownloadsRoot();
+      setAttachmentFolderStatus(status);
+    } catch (err) {
+      setAttachmentFolderError(
+        err instanceof Error ? err.message : "Could not reset attachment folder"
       );
     } finally {
       setAttachmentFolderBusy(false);
@@ -214,6 +215,7 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
       calendarReminderFullscreen,
       unreadInboxBindToSelectedEnabled,
       unreadInboxAppendToSelectedEnabled,
+      recentSendsPanelEnabled,
       inboundSoundId,
       outboundSoundId,
       calendarSoundId,
@@ -251,6 +253,7 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
     setCalendarReminderFullscreen(DEFAULT_USER_PREFERENCES.calendarReminderFullscreen);
     setUnreadInboxBindToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxBindToSelectedEnabled);
     setUnreadInboxAppendToSelectedEnabled(DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled);
+    setRecentSendsPanelEnabled(DEFAULT_USER_PREFERENCES.recentSendsPanelEnabled);
     setInboundSoundId(DEFAULT_USER_PREFERENCES.inboundSoundId);
     setOutboundSoundId(DEFAULT_USER_PREFERENCES.outboundSoundId);
     setCalendarSoundId(DEFAULT_USER_PREFERENCES.calendarSoundId);
@@ -909,64 +912,82 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
           <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
             <legend className="px-1 text-sm font-medium">Attachment downloads</legend>
             <p className="text-xs text-zendesk-muted">
-              Choose a folder on this computer. Ticket attachments save into{" "}
-              <code className="text-[11px]">Row {"{n}"}</code> subfolders (Chrome / Edge). Without
-              a folder, files download normally. Use <span className="font-medium">Open folder…</span>{" "}
-              here or <span className="font-medium">Folder</span> next to a ticket’s Row link to browse
-              the row folder when it exists, otherwise the root.
+              Ticket attachments save into{" "}
+              <code className="text-[11px]">Row {"{n}"}</code> under this folder. Default is{" "}
+              <code className="text-[11px]">
+                {attachmentFolderStatus?.defaultDisplayRoot ??
+                  "~/Documents/SheetsCRM-Attachments"}
+              </code>
+              . Change it if you prefer another location on this Mac — downloads and the ticket{" "}
+              <span className="font-medium">Folder</span> button both use the path below.
             </p>
-            {!isAttachmentFolderPickerSupported() ? (
-              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                Folder picker is not available in this browser. Use Chrome or Edge to enable
-                row-folder saves.
+            <p className="text-sm">
+              <span className="font-medium">Current folder: </span>
+              <span className="font-mono text-xs">
+                {attachmentFolderStatus?.displayRoot ?? "Loading…"}
+              </span>
+              {attachmentFolderStatus && !attachmentFolderStatus.isDefault ? (
+                <span className="ml-1 text-xs text-zendesk-muted">(custom)</span>
+              ) : attachmentFolderStatus?.isDefault ? (
+                <span className="ml-1 text-xs text-zendesk-muted">(default)</span>
+              ) : null}
+            </p>
+            {attachmentFolderError && (
+              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {attachmentFolderError}
               </p>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm">
-                  <span className="font-medium">Current folder: </span>
-                  {attachmentFolderName ? (
-                    <span className="font-mono text-xs">{attachmentFolderName}</span>
-                  ) : (
-                    <span className="text-zendesk-muted">None (browser Downloads)</span>
-                  )}
-                </p>
-                {attachmentFolderError && (
-                  <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                    {attachmentFolderError}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void chooseAttachmentFolder()}
-                    disabled={attachmentFolderBusy}
-                    className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    {attachmentFolderName ? "Change folder…" : "Choose folder…"}
-                  </button>
-                  {attachmentFolderName && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void openConfiguredAttachmentFolder()}
-                        disabled={attachmentFolderBusy}
-                        className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Open folder…
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void removeAttachmentFolder()}
-                        disabled={attachmentFolderBusy}
-                        className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        Clear folder
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
             )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void openConfiguredAttachmentFolder()}
+                disabled={attachmentFolderBusy}
+                className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                Open in Finder…
+              </button>
+              <button
+                type="button"
+                onClick={() => void changeAttachmentFolder()}
+                disabled={attachmentFolderBusy}
+                className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                Change folder…
+              </button>
+              {attachmentFolderStatus && !attachmentFolderStatus.isDefault ? (
+                <button
+                  type="button"
+                  onClick={() => void useDefaultAttachmentFolder()}
+                  disabled={attachmentFolderBusy}
+                  className="rounded border border-zendesk-border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Use default
+                </button>
+              ) : null}
+            </div>
+          </fieldset>
+
+          <fieldset className="space-y-3 rounded border border-zendesk-border p-3">
+            <legend className="px-1 text-sm font-medium">Ticket right rail</legend>
+            <p className="text-xs text-zendesk-muted">
+              Optional panels on the ticket detail sidebar. Send history is still recorded even when
+              the Recent sends button is hidden.
+            </p>
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={recentSendsPanelEnabled}
+                onChange={(e) => setRecentSendsPanelEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Show Recent sends</span>
+                <p className="mt-0.5 text-xs text-zendesk-muted">
+                  Display the Recent sends archive panel under Trust escalations. Outbound emails are
+                  always saved to this browser archive regardless of this setting.
+                </p>
+              </span>
+            </label>
           </fieldset>
 
           <fieldset className="space-y-3 rounded border border-zendesk-border p-3">

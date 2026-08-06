@@ -1,5 +1,12 @@
 import type { DashboardPeriod } from "./dashboard-period";
 import { dashboardPeriodLabel, ticketMatchesDashboardPeriod } from "./dashboard-period";
+import {
+  buildTopParentAccounts,
+  normalizeHostUserId,
+  parentAccountsToCountItems,
+  type HostProfileNameMap,
+  type ParentAccountVolumeItem,
+} from "./host-profiles";
 import { escapeHtml } from "./html-utils";
 import type { Ticket } from "./types";
 import { parseSheetTimestamp } from "./ticket-activity";
@@ -77,6 +84,9 @@ export interface DashboardStats {
   statusByWeek: WeekSeriesPoint[];
   topRegionalHosts: CountItem[];
   topHostsByMarketManager: HostsByMarketManagerGroup[];
+  /** Intake volume by Airbnb user ID, labeled via Dashboard Sheet Profiles when available. */
+  topParentAccounts: ParentAccountVolumeItem[];
+  topParentAccountBars: CountItem[];
 }
 
 export function filterTicketsByPeriod(
@@ -113,6 +123,8 @@ export const DASHBOARD_CHART_INFO = {
     "Of tickets submitted each week, how many are marked resolved vs still pending/open on the sheet. This reads sheet status text, not CRM overlay status.",
   topHosts:
     "Hosts (requesters) with the most tickets in the period. Click a bar to filter the list to that host.",
+  topParentAccounts:
+    "Parent/host accounts ranked by intake volume in the selected period (Airbnb user ID on each ticket). Display names come from Dashboard Sheet Profiles when available.",
   ticketsInPeriod:
     "Total tickets whose sheet submission date falls in the selected period, compared to all tickets ever loaded.",
   topHostsByMm:
@@ -122,7 +134,8 @@ export const DASHBOARD_CHART_INFO = {
 export function buildDashboardStats(
   tickets: Ticket[],
   period: DashboardPeriod = "3m",
-  marketManager: string | "all" = "all"
+  marketManager: string | "all" = "all",
+  hostProfiles: HostProfileNameMap = {}
 ): DashboardStats {
   const inPeriod = filterTicketsByMarketManager(
     filterTicketsByPeriod(tickets, period),
@@ -167,6 +180,12 @@ export function buildDashboardStats(
     hostsMarketManagers,
     HOSTS_PER_MARKET_MANAGER
   );
+  const topParentAccounts = buildTopParentAccounts({
+    userIds: inPeriod.map((ticket) =>
+      normalizeHostUserId(ticket.airbnbUserId || ticket.headerField || "")
+    ),
+    profiles: hostProfiles,
+  });
 
   return {
     period,
@@ -183,6 +202,8 @@ export function buildDashboardStats(
     statusByWeek,
     topRegionalHosts,
     topHostsByMarketManager,
+    topParentAccounts,
+    topParentAccountBars: parentAccountsToCountItems(topParentAccounts),
   };
 }
 

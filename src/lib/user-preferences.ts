@@ -37,6 +37,11 @@ export interface UserPreferences
   unreadInboxBindToSelectedEnabled: boolean;
   /** Show "Append to selected" in the Gmail unread inbox modal. */
   unreadInboxAppendToSelectedEnabled: boolean;
+  /**
+   * Show the Recent sends panel in the ticket right rail.
+   * Send archive capture still runs when this is off.
+   */
+  recentSendsPanelEnabled: boolean;
   externalTools: ExternalToolLink[];
   /** Ordered Mixmax template IDs the agent starred (drag to reorder). */
   mixmaxStarredTemplateIds: string[];
@@ -56,6 +61,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   calendarReminderFullscreen: false,
   unreadInboxBindToSelectedEnabled: false,
   unreadInboxAppendToSelectedEnabled: true,
+  recentSendsPanelEnabled: false,
   externalTools: defaultExternalTools(),
   mixmaxStarredTemplateIds: [],
   dismissedMappingWarningsFingerprint: null,
@@ -105,6 +111,10 @@ export function readLegacyUserPreferences(): UserPreferences | null {
         typeof parsed.unreadInboxAppendToSelectedEnabled === "boolean"
           ? parsed.unreadInboxAppendToSelectedEnabled
           : DEFAULT_USER_PREFERENCES.unreadInboxAppendToSelectedEnabled,
+      recentSendsPanelEnabled:
+        typeof parsed.recentSendsPanelEnabled === "boolean"
+          ? parsed.recentSendsPanelEnabled
+          : DEFAULT_USER_PREFERENCES.recentSendsPanelEnabled,
       externalTools: normalizeExternalTools(parsed.externalTools),
       mixmaxStarredTemplateIds: normalizeMixmaxStarredTemplateIds(
         parsed.mixmaxStarredTemplateIds

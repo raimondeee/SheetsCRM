@@ -6,9 +6,9 @@
     "node": ">=20 <=22"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H localhost",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H localhost",
     "lint": "next lint",
     "db:migrate": "node scripts/init-db.mjs",
     "share:export": "bash scripts/create-shareable-copy.sh",

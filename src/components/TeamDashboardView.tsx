@@ -32,11 +32,18 @@ import {
 } from "@/lib/dashboard-stats";
 import {
   buildTeamMetrics,
+  listRawTeamStatusesInPeriod,
   listTeamOwnersInPeriod,
   listTeamRegions,
-  ticketsToTeamRecords,
+  mergeLocalAndColleagueTeamRecords,
   type TeamIntakeRecord,
 } from "@/lib/team-metrics";
+import {
+  LOCAL_TEAM_REGION,
+  normalizeTeamStatusMappings,
+  type TeamStatusMappings,
+} from "@/lib/team-dashboard-sources";
+import type { HostProfileNameMap } from "@/lib/host-profiles";
 import {
   formatTeamDashboardCsv,
   formatTeamDashboardReportHtml,
@@ -50,6 +57,7 @@ import {
   DashboardReportMenu,
   type DashboardImageSection,
 } from "./DashboardReportMenu";
+import { TeamStatusMappingModal } from "./TeamStatusMappingModal";
 
 interface TeamDashboardViewProps {
   tickets: Ticket[];
@@ -84,6 +92,10 @@ export function TeamDashboardView({
   const [sourcesTotal, setSourcesTotal] = useState(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [mappingWarnings, setMappingWarnings] = useState<string[]>([]);
+  const [statusMappings, setStatusMappings] = useState<TeamStatusMappings>({});
+  const [statusMappingOpen, setStatusMappingOpen] = useState(false);
+  const [hostProfiles, setHostProfiles] = useState<HostProfileNameMap>({});
+  const [hostProfilesLoaded, setHostProfilesLoaded] = useState(0);
   const [fetchingTabs, setFetchingTabs] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [teamRefreshKey, setTeamRefreshKey] = useState(0);
@@ -97,10 +109,13 @@ export function TeamDashboardView({
   const categoryByRegionImageRef = useRef<HTMLElement>(null);
   const monthAndStatusImageRef = useRef<HTMLDivElement>(null);
 
-  const localRecords = useMemo(() => ticketsToTeamRecords(tickets), [tickets]);
   const allRecords = useMemo(
-    () => [...localRecords, ...colleagueRecords],
-    [localRecords, colleagueRecords]
+    () => mergeLocalAndColleagueTeamRecords(tickets, colleagueRecords),
+    [tickets, colleagueRecords]
+  );
+  const usingConfiguredLocalRegion = useMemo(
+    () => colleagueRecords.some((record) => record.region === LOCAL_TEAM_REGION),
+    [colleagueRecords]
   );
 
   useEffect(() => {
@@ -113,7 +128,12 @@ export function TeamDashboardView({
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load team sheet data");
         if (!cancelled) {
-          setColleagueRecords((data.colleagueRecords ?? []) as TeamIntakeRecord[]);
+          setColleagueRecords(
+            ((data.colleagueRecords ?? []) as TeamIntakeRecord[]).map((record) => ({
+              ...record,
+              userId: record.userId ?? "",
+            }))
+          );
           setSourcesLoaded(data.sourcesLoaded ?? 0);
           setSourcesTotal(data.sourcesTotal ?? 0);
           setFetchError(data.partialError ?? null);
@@ -122,12 +142,24 @@ export function TeamDashboardView({
               ? (data.mappingWarnings as string[])
               : []
           );
+          setStatusMappings(normalizeTeamStatusMappings(data.statusMappings));
+          setHostProfiles(
+            data.hostProfiles && typeof data.hostProfiles === "object"
+              ? (data.hostProfiles as HostProfileNameMap)
+              : {}
+          );
+          setHostProfilesLoaded(
+            typeof data.hostProfilesLoaded === "number" ? data.hostProfilesLoaded : 0
+          );
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setColleagueRecords([]);
           setMappingWarnings([]);
+          setStatusMappings({});
+          setHostProfiles({});
+          setHostProfilesLoaded(0);
           setFetchError(err instanceof Error ? err.message : "Failed to load team tabs");
         }
       })
@@ -177,9 +209,27 @@ export function TeamDashboardView({
         regionFilter,
         ownerFilter,
         sourcesLoaded,
+        statusMappings,
+        hostProfiles,
+        hostProfilesLoaded,
       }),
-    [allRecords, period, regionFilter, ownerFilter, sourcesLoaded]
+    [
+      allRecords,
+      period,
+      regionFilter,
+      ownerFilter,
+      sourcesLoaded,
+      statusMappings,
+      hostProfiles,
+      hostProfilesLoaded,
+    ]
   );
+
+  const rawStatusesForMapping = useMemo(
+    () => listRawTeamStatusesInPeriod(allRecords, period, regionFilter, ownerFilter),
+    [allRecords, period, regionFilter, ownerFilter]
+  );
+  const activeStatusMappingCount = Object.keys(statusMappings).length;
 
   const singleRegionView = regionFilter !== "all";
   const singleOwnerView = ownerFilter !== "all";
@@ -244,7 +294,9 @@ export function TeamDashboardView({
         <div>
           <h1 className="text-xl font-semibold text-zendesk-navy">Team dashboard (beta)</h1>
           <p className="text-sm text-zendesk-muted">
-            Aggregate intake metrics from regional tabs plus your Form Responses data.
+            {usingConfiguredLocalRegion
+              ? "Aggregate intake metrics from configured regional sheet tabs."
+              : "Aggregate intake metrics from regional tabs plus your Form Responses data."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -439,13 +491,25 @@ export function TeamDashboardView({
         </div>
 
         <div className="mt-4 border-t border-zendesk-border/70 pt-3">
-          <div className="mb-2 flex items-baseline justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zendesk-muted">
-              Case status
-            </h3>
-            <p className="text-[10px] text-zendesk-muted">
-              Sheet status values in {stats.periodLabel.toLowerCase()}
-            </p>
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zendesk-muted">
+                Case status
+              </h3>
+              <p className="text-[10px] text-zendesk-muted">
+                Sheet status values in {stats.periodLabel.toLowerCase()}
+                {activeStatusMappingCount > 0
+                  ? ` · ${activeStatusMappingCount} mapping${activeStatusMappingCount === 1 ? "" : "s"}`
+                  : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusMappingOpen(true)}
+              className="rounded border border-zendesk-border bg-white px-2.5 py-1 text-[11px] font-medium text-zendesk-navy hover:bg-gray-50"
+            >
+              Map statuses
+            </button>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7">
             {stats.statusSummaries.map((summary) => (
@@ -468,6 +532,14 @@ export function TeamDashboardView({
           </div>
         </div>
       </section>
+
+      <TeamStatusMappingModal
+        open={statusMappingOpen}
+        onClose={() => setStatusMappingOpen(false)}
+        rawStatuses={rawStatusesForMapping}
+        statusMappings={statusMappings}
+        onSaved={setStatusMappings}
+      />
 
       <div className="space-y-4">
         <div ref={categoryOverviewImageRef} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -513,6 +585,25 @@ export function TeamDashboardView({
           <DayOfWeekChart data={stats.casesByDayOfWeek} />
         </ChartCard>
         </div>
+
+        <ChartCard
+          title="Top parent accounts"
+          subtitle={`${stats.periodLabel} · by user ID${
+            hostProfilesLoaded > 0
+              ? ` · names from ${hostProfilesLoaded} profile tab${hostProfilesLoaded === 1 ? "" : "s"}`
+              : " · profile names pending"
+          }`}
+          info={TEAM_METRICS_CHART_INFO.topParentAccounts}
+        >
+          {stats.topParentAccountBars.length === 0 ? (
+            <p className="py-8 text-center text-sm text-zendesk-muted">
+              No user IDs found on intake rows in this period. Confirm each regional tab has a User
+              ID column (header auto-detect).
+            </p>
+          ) : (
+            <ParentAccountsBarChart data={stats.topParentAccountBars} />
+          )}
+        </ChartCard>
 
         <div ref={weeklyVolumeImageRef} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
@@ -637,6 +728,28 @@ function weekTickInterval(pointCount: number): number | "preserveStartEnd" {
   if (pointCount <= 8) return 0;
   if (pointCount <= 16) return 1;
   return Math.max(1, Math.ceil(pointCount / 8) - 1);
+}
+
+function ParentAccountsBarChart({ data }: { data: CountItem[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(240, data.length * 28)}>
+      <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+        <YAxis
+          type="category"
+          dataKey="name"
+          width={160}
+          tick={{ fontSize: 9 }}
+          tickFormatter={(value: string) =>
+            value.length > 28 ? `${value.slice(0, 26)}…` : value
+          }
+        />
+        <Tooltip />
+        <Bar dataKey="value" fill="#17494d" radius={[0, 4, 4, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
 }
 
 function ChartCard({

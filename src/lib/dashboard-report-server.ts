@@ -23,10 +23,12 @@ import {
   parseReviewEscalationRecords,
 } from "@/lib/quality-report-loader";
 import { buildServiceMetrics } from "@/lib/service-metrics";
+import { getTeamDashboardSourcesFile } from "@/lib/team-dashboard-sources-store";
+import type { TeamStatusMappings } from "@/lib/team-dashboard-sources";
 import { loadColleagueTeamRecords as fetchColleagueTeamRecords } from "@/lib/team-tab-loader";
 import {
   buildTeamMetrics,
-  ticketsToTeamRecords,
+  mergeLocalAndColleagueTeamRecords,
   type TeamIntakeRecord,
 } from "@/lib/team-metrics";
 import { getMockTickets } from "@/lib/mock-data";
@@ -37,26 +39,49 @@ export async function loadDashboardTickets(userEmail: string | null) {
   if (!config) config = buildDefaultSheetConfig();
 
   const hasAuth = await hasGoogleCredentials();
-  const useMock = process.env.USE_MOCK_DATA === "true" || !hasAuth;
+  const useMock = process.env.USE_MOCK_DATA === "true";
   const timerSettings = loadTimerSettings(userEmail);
 
   await refreshWorkspaceHolidayCache();
 
-  return useMock
-    ? getMockTickets(timerSettings)
-    : (await fetchTicketsFromSheet(config, timerSettings)).tickets;
+  if (useMock) return getMockTickets(timerSettings);
+  if (!hasAuth) return [];
+  return (await fetchTicketsFromSheet(config, timerSettings)).tickets;
 }
 
 export async function loadColleagueTeamRecords(): Promise<{
   records: TeamIntakeRecord[];
   sourcesLoaded: number;
+  statusMappings: TeamStatusMappings;
+  hostProfiles: import("@/lib/host-profiles").HostProfileNameMap;
+  hostProfilesLoaded: number;
 }> {
+  const statusMappings = getTeamDashboardSourcesFile().statusMappings ?? {};
   const hasAuth = await hasGoogleCredentials();
-  const useMock = process.env.USE_MOCK_DATA === "true" || !hasAuth;
-  if (useMock) return { records: [], sourcesLoaded: 0 };
+  const useMock = process.env.USE_MOCK_DATA === "true";
+  if (useMock || !hasAuth) {
+    return {
+      records: [],
+      sourcesLoaded: 0,
+      statusMappings,
+      hostProfiles: {},
+      hostProfilesLoaded: 0,
+    };
+  }
 
-  const { colleagueRecords, sourcesLoaded } = await fetchColleagueTeamRecords();
-  return { records: colleagueRecords, sourcesLoaded };
+  const {
+    colleagueRecords,
+    sourcesLoaded,
+    hostProfiles,
+    hostProfilesLoaded,
+  } = await fetchColleagueTeamRecords();
+  return {
+    records: colleagueRecords,
+    sourcesLoaded,
+    statusMappings,
+    hostProfiles,
+    hostProfilesLoaded,
+  };
 }
 
 export async function buildAgentDashboardReportBundle(params: {
@@ -154,14 +179,23 @@ export function buildTeamDashboardReportBundle(params: {
   tickets: Awaited<ReturnType<typeof loadDashboardTickets>>;
   colleagueRecords: TeamIntakeRecord[];
   sourcesLoaded: number;
+  statusMappings?: TeamStatusMappings;
+  hostProfiles?: import("@/lib/host-profiles").HostProfileNameMap;
+  hostProfilesLoaded?: number;
 }) {
-  const allRecords = [...ticketsToTeamRecords(params.tickets), ...params.colleagueRecords];
+  const allRecords = mergeLocalAndColleagueTeamRecords(
+    params.tickets,
+    params.colleagueRecords
+  );
   const stats = buildTeamMetrics({
     records: allRecords,
     period: params.period,
     regionFilter: params.region,
     ownerFilter: params.owner,
     sourcesLoaded: params.sourcesLoaded,
+    statusMappings: params.statusMappings,
+    hostProfiles: params.hostProfiles,
+    hostProfilesLoaded: params.hostProfilesLoaded,
   });
   const filters = {
     periodLabel: stats.periodLabel,

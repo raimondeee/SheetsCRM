@@ -576,7 +576,9 @@ function readOverlayRow(rowId: string): TicketOverlay {
   }
 
   const airbnbUserIdSource =
-    row.airbnb_user_id_source === "crm" || row.airbnb_user_id_source === "column_d"
+    row.airbnb_user_id_source === "crm" ||
+    row.airbnb_user_id_source === "column_d" ||
+    row.airbnb_user_id_source === "exempt"
       ? row.airbnb_user_id_source
       : "sheet";
 
@@ -989,6 +991,15 @@ export function updateTicketAirbnbUserId(rowId: string, userId: string): void {
   upsertOverlayRow(rowId, overlayFields(existing), {
     crmAirbnbUserId: trimmed,
     airbnbUserIdSource: "crm",
+  });
+}
+
+/** Persist an explicit agent choice that this case has no Airbnb User ID for reporting. */
+export function markTicketAirbnbUserIdExempt(rowId: string): void {
+  const existing = readOverlayRow(rowId);
+  upsertOverlayRow(rowId, overlayFields(existing), {
+    crmAirbnbUserId: null,
+    airbnbUserIdSource: "exempt",
   });
 }
 
@@ -2616,6 +2627,7 @@ export function mergeOverlayOntoTicket(
     status,
     airbnbUserId,
     crmAirbnbUserId: manualAirbnbUserIdFromOverlay(refreshed),
+    airbnbUserIdExempt: refreshed.airbnbUserIdSource === "exempt",
     adminNotes: ticket.sheetCaseSummary.trim(),
     sheetStatus:
       refreshed.statusSource === "crm"

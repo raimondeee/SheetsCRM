@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, Loader2, Paperclip, X } from "lucide-react";
 import { formatFileSize } from "@/lib/gmail-attachments";
-import {
-  rowAttachmentFolderName,
-  saveBlobToAttachmentFolder,
-} from "@/lib/attachment-download-folder";
+import { rowAttachmentFolderName } from "@/lib/attachment-download-folder";
 
 const attachmentRowClass =
   "flex items-center gap-2 rounded border border-amber-200 bg-white px-2 py-1.5 text-xs";
@@ -34,10 +31,12 @@ function triggerBrowserDownload(blob: Blob, filename: string): void {
 }
 
 async function downloadThreadAttachment(
-  item: ThreadAttachmentItem,
-  rowNumber: number
+  item: ThreadAttachmentItem
 ): Promise<"folder" | "browser"> {
-  const res = await fetch(item.downloadHref, {
+  const href = new URL(item.downloadHref, window.location.origin);
+  href.searchParams.set("saveLocal", "1");
+
+  const res = await fetch(href.toString(), {
     cache: "no-store",
     credentials: "same-origin",
   });
@@ -53,24 +52,14 @@ async function downloadThreadAttachment(
     throw new Error(message);
   }
 
+  const savedTo = res.headers.get("X-SheetsCRM-Saved-To");
   const blob = await res.blob();
   const filename = item.filename || "attachment";
 
-  try {
-    const saved = await saveBlobToAttachmentFolder({
-      rowNumber,
-      filename,
-      blob,
-    });
-    if (saved) return "folder";
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Could not save to attachment folder";
-    // Fall back so the agent still gets the file, but surface the folder issue.
-    triggerBrowserDownload(blob, filename);
-    throw new Error(`${message} File was downloaded to the browser Downloads folder instead.`);
-  }
+  // Server wrote into ~/Documents/SheetsCRM-Attachments/Row {n}/ (same as Finder).
+  if (savedTo) return "folder";
 
+  // Fallback when row number could not be resolved server-side.
   triggerBrowserDownload(blob, filename);
   return "browser";
 }
@@ -170,7 +159,7 @@ interface ThreadAttachmentListProps {
   rowNumber: number;
 }
 
-function ThreadAttachmentDownloadButton({
+export function ThreadAttachmentDownloadButton({
   item,
   rowNumber,
 }: {
@@ -186,7 +175,7 @@ function ThreadAttachmentDownloadButton({
     setBusy(true);
     setSaved(false);
     try {
-      const mode = await downloadThreadAttachment(item, rowNumber);
+      const mode = await downloadThreadAttachment(item);
       if (mode === "folder") {
         setSaved(true);
         window.setTimeout(() => setSaved(false), 2000);
@@ -209,8 +198,8 @@ function ThreadAttachmentDownloadButton({
         busy
           ? "Downloading…"
           : saved
-            ? `Saved to ${rowFolder}`
-            : `Download ${item.filename} (saves to ${rowFolder} when a folder is set in Preferences)`
+            ? `Saved to ${rowFolder} in your attachment downloads folder`
+            : `Download ${item.filename} (saves to ${rowFolder} in your attachment downloads folder)`
       }
       className="inline-flex w-full items-center gap-1.5 rounded border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-70"
     >

@@ -80,7 +80,8 @@ export const MANAGED_ENV_FIELDS: EnvFieldDefinition[] = [
   {
     key: "USE_MOCK_DATA",
     label: "Use mock ticket data",
-    description: "Set to true when Google credentials are not configured yet.",
+    description:
+      "Opt-in only. When true, serve synthetic tickets for local UI work. Logged-out users otherwise see an empty inbox.",
     secret: false,
     type: "boolean",
     group: "App",

@@ -155,6 +155,11 @@ export interface Ticket {
   coverSourceLabel?: string | null;
   /** CRM-only manual Airbnb User ID from Internal tools (syncs to mapped airbnbUserId column). */
   crmAirbnbUserId?: string | null;
+  /**
+   * Agent confirmed there is no Airbnb User ID to enter for reporting.
+   * Allows resolve/close without a numeric Manual User ID.
+   */
+  airbnbUserIdExempt?: boolean;
   raw: Record<string, string>;
 }
 

@@ -15,7 +15,13 @@ import type { gmail_v1 } from "googleapis";
 import { v4 as uuidv4 } from "uuid";
 import type { ThreadMessage } from "./types";
 import type { GmailThreadCandidatePreview, GmailThreadLinkResolveResult } from "./types";
-import { looksLikeHtml, sanitizeEmailHtml, stripHtmlToText } from "./html-utils";
+import {
+  looksLikeHtml,
+  plainTextToHtml,
+  repairDoubleEncodedNbsp,
+  sanitizeEmailHtml,
+  stripHtmlToText,
+} from "./html-utils";
 import { encodeMimeHeaderValue } from "./mime-headers";
 import { getGoogleAuthClient, getSignedInUser } from "./google-auth";
 import { joinRecipientList, parseHeaderRecipientList } from "./email-recipients";
@@ -971,28 +977,22 @@ export async function fetchGmailSignature(
   }
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function appendSignatureToBody(
   userBody: string,
   signatureHtml: string
 ): { plain: string; html?: string } {
   const trimmed = userBody.trim();
-  const isHtml = /<[a-z][\s\S]*>/i.test(trimmed);
+  const isHtml = looksLikeHtml(trimmed);
 
   if (isHtml) {
-    const plain = stripHtmlToText(trimmed);
-    if (!signatureHtml) return { plain, html: trimmed };
+    // Keep real `&nbsp;` entities; collapse any prior double-encoding before send.
+    const htmlUserBody = repairDoubleEncodedNbsp(trimmed);
+    const plain = stripHtmlToText(htmlUserBody);
+    if (!signatureHtml) return { plain, html: htmlUserBody };
 
     const signaturePlain = stripHtmlToText(signatureHtml);
     const plainWithSig = signaturePlain ? `${plain}\n\n--\n${signaturePlain}` : plain;
-    const htmlBody = [trimmed, "<br><br>", signatureHtml].join("");
+    const htmlBody = [htmlUserBody, "<br><br>", signatureHtml].join("");
     return { plain: plainWithSig, html: htmlBody };
   }
 
@@ -1003,14 +1003,12 @@ function appendSignatureToBody(
     ? `${trimmed}\n\n--\n${signaturePlain}`
     : trimmed;
 
-  const hasHtmlSignature = /<[a-z][\s\S]*>/i.test(signatureHtml);
+  const hasHtmlSignature = looksLikeHtml(signatureHtml);
   if (!hasHtmlSignature) return { plain };
 
-  const htmlBody = [
-    `<div>${escapeHtml(trimmed).replace(/\n/g, "<br>")}</div>`,
-    "<br>",
-    signatureHtml,
-  ].join("");
+  // Decode entities before escaping so contentEditable `&nbsp;` does not become
+  // visible `&amp;nbsp;` in the outbound HTML part.
+  const htmlBody = [`<div>${plainTextToHtml(trimmed)}</div>`, "<br>", signatureHtml].join("");
 
   return { plain, html: htmlBody };
 }

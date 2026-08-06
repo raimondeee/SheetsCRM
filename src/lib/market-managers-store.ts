@@ -7,20 +7,42 @@ const FILE_PATH =
   process.env.MARKET_MANAGERS_PATH ||
   path.join(process.cwd(), "data", "market-managers.json");
 
+const EXAMPLE_PATH = path.join(process.cwd(), "data", "market-managers.example.json");
+
 function ensureDataDir(): void {
   const dir = path.dirname(FILE_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+function emptyDirectory(): MarketManagerDirectory {
+  return {
+    updatedAt: new Date().toISOString(),
+    managers: [],
+  };
+}
+
+function seedFromExampleIfPresent(): MarketManagerDirectory {
+  if (fs.existsSync(EXAMPLE_PATH)) {
+    try {
+      const raw = fs.readFileSync(EXAMPLE_PATH, "utf8");
+      const parsed = JSON.parse(raw) as MarketManagerDirectory;
+      return {
+        updatedAt: new Date().toISOString(),
+        managers: sortMarketManagers(parsed.managers ?? []),
+      };
+    } catch {
+      // fall through to empty
+    }
+  }
+  return emptyDirectory();
+}
+
 export function loadMarketManagerDirectory(): MarketManagerDirectory {
   ensureDataDir();
   if (!fs.existsSync(FILE_PATH)) {
-    const empty: MarketManagerDirectory = {
-      updatedAt: new Date().toISOString(),
-      managers: [],
-    };
-    fs.writeFileSync(FILE_PATH, JSON.stringify(empty, null, 2));
-    return empty;
+    const seeded = seedFromExampleIfPresent();
+    fs.writeFileSync(FILE_PATH, JSON.stringify(seeded, null, 2));
+    return seeded;
   }
 
   const raw = fs.readFileSync(FILE_PATH, "utf8");

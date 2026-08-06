@@ -1,21 +1,51 @@
-/** Convert Mixmax / draft HTML to plain text for MIME text/plain and clipboard export. */
-export function stripHtmlToText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/h[1-6]>/gi, "\n\n")
-    .replace(/<\/p>/gi, "\n\n")
-    // Draft spacing is CSS margin between blocks; treat block ends as paragraph breaks.
-    .replace(/<\/div>/gi, "\n\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<\/(ul|ol)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ")
+/**
+ * Decode common HTML entities to characters.
+ * Ampersand entities are expanded first so double-encoded values like
+ * `&amp;nbsp;` become a real non-breaking space instead of surviving as text.
+ */
+export function decodeHtmlEntities(text: string): string {
+  return text
     .replace(/&amp;/gi, "&")
+    .replace(/&nbsp;/gi, "\u00a0")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (match, code: string) => {
+      const n = Number(code);
+      if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) return match;
+      try {
+        return String.fromCodePoint(n);
+      } catch {
+        return match;
+      }
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
+      const n = Number.parseInt(hex, 16);
+      if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) return match;
+      try {
+        return String.fromCodePoint(n);
+      } catch {
+        return match;
+      }
+    });
+}
+
+/** Convert Mixmax / draft HTML to plain text for MIME text/plain and clipboard export. */
+export function stripHtmlToText(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/h[1-6]>/gi, "\n\n")
+      .replace(/<\/p>/gi, "\n\n")
+      // Draft spacing is CSS margin between blocks; treat block ends as paragraph breaks.
+      .replace(/<\/div>/gi, "\n\n")
+      .replace(/<li[^>]*>/gi, "• ")
+      .replace(/<\/li>/gi, "\n")
+      .replace(/<\/(ul|ol)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+  )
+    .replace(/\u00a0/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -30,7 +60,9 @@ export function escapeHtml(text: string): string {
 }
 
 export function plainTextToHtml(text: string): string {
-  return escapeHtml(text).replace(/\n/g, "<br>");
+  // contentEditable often serializes spaces as `&nbsp;` with no tags; decode first
+  // so escapeHtml does not turn them into visible `&amp;nbsp;`.
+  return escapeHtml(decodeHtmlEntities(text)).replace(/\n/g, "<br>");
 }
 
 export function isRichTextEmpty(html: string): boolean {
@@ -38,7 +70,9 @@ export function isRichTextEmpty(html: string): boolean {
 }
 
 export function looksLikeHtml(text: string): boolean {
-  return /<[a-z][\s\S]*>/i.test(text.trim());
+  const trimmed = text.trim();
+  // Tags, or entity-only fragments from contentEditable (`text.&nbsp;` with no tags).
+  return /<[a-z][\s\S]*>/i.test(trimmed) || /&(?:[a-z]+|#\d+|#x[0-9a-f]+);/i.test(trimmed);
 }
 
 const EMPTY_BLOCK =
@@ -245,6 +279,14 @@ export function prepareMixmaxTemplateHtml(source: string): string {
 }
 
 /**
+ * Collapse double-encoded non-breaking spaces (`&amp;nbsp;`, `&amp;amp;nbsp;`, …)
+ * that can appear after plain-text escaping of contentEditable entity output.
+ */
+export function repairDoubleEncodedNbsp(html: string): string {
+  return html.replace(/&amp;(?:amp;)*nbsp;/gi, "&nbsp;");
+}
+
+/**
  * Sanitize email HTML for CRM thread storage/display.
  * Preserves lists, emphasis, links, and headings; drops scripts and chrome.
  */
@@ -253,7 +295,7 @@ export function sanitizeEmailHtml(html: string): string {
   if (!result) return "";
   if (!looksLikeHtml(result)) return plainTextToHtml(result);
 
-  result = extractBodyHtml(result);
+  result = repairDoubleEncodedNbsp(extractBodyHtml(result));
 
   return forceLinksOpenInNewTab(
     compactDraftBlockSpacing(
@@ -280,7 +322,9 @@ export function sanitizeDraftPasteHtml(html: string): string {
 export function normalizeDraftHtml(body: string): string {
   const trimmed = body.trim();
   if (!trimmed) return "";
-  const html = looksLikeHtml(trimmed) ? trimmed : plainTextToHtml(trimmed);
+  const html = looksLikeHtml(trimmed)
+    ? repairDoubleEncodedNbsp(trimmed)
+    : plainTextToHtml(trimmed);
   // Preserve intentional blank lines and emphasis; only drop pasted backgrounds.
   return compactEmptyChromeBlocks(stripEditorChromeStyles(html, "background")).trim();
 }

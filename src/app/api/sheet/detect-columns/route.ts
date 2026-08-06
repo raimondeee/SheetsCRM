@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { EXAMPLE_SHEET_GID } from "@/lib/default-sheet-config";
 import { resolveAndAssessIntakeSheet } from "@/lib/intake-column-resolve";
 import { loadSheetConfig } from "@/lib/overlay-db";
-import { fetchSheetHeaders, hasGoogleCredentials } from "@/lib/sheets";
+import { fetchSheetHeaders } from "@/lib/sheets";
 import { parseSheetUrl, type SheetConfig } from "@/lib/types";
 import { prepareSheetConfig } from "@/lib/ui-field-slots";
-import { getSignedInUser } from "@/lib/google-auth";
+import { requireOAuthSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +16,8 @@ interface DetectBody {
 }
 
 export async function POST(request: Request) {
-  const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
 
   let body: DetectBody;
   try {

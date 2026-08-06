@@ -124,6 +124,24 @@ async function getSpreadsheetMeta(
   return meta;
 }
 
+/** List tab titles (and gids) for companion-sheet discovery. */
+export async function listSpreadsheetSheetTitles(
+  spreadsheetId: string
+): Promise<Array<{ title: string; gid: string }>> {
+  const auth = await getGoogleAuthClient();
+  if (!auth) throw new Error("Sign in with Google or configure a service account");
+  const sheets = google.sheets({ version: "v4", auth });
+  const meta = await getSpreadsheetMeta(spreadsheetId, sheets);
+  const out: Array<{ title: string; gid: string }> = [];
+  for (const sheet of meta.sheets ?? []) {
+    const title = sheet.properties?.title?.trim();
+    const gid = sheet.properties?.sheetId;
+    if (!title || gid == null) continue;
+    out.push({ title, gid: String(gid) });
+  }
+  return out;
+}
+
 function readCachedTab(spreadsheetId: string, key: string): SheetTabData | null {
   const cached = tabCache.get(tabCacheKey(spreadsheetId, key));
   if (!cached || cached.expiresAt <= Date.now()) return null;

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { fetchGmailAttachment } from "@/lib/gmail";
 import { getMessageAttachmentById } from "@/lib/overlay-db";
+import { saveBufferToAttachmentRowFolder } from "@/lib/attachment-folder-path";
+import { parseTicketRowId } from "@/lib/types";
 
 function sanitizeFilename(filename: string): string {
   const base = filename.replace(/[/\\?%*:|"<>]/g, "_").trim();
@@ -17,13 +19,14 @@ function contentDisposition(filename: string): string {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ rowId: string; attachmentId: string }> }
 ) {
   try {
     const { rowId, attachmentId } = await params;
     const ticketRowId = decodeURIComponent(rowId);
     const decodedAttachmentId = decodeURIComponent(attachmentId);
+    const saveLocal = new URL(request.url).searchParams.get("saveLocal") === "1";
 
     if (process.env.USE_MOCK_DATA === "true") {
       return NextResponse.json(
@@ -54,6 +57,20 @@ export async function GET(
       "Content-Length": String(data.length),
       "Cache-Control": "private, no-store",
     });
+
+    // Local CRM: write into ~/Documents/SheetsCRM-Attachments/Row {n}/ (same path Finder opens).
+    if (saveLocal) {
+      const parsed = parseTicketRowId(ticketRowId);
+      if (parsed) {
+        const saved = saveBufferToAttachmentRowFolder(
+          parsed.rowNumber,
+          attachment.filename,
+          data
+        );
+        headers.set("X-SheetsCRM-Saved-To", saved.pathHint);
+        headers.set("X-SheetsCRM-Saved-Path", saved.absolutePath);
+      }
+    }
 
     return new NextResponse(new Uint8Array(data), { status: 200, headers });
   } catch (error) {

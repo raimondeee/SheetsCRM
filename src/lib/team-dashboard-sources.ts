@@ -9,6 +9,8 @@ export interface TeamTabColumnLetters {
   status: string;
   owner: string;
   category: string;
+  /** Optional Airbnb / host user ID column (header-detected when blank). */
+  userId?: string;
 }
 
 export interface TeamTabColumnMap {
@@ -16,6 +18,8 @@ export interface TeamTabColumnMap {
   status: number;
   owner: number;
   category: number;
+  /** -1 when unknown / not mapped. */
+  userId: number;
 }
 
 export interface TeamTabSource {
@@ -41,21 +45,56 @@ export interface TeamTabSourceConfig {
   columns: TeamTabColumnLetters;
 }
 
+/**
+ * Case-insensitive raw sheet status → display bucket for Team Dashboard cards.
+ * Keys are stored lowercased (e.g. "pending on mc" → "Pending").
+ * Empty sheet statuses use {@link TEAM_STATUS_BLANK_MAPPING_KEY}.
+ */
+export type TeamStatusMappings = Record<string, string>;
+
+/** Sentinel mapping key for empty / blank sheet status cells. */
+export const TEAM_STATUS_BLANK_MAPPING_KEY = "(blank)";
+
 export interface TeamDashboardSourcesFile {
   spreadsheetId: string;
   sources: TeamTabSourceConfig[];
+  /** Optional rollup of regional status spellings into shared buckets. */
+  statusMappings?: TeamStatusMappings;
+}
+
+export function teamStatusMappingKey(rawStatus: string): string {
+  const trimmed = rawStatus.trim();
+  if (!trimmed || trimmed.toLowerCase() === TEAM_STATUS_BLANK_MAPPING_KEY) {
+    return TEAM_STATUS_BLANK_MAPPING_KEY;
+  }
+  return trimmed.toLowerCase();
+}
+
+export function normalizeTeamStatusMappings(value: unknown): TeamStatusMappings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: TeamStatusMappings = {};
+  for (const [raw, bucket] of Object.entries(value as Record<string, unknown>)) {
+    const key = teamStatusMappingKey(raw);
+    const bucketLabel = typeof bucket === "string" ? bucket.trim() : "";
+    if (!bucketLabel) continue;
+    out[key] = bucketLabel;
+  }
+  return out;
 }
 
 function cols(letters: TeamTabColumnLetters): TeamTabColumnMap {
+  const userIdLetter = letters.userId?.trim().toUpperCase() || "";
   return {
     timestamp: letterToIndex(letters.timestamp),
     status: letterToIndex(letters.status),
     owner: letterToIndex(letters.owner),
     category: letterToIndex(letters.category),
+    userId: userIdLetter ? letterToIndex(userIdLetter) : -1,
   };
 }
 
 export function teamSourceFromConfig(config: TeamTabSourceConfig): TeamTabSource {
+  const userId = config.columns.userId?.trim().toUpperCase() || "";
   return {
     id: config.id.trim(),
     region: config.region.trim(),
@@ -67,6 +106,7 @@ export function teamSourceFromConfig(config: TeamTabSourceConfig): TeamTabSource
       status: config.columns.status.trim().toUpperCase() || "B",
       owner: config.columns.owner.trim().toUpperCase() || "C",
       category: config.columns.category.trim().toUpperCase() || "D",
+      userId: userId || undefined,
     }),
   };
 }
@@ -136,6 +176,7 @@ export const DEFAULT_TEAM_DASHBOARD_SOURCES_FILE: TeamDashboardSourcesFile = {
       category: indexToLetter(source.columns.category),
     },
   })),
+  statusMappings: {},
 };
 
 function normalizeColumnLetters(value: unknown): TeamTabColumnLetters | null {
@@ -145,12 +186,14 @@ function normalizeColumnLetters(value: unknown): TeamTabColumnLetters | null {
   const status = typeof row.status === "string" ? row.status.trim() : "";
   const owner = typeof row.owner === "string" ? row.owner.trim() : "";
   const category = typeof row.category === "string" ? row.category.trim() : "";
+  const userId = typeof row.userId === "string" ? row.userId.trim() : "";
   if (!timestamp || !status || !owner || !category) return null;
   return {
     timestamp: timestamp.toUpperCase(),
     status: status.toUpperCase(),
     owner: owner.toUpperCase(),
     category: category.toUpperCase(),
+    userId: userId ? userId.toUpperCase() : undefined,
   };
 }
 
@@ -205,8 +248,11 @@ export function normalizeTeamDashboardSourcesFile(
     }
   }
 
+  const statusMappings = normalizeTeamStatusMappings(partial?.statusMappings);
+
   return {
     spreadsheetId,
     sources: sources.length > 0 ? sources : DEFAULT_TEAM_DASHBOARD_SOURCES_FILE.sources,
+    statusMappings,
   };
 }

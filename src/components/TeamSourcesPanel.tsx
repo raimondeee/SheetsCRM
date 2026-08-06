@@ -24,7 +24,7 @@ function emptySource(): TeamTabSourceConfig {
     enabled: true,
     sheetUrl: "",
     spreadsheetId: "",
-    columns: { timestamp: "A", status: "B", owner: "C", category: "D" },
+    columns: { timestamp: "A", status: "B", owner: "C", category: "D", userId: "" },
   };
 }
 
@@ -362,19 +362,20 @@ export function TeamSourcesPanel({ open, onClose, onSaved }: TeamSourcesPanelPro
                       matches header names, and reporting also remaps from headers at load time.
                     </p>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+                      <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-5">
                         {(
                           [
                             ["timestamp", "Timestamp"],
                             ["status", "Status"],
                             ["owner", "MM"],
                             ["category", "Contact Reason"],
+                            ["userId", "User ID"],
                           ] as const
                         ).map(([field, label]) => (
                           <label key={field} className="block text-xs">
                             <span className="font-medium">{label}</span>
                             <input
-                              value={source.columns[field]}
+                              value={source.columns[field] ?? ""}
                               onChange={(e) => updateColumns(index, field, e.target.value)}
                               className="mt-1 w-full rounded border border-zendesk-border px-2 py-1.5 text-sm uppercase"
                             />

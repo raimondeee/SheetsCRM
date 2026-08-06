@@ -1,6 +1,6 @@
 export const TEAM_METRICS_CHART_INFO = {
   overview:
-    "Experimental aggregate view across regional intake tabs plus your North East and Canada Form Responses data. No CRM ticket linking.",
+    "Experimental aggregate view across configured regional intake tabs. In full CRM, your Form Responses data is included as North East and Canada only when that region is not already a configured source (avoids double-counting). No CRM ticket linking.",
   regionVolume:
     "Share of intakes in the selected period by regional team. Each slice is one configured sheet tab.",
   category:
@@ -18,5 +18,7 @@ export const TEAM_METRICS_CHART_INFO = {
   statusByWeek:
     "Of intakes submitted each week, how many look resolved vs pending based on raw sheet status text.",
   regionCards:
-    "Large All regions total on the left, with per-region period/all-time counts in a grid. Case status cards show sheet status values (Blank, Open, Pending, etc.) for the selected period.",
+    "Large All regions total on the left, with per-region period/all-time counts in a grid. Case status cards show sheet status values (Blank, Open, Pending, etc.) for the selected period. Use Map statuses to roll regional spellings into shared buckets.",
+  topParentAccounts:
+    "Parent/host accounts ranked by intake volume in the selected period (user ID on each regional tab). Display names come from each region’s companion profiles tab when found.",
 } as const;

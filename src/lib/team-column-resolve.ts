@@ -52,6 +52,12 @@ const FIELD_PATTERNS: Record<TeamColumnField, RegExp[]> = {
     /^category$/i,
     /issue\s*type/i,
   ],
+  userId: [
+    /airbnb\s*user\s*id/i,
+    /user\s*id/i,
+    /host\s*id/i,
+    /parent\s*id/i,
+  ],
 };
 
 const FIELD_LABELS: Record<TeamColumnField, string> = {
@@ -59,7 +65,15 @@ const FIELD_LABELS: Record<TeamColumnField, string> = {
   status: "Status",
   owner: "MM",
   category: "Contact Reason",
+  userId: "User ID",
 };
+
+const REQUIRED_TEAM_FIELDS: TeamColumnField[] = [
+  "timestamp",
+  "status",
+  "owner",
+  "category",
+];
 
 const KNOWN_STATUS_IDS = new Set([
   "new",
@@ -72,11 +86,13 @@ const KNOWN_STATUS_IDS = new Set([
 ]);
 
 function lettersToMap(letters: TeamTabColumnLetters): TeamTabColumnMap {
+  const userIdLetter = letters.userId?.trim().toUpperCase() || "";
   return {
     timestamp: letterToIndex(letters.timestamp),
     status: letterToIndex(letters.status),
     owner: letterToIndex(letters.owner),
     category: letterToIndex(letters.category),
+    userId: userIdLetter ? letterToIndex(userIdLetter) : -1,
   };
 }
 
@@ -105,7 +121,9 @@ export function resolveTeamColumnsFromHeaders(
   const usedIndexes = new Set<number>();
 
   for (const field of fields) {
-    const fallbackLetter = (fallbackLetters[field] || "A").toUpperCase();
+    const fallbackRaw = fallbackLetters[field]?.trim().toUpperCase() || "";
+    const optional = field === "userId";
+    const fallbackLetter = fallbackRaw || (optional ? "" : "A");
     const headerIndex = findHeaderIndex(headers, FIELD_PATTERNS[field]);
 
     if (headerIndex >= 0 && !usedIndexes.has(headerIndex)) {
@@ -115,7 +133,7 @@ export function resolveTeamColumnsFromHeaders(
       matchedBy[field] = "header";
       matchedHeaders[field] = headerText;
       usedIndexes.add(headerIndex);
-      if (headerLetter !== fallbackLetter) {
+      if (fallbackLetter && headerLetter !== fallbackLetter) {
         letterDrift[field] = {
           from: fallbackLetter,
           to: headerLetter,
@@ -128,9 +146,15 @@ export function resolveTeamColumnsFromHeaders(
       continue;
     }
 
+    if (optional && !fallbackLetter) {
+      letters[field] = "";
+      matchedBy[field] = "fallback";
+      continue;
+    }
+
     letters[field] = fallbackLetter;
     matchedBy[field] = "fallback";
-    if (headers.length > 0) {
+    if (headers.length > 0 && REQUIRED_TEAM_FIELDS.includes(field)) {
       warnings.push(
         `${region}: could not find a ${FIELD_LABELS[field]} header — using saved column ${fallbackLetter}.`
       );
@@ -140,9 +164,11 @@ export function resolveTeamColumnsFromHeaders(
   // Duplicate letter check
   const letterOwners = new Map<string, TeamColumnField[]>();
   for (const field of fields) {
-    const list = letterOwners.get(letters[field]) ?? [];
+    const letter = letters[field]?.trim();
+    if (!letter) continue;
+    const list = letterOwners.get(letter) ?? [];
     list.push(field);
-    letterOwners.set(letters[field], list);
+    letterOwners.set(letter, list);
   }
   for (const [letter, owners] of letterOwners) {
     if (owners.length > 1) {

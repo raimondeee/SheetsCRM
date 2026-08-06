@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSignedInUser } from "@/lib/google-auth";
-import { hasGoogleCredentials } from "@/lib/sheets";
+import { requireOAuthSession } from "@/lib/api-auth";
 import { fetchSheetTabsBatch } from "@/lib/sheet-tabs";
 import {
   resolveAndAssessTeamTab,
@@ -26,10 +25,8 @@ interface DetectBody {
 }
 
 export async function POST(request: Request) {
-  const user = await getSignedInUser();
-  if (!user.email && !(await hasGoogleCredentials())) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
+  const denied = await requireOAuthSession();
+  if (denied) return denied;
 
   let body: DetectBody;
   try {

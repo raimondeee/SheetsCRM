@@ -84,8 +84,31 @@ if [ ! -d node_modules ]; then
   echo ""
 fi
 
+# Idempotent: ensure ~/Documents/SheetsCRM-Attachments + crmfolder:// helper exist.
+if [ -f "$ROOT/scripts/install-crmfolder-helper.sh" ]; then
+  bash "$ROOT/scripts/install-crmfolder-helper.sh" || true
+  echo ""
+fi
+
 PORT="${PORT:-3000}"
+# Next.js defaults to 0.0.0.0 — SheetsCRM must bind loopback only.
+# Use SHEETSCRM_BIND (not HOSTNAME — that is the machine name on macOS).
+BIND_HOST="${SHEETSCRM_BIND:-localhost}"
+case "$BIND_HOST" in
+  localhost|127.0.0.1|::1) ;;
+  *)
+    echo "Refusing to bind to '${BIND_HOST}'."
+    echo "SheetsCRM must listen on localhost only (set SHEETSCRM_BIND=localhost)."
+    echo "Do not use 0.0.0.0 or a LAN address — that exposes unauthenticated APIs on your network."
+    read -r -p "Press Enter to close…"
+    exit 1
+    ;;
+esac
 URL="http://localhost:${PORT}"
+if [ "$BIND_HOST" = "127.0.0.1" ]; then
+  URL="http://127.0.0.1:${PORT}"
+fi
+
 
 stop_existing_server_on_port() {
   local port="$1"
@@ -129,6 +152,7 @@ wait_for_sheetscrm_ready() {
 }
 
 echo "Starting SheetsCRM…"
+echo "Listening on ${BIND_HOST}:${PORT} (loopback only)"
 echo "When ready, open: $URL"
 echo "Leave this window open while you use the CRM."
 echo "Press Ctrl+C to stop the server."
@@ -145,6 +169,7 @@ stop_existing_server_on_port "$PORT"
   fi
 ) &
 
-npm run dev
+# Explicit -H overrides any accidental npm script change; refuse LAN binds above.
+npm run dev -- -H "$BIND_HOST" -p "$PORT"
 
 read -r -p "Press Enter to close…"

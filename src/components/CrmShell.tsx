@@ -187,7 +187,7 @@ export function CrmShell() {
   const [unreadInboxOpen, setUnreadInboxOpen] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<string>("mock");
+  const [source, setSource] = useState<string>("unauthenticated");
   const [mappingWarnings, setMappingWarnings] = useState<string[]>([]);
   const rawMappingWarningsRef = useRef<string[]>([]);
   const [auth, setAuth] = useState<{
@@ -208,6 +208,9 @@ export function CrmShell() {
     DEFAULT_USER_PREFERENCES.initialResponseHours
   );
   const [externalTools, setExternalTools] = useState(DEFAULT_USER_PREFERENCES.externalTools);
+  const [recentSendsPanelEnabled, setRecentSendsPanelEnabled] = useState(
+    DEFAULT_USER_PREFERENCES.recentSendsPanelEnabled
+  );
   const [calendarReminderFullscreen, setCalendarReminderFullscreen] = useState(
     DEFAULT_USER_PREFERENCES.calendarReminderFullscreen
   );
@@ -345,7 +348,7 @@ export function CrmShell() {
         setTickets(applyPendingSheetFields(incomingTickets));
         setConfig(data.config ?? null);
         setCoverSheets(data.coverSheets ?? []);
-        setSource(data.source ?? "mock");
+        setSource(data.source ?? "unauthenticated");
         const incomingWarnings = Array.isArray(data.mappingWarnings)
           ? (data.mappingWarnings as string[])
           : [];
@@ -462,6 +465,7 @@ export function CrmShell() {
       setCrmErrorLoggingEnabled(prefs.errorLoggingEnabled);
       setInitialResponseHours(prefs.initialResponseHours);
       setExternalTools(prefs.externalTools);
+      setRecentSendsPanelEnabled(prefs.recentSendsPanelEnabled);
       setCalendarReminderFullscreen(prefs.calendarReminderFullscreen);
       setCaseBreaksEnabled(prefs.caseBreaksEnabled);
       setCaseBreakThreshold(prefs.caseBreakThreshold);
@@ -481,7 +485,7 @@ export function CrmShell() {
   }, [loadTickets, loadAuth]);
 
   useEffect(() => {
-    if (source === "mock") return;
+    if (source === "mock" || source === "unauthenticated") return;
 
     const refresh = (refreshReason: TicketListRefreshReason) => {
       if (document.visibilityState === "visible") {
@@ -558,6 +562,7 @@ export function CrmShell() {
           return {
             ...t,
             crmAirbnbUserId: hostId,
+            airbnbUserIdExempt: false,
             airbnbUserId: hostId,
             raw: { ...t.raw, [rawKey]: hostId },
           };
@@ -678,6 +683,7 @@ export function CrmShell() {
     setCrmErrorLoggingEnabled(prefs.errorLoggingEnabled);
     setInitialResponseHours(prefs.initialResponseHours);
     setExternalTools(prefs.externalTools);
+    setRecentSendsPanelEnabled(prefs.recentSendsPanelEnabled);
     setCalendarReminderFullscreen(prefs.calendarReminderFullscreen);
     setCaseBreaksEnabled(prefs.caseBreaksEnabled);
     setCaseBreakThreshold(prefs.caseBreakThreshold);
@@ -928,7 +934,13 @@ export function CrmShell() {
   async function handleSetStatusWithoutEmail(
     rowId: string,
     status: string,
-    options?: { adminNote?: string; pendingHours?: number; airbnbUserId?: string; closeTicket?: boolean }
+    options?: {
+      adminNote?: string;
+      pendingHours?: number;
+      airbnbUserId?: string;
+      airbnbUserIdExempt?: boolean;
+      closeTicket?: boolean;
+    }
   ) {
     if (source === "mock") {
       const now = new Date().toISOString();
@@ -993,7 +1005,11 @@ export function CrmShell() {
             ? { pendingReopenHours: options.pendingHours }
             : {}),
           ...(options?.closeTicket ? { closeTicket: true } : {}),
-          ...(options?.airbnbUserId ? { airbnbUserId: options.airbnbUserId } : {}),
+          ...(options?.airbnbUserIdExempt
+            ? { airbnbUserIdExempt: true }
+            : options?.airbnbUserId
+              ? { airbnbUserId: options.airbnbUserId }
+              : {}),
         }),
       });
       const data = await res.json();
@@ -1087,11 +1103,20 @@ export function CrmShell() {
     }
   }
 
-  async function handleAirbnbUserIdChange(rowId: string, airbnbUserId: string) {
+  async function handleAirbnbUserIdChange(
+    rowId: string,
+    airbnbUserId: string,
+    options?: { exempt?: boolean }
+  ) {
     const res = await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rowId, airbnbUserId }),
+      body: JSON.stringify({
+        rowId,
+        ...(options?.exempt
+          ? { airbnbUserIdExempt: true }
+          : { airbnbUserId }),
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
@@ -1101,14 +1126,22 @@ export function CrmShell() {
     setTickets((prev) =>
       prev.map((t) => {
         if (t.rowId !== rowId) return t;
+        if (options?.exempt) {
+          return {
+            ...t,
+            crmAirbnbUserId: null,
+            airbnbUserIdExempt: true,
+            airbnbUserId: intakeAirbnbUserIdFromTicket(t),
+          };
+        }
         const trimmed = airbnbUserId.trim();
         const rawKey =
           Object.keys(t.raw).find((k) => /airbnb\s*user\s*id/i.test(k)) || "Airbnb User ID";
-        const resolvedId = trimmed || intakeAirbnbUserIdFromTicket(t);
         return {
           ...t,
           crmAirbnbUserId: trimmed || null,
-          airbnbUserId: resolvedId,
+          airbnbUserIdExempt: false,
+          airbnbUserId: trimmed || intakeAirbnbUserIdFromTicket(t),
           raw: trimmed ? { ...t.raw, [rawKey]: trimmed } : t.raw,
         };
       })
@@ -1343,9 +1376,13 @@ export function CrmShell() {
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">SheetsCRM</span>
           <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-white/80">
-            {source === "mock" ? "Demo data" : "Live sheet"}
+            {source === "mock"
+              ? "Demo data"
+              : source === "unauthenticated"
+                ? "Not signed in"
+                : "Live sheet"}
           </span>
-          {source !== "mock" && (
+          {source === "sheets" && (
             <span className="hidden items-center gap-2 text-xs text-white/60 sm:inline-flex">
               {syncing ? (
                 "Syncing…"
@@ -1553,6 +1590,11 @@ export function CrmShell() {
             onToggleCollapsed={() => setTicketListCollapsed((v) => !v)}
             initialResponseHours={initialResponseHours}
             fontScale={ticketListWidthState.fontScale}
+            emptyMessage={
+              source === "unauthenticated"
+                ? "Sign in with Google to load your sheet."
+                : "No tickets match this view."
+            }
           />
         </ResizableColumn>
         {inboxVictory ? (
@@ -1617,6 +1659,7 @@ export function CrmShell() {
               onForceNewGmailThreadChange={handleForceNewGmailThreadChange}
               onLinkedCaseChange={handleLinkedCaseChange}
               externalTools={externalTools}
+              recentSendsPanelEnabled={recentSendsPanelEnabled}
               ticketUiFields={ticketUiFields}
               onUiFieldChange={handleUiFieldChange}
               columnLabels={columnLabels}
