@@ -5,7 +5,8 @@
  * - Ensures default SheetConfig exists
  * - Merges enabled cover-sheet tickets
  * - Migrates legacy SLA rows, refreshes holiday cache
- * - Queues background Gmail sync + archives stale Gmail links
+ * - Archives stale Gmail links
+ * - Remembers the list for POST /api/tickets/background-gmail-sync (does not wait on Gmail)
  * - Enriches last-response timestamps from overlay thread cache
  *
  * Mock path: USE_MOCK_DATA=true only (opt-in). Requires OAuth session otherwise
@@ -20,7 +21,10 @@ import { getMockTickets } from "@/lib/mock-data";
 import { migrateLegacyInitialResponseSla } from "@/lib/legacy-initial-sla-migration";
 import { loadTimerSettings } from "@/lib/crm-preferences-store";
 import { getSignedInUser } from "@/lib/google-auth";
-import { runBackgroundGmailSyncForTickets } from "@/lib/background-gmail-sync";
+import {
+  rememberTicketsForBackgroundGmailSync,
+  ticketsDueForBackgroundGmailSync,
+} from "@/lib/background-gmail-sync";
 import { archiveStaleGmailLinksForTickets } from "@/lib/gmail-link-archive";
 import { mergeOverlayOntoTicket } from "@/lib/overlay-db";
 import { enrichTicketsWithLastResponse } from "@/lib/tickets-enrich";
@@ -90,10 +94,12 @@ export async function GET() {
           mergeOverlayOntoTicket(ticket, undefined, timerSettings)
         );
       }
-      tickets = await runBackgroundGmailSyncForTickets(tickets, timerSettings);
     }
     const legacySlaCleared = migrateLegacyInitialResponseSla(tickets);
     tickets = enrichTicketsWithLastResponse(tickets, timerSettings);
+    rememberTicketsForBackgroundGmailSync(tickets, timerSettings);
+    const backgroundGmailSyncDue =
+      !useMock && hasAuth && ticketsDueForBackgroundGmailSync(tickets, timerSettings);
 
     const source = useMock ? "mock" : hasAuth ? "sheets" : "unauthenticated";
     recordOpsAppEvent({
@@ -113,6 +119,7 @@ export async function GET() {
         syncedAt: new Date().toISOString(),
         mappingWarnings,
         legacyInitialSlaCleared: legacySlaCleared > 0 ? legacySlaCleared : undefined,
+        backgroundGmailSyncDue,
       },
       { headers: NO_CACHE_HEADERS }
     );

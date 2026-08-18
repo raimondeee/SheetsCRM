@@ -1,9 +1,11 @@
 /**
- * Polls Gmail for pending/resolved tickets during ticket-list refresh.
+ * Polls Gmail for pending/resolved tickets after the ticket list is already shown.
  *
- * Not a standalone worker — invoked from GET /api/tickets with a concurrency cap.
- * Skips resolve-closed tickets and archived Gmail links. Intervals: pending ~10m;
- * resolved uses Preferences timer settings (default 24h).
+ * GET /api/tickets remembers the latest ticket snapshot and reports whether any
+ * rows are due. POST /api/tickets/background-gmail-sync runs this worker so list
+ * refresh is not blocked on Gmail. Skips resolve-closed tickets and archived
+ * Gmail links. Intervals: pending ~10m; resolved uses Preferences timer settings
+ * (default 24h).
  */
 import { syncGmailThreadForTicket } from "./gmail";
 import {
@@ -25,6 +27,55 @@ export const BACKGROUND_GMAIL_SYNC_PENDING_MS = 10 * 60 * 1000;
 export const BACKGROUND_GMAIL_SYNC_RESOLVED_MS = 24 * 60 * 60 * 1000;
 
 const MAX_CONCURRENT_SYNCS = 4;
+
+type RememberedTicketSnapshot = {
+  tickets: Ticket[];
+  timerSettings: TimerSettings;
+};
+
+let rememberedSnapshot: RememberedTicketSnapshot | null = null;
+let rememberedSyncInflight: Promise<number> | null = null;
+
+/** Keep the latest list in memory so background Gmail can run without a second sheet read. */
+export function rememberTicketsForBackgroundGmailSync(
+  tickets: Ticket[],
+  timerSettings: TimerSettings
+): void {
+  rememberedSnapshot = { tickets, timerSettings };
+}
+
+export function ticketsDueForBackgroundGmailSync(
+  tickets: Ticket[],
+  timerSettings: TimerSettings,
+  now = Date.now()
+): boolean {
+  return tickets.some((ticket) =>
+    isTicketDueForBackgroundGmailSync(ticket, now, timerSettings)
+  );
+}
+
+/** Sync due tickets from the last list snapshot. Coalesces overlapping calls. */
+export async function runRememberedBackgroundGmailSync(): Promise<number> {
+  if (rememberedSyncInflight) return rememberedSyncInflight;
+
+  const run = (async () => {
+    const snapshot = rememberedSnapshot;
+    if (!snapshot) return 0;
+    const due = snapshot.tickets.filter((ticket) =>
+      isTicketDueForBackgroundGmailSync(ticket, Date.now(), snapshot.timerSettings)
+    );
+    if (due.length === 0) return 0;
+    const synced = await syncTicketsWithConcurrency(due, MAX_CONCURRENT_SYNCS);
+    return synced.size;
+  })();
+
+  rememberedSyncInflight = run;
+  try {
+    return await run;
+  } finally {
+    if (rememberedSyncInflight === run) rememberedSyncInflight = null;
+  }
+}
 
 function resolvedSyncIntervalMs(timerSettings?: TimerSettings): number {
   const hours = timerSettings?.resolvedGmailPollHours;

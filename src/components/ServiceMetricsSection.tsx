@@ -21,18 +21,33 @@ import { ChartInfoTooltip } from "./ChartInfoTooltip";
 interface ServiceMetricsSectionProps {
   period: DashboardPeriod;
   marketManager: string;
+  /** When passed, skip the section's own fetch (parent already loaded metrics). */
+  metrics?: ServiceMetricsSnapshot | null;
+  loading?: boolean;
+  error?: string | null;
 }
 
-export function ServiceMetricsSection({ period, marketManager }: ServiceMetricsSectionProps) {
-  const [metrics, setMetrics] = useState<ServiceMetricsSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function ServiceMetricsSection({
+  period,
+  marketManager,
+  metrics: providedMetrics,
+  loading: providedLoading,
+  error: providedError,
+}: ServiceMetricsSectionProps) {
+  const isProvided =
+    providedMetrics !== undefined ||
+    providedLoading !== undefined ||
+    providedError !== undefined;
+  const [fetchedMetrics, setFetchedMetrics] = useState<ServiceMetricsSnapshot | null>(null);
+  const [fetchedLoading, setFetchedLoading] = useState(!isProvided);
+  const [fetchedError, setFetchedError] = useState<string | null>(null);
   const info = serviceMetricsInfoText();
 
   useEffect(() => {
+    if (isProvided) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setFetchedLoading(true);
+    setFetchedError(null);
     const params = new URLSearchParams({ period });
     if (marketManager !== "all") params.set("marketManager", marketManager);
 
@@ -40,22 +55,26 @@ export function ServiceMetricsSection({ period, marketManager }: ServiceMetricsS
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load service metrics");
-        if (!cancelled) setMetrics(data as ServiceMetricsSnapshot);
+        if (!cancelled) setFetchedMetrics(data as ServiceMetricsSnapshot);
       })
       .catch((err) => {
         if (!cancelled) {
-          setMetrics(null);
-          setError(err instanceof Error ? err.message : "Failed to load");
+          setFetchedMetrics(null);
+          setFetchedError(err instanceof Error ? err.message : "Failed to load");
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFetchedLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [period, marketManager]);
+  }, [isProvided, period, marketManager]);
+
+  const metrics = isProvided ? providedMetrics ?? null : fetchedMetrics;
+  const loading = isProvided ? Boolean(providedLoading) : fetchedLoading;
+  const error = isProvided ? providedError ?? null : fetchedError;
 
   if (loading) {
     return (

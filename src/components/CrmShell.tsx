@@ -4,19 +4,21 @@
  * Layer: UI orchestration (single-page app)
  *
  * Owns view switching (ticket list/detail, personal/team dashboards), auth chrome,
- * auto-refresh of GET /api/tickets, preferences/setup modals, calendar/wellness
- * reminders, optimistic status updates, and ticket chimes. Child components render
- * panels; this file coordinates shared ticket state and refresh side effects.
+ * auto-refresh of GET /api/tickets, follow-up background Gmail sync, preferences/setup
+ * modals, calendar/wellness reminders, optimistic status updates, and ticket chimes.
+ * Child components render panels; this file coordinates shared ticket state and
+ * refresh side effects.
  *
- * Ticket refresh is not a pure read: the tickets API may run background Gmail sync
- * and archive stale links. Prefer loadTickets() over ad-hoc fetches so debounce /
- * in-flight coalescing stay consistent.
+ * Ticket refresh is not a pure read: the tickets API may archive stale Gmail
+ * links and flag due background Gmail work. Prefer loadTickets() over ad-hoc
+ * fetches so debounce / in-flight coalescing stay consistent.
  *
  * @see docs/ENGINEERING_AND_SECURITY.md — Runtime architecture
  */
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { CircleHelp, LogIn, LogOut, RefreshCw, Settings, SlidersHorizontal } from "lucide-react";
 import type { CoverSheetEntry, SheetConfig, Ticket } from "@/lib/types";
 import { resolveSheetConfigForTicket } from "@/lib/cover-sheets";
@@ -31,8 +33,6 @@ import { Sidebar, type AppView } from "./Sidebar";
 import { TicketList } from "./TicketList";
 import { TicketDetail } from "./TicketDetail";
 import { TicketDetailTransition, type TicketLoadedCue } from "./TicketDetailTransition";
-import { DashboardView } from "./DashboardView";
-import { TeamDashboardView } from "./TeamDashboardView";
 import { SetupModal, type SetupModalTab } from "./SetupModal";
 import { BusinessHoursUpdatedModal } from "./BusinessHoursUpdatedModal";
 import { PreferencesModal } from "./PreferencesModal";
@@ -109,6 +109,24 @@ const AUTO_REFRESH_SECONDS =
   Number(process.env.NEXT_PUBLIC_AUTO_REFRESH_SECONDS) || 60;
 const AUTO_REFRESH_MS = AUTO_REFRESH_SECONDS * 1000;
 const TICKET_REFRESH_DEBOUNCE_MS = 900;
+
+const DashboardView = dynamic(
+  () => import("./DashboardView").then((mod) => mod.DashboardView),
+  { ssr: false, loading: () => <DashboardChunkPlaceholder label="Loading dashboard…" /> }
+);
+const TeamDashboardView = dynamic(
+  () => import("./TeamDashboardView").then((mod) => mod.TeamDashboardView),
+  { ssr: false, loading: () => <DashboardChunkPlaceholder label="Loading team dashboard…" /> }
+);
+
+function DashboardChunkPlaceholder({ label }: { label: string }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center justify-center bg-zendesk-bg text-sm text-zendesk-muted">
+      {label}
+    </div>
+  );
+}
+
 /** Keep local sheet-field edits until Google Sheets catch up on refresh. */
 const PENDING_SHEET_FIELD_TTL_MS = 20_000;
 
@@ -308,6 +326,7 @@ export function CrmShell() {
     const run = (async () => {
       if (silent) setSyncing(true);
       else setLoading(true);
+      let followUpGmail = false;
 
       try {
         const res = await fetch(`/api/tickets?_=${Date.now()}`, {
@@ -371,6 +390,7 @@ export function CrmShell() {
             source: data.source ?? "unknown",
           })
         );
+        followUpGmail = Boolean(data.backgroundGmailSyncDue) && reason !== "gmail-sync";
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load tickets";
         if (!silent) {
@@ -388,6 +408,22 @@ export function CrmShell() {
         loadTicketsPendingRef.current = null;
         if (pending) {
           void loadTickets(pending);
+        } else if (followUpGmail) {
+          void (async () => {
+            try {
+              const syncRes = await fetch("/api/tickets/background-gmail-sync", {
+                method: "POST",
+                cache: "no-store",
+                credentials: "same-origin",
+              });
+              const syncData = await syncRes.json();
+              if (syncRes.ok && Number(syncData.synced) > 0) {
+                await loadTickets({ silent: true, reason: "gmail-sync" });
+              }
+            } catch {
+              /* Next auto-refresh retries Gmail; list is already visible. */
+            }
+          })();
         }
       }
     })();
@@ -512,6 +548,16 @@ export function CrmShell() {
     return () => {
       if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      // Browser shows a generic "Leave site?" prompt (bookmark bar, refresh, close tab).
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
   async function handleSignOut() {
@@ -643,6 +689,15 @@ export function CrmShell() {
   function handleSortOrderChange(order: UserPreferences["sortOrder"]) {
     setSortOrder(order);
     persistPreferences({ sortOrder: order });
+  }
+
+  function handleListSortCycle(next: {
+    sortBy: UserPreferences["sortBy"];
+    sortOrder: UserPreferences["sortOrder"];
+  }) {
+    setSortBy(next.sortBy);
+    setSortOrder(next.sortOrder);
+    persistPreferences({ sortBy: next.sortBy, sortOrder: next.sortOrder });
   }
 
   function handleDashboardRollingPeriodChange(period: RollingDashboardPeriod) {
@@ -1584,6 +1639,7 @@ export function CrmShell() {
             onSortByChange={handleSortByChange}
             sortOrder={sortOrder}
             onSortOrderChange={handleSortOrderChange}
+            onListSortCycle={handleListSortCycle}
             qualityFilters={qualityFilters}
             onQualityFilterToggle={handleQualityFilterToggle}
             collapsed={ticketListCollapsed}

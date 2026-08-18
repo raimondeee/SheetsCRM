@@ -9,6 +9,7 @@ export type CrmTicketEventKind =
   | "anchor_backfill"
   | "gmail_link_archived"
   | "gmail_thread_reset"
+  | "intake_replaced"
   | "sheet_resync"
   | "cover_ignore"
   | "email_sent"
@@ -65,6 +66,16 @@ export function logCrmTicketEvent(params: {
     params.detail ? JSON.stringify(params.detail) : null,
     params.createdAt ?? new Date().toISOString()
   );
+}
+
+export function deleteCrmTicketEventsBefore(ticketRowId: string, beforeIso: string): number {
+  ensureCrmTicketEventsTable();
+  const result = getOverlayDb()
+    .prepare(
+      `DELETE FROM crm_ticket_events WHERE ticket_row_id = ? AND created_at < ?`
+    )
+    .run(ticketRowId, beforeIso);
+  return result.changes;
 }
 
 export function getCrmTicketEvents(ticketRowId: string, limit = 100): CrmTicketEvent[] {

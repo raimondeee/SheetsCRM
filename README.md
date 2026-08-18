@@ -721,9 +721,9 @@ cd ..
 zip -r SheetsCRM-share.zip SheetsCRM-share
 ```
 
-The script excludes `node_modules`, `.next`, `.git`, local databases, Mixmax tokens, and service-account keys. If your local `.env` has a real **Google OAuth Client ID + Secret**, those two values are copied into the share `.env` and `USE_MOCK_DATA` is set to `false` so the recipient can Sign in with Google without creating their own Cloud client. Treat the zip as **private** (same trust as handing them the client secret).
+The script excludes `node_modules`, `.next`, `.git`, local databases, Mixmax tokens, and service-account keys. **Your local `.env` must have a real Google OAuth Client ID + Secret** — those two values are always written into the share `.env` and `USE_MOCK_DATA` is set to `false`, so teammates only **Sign in with Google** (no pasting credentials over chat). Treat the zip as **private** (same trust as handing them the client secret).
 
-If OAuth values are missing locally, the share `.env` keeps placeholders and `SHARE_PACKAGING.txt` tells the coworker what to paste.
+If OAuth is missing locally, `share:export` exits with an error. Placeholder-only packaging requires `ALLOW_SHARE_WITHOUT_OAUTH=1` (not recommended for team handoff).
 
 See `SHARE_PACKAGING.txt` inside the export for a handoff checklist.
 

@@ -251,7 +251,12 @@ main() {
   echo "Setup complete."
   echo "Next: double-click 'Open SheetsCRM.command' to start the CRM."
   echo "Attachments save under ~/Documents/SheetsCRM-Attachments (Row {n} subfolders)."
-  echo "For live Google data, configure OAuth credentials in the app's Setup → Environment screen."
+  if [ -f .env ] && grep -qE '^[[:space:]]*GOOGLE_CLIENT_ID=.*apps\.googleusercontent\.com' .env \
+    && ! grep -qE 'your-google-oauth' .env; then
+    echo "Google OAuth client is already in .env — open the CRM and Sign in with Google."
+  else
+    echo "For live Google data, configure OAuth credentials in Setup → Environment (or use a team share zip that already includes them)."
+  fi
   pause_before_exit
 }
 

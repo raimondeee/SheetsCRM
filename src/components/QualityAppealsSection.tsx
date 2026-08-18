@@ -38,6 +38,10 @@ interface QualityAppealsSectionProps {
   agentFilter?: string;
   onAgentFilterChange?: (value: string) => void;
   showSectionExport?: boolean;
+  /** When passed, skip the section's own fetch (parent already loaded metrics). */
+  metrics?: QualityAppealMetricsSnapshot | null;
+  loading?: boolean;
+  error?: string | null;
 }
 
 export function QualityAppealsSection({
@@ -45,14 +49,21 @@ export function QualityAppealsSection({
   agentFilter: agentFilterProp,
   onAgentFilterChange,
   showSectionExport = true,
+  metrics: providedMetrics,
+  loading: providedLoading,
+  error: providedError,
 }: QualityAppealsSectionProps) {
   const [internalAgentFilter, setInternalAgentFilter] = useState<string>("all");
   const agentFilterControlled = agentFilterProp !== undefined && onAgentFilterChange !== undefined;
   const agentFilter = agentFilterControlled ? agentFilterProp : internalAgentFilter;
   const setAgentFilter = agentFilterControlled ? onAgentFilterChange : setInternalAgentFilter;
-  const [metrics, setMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const isProvided =
+    providedMetrics !== undefined ||
+    providedLoading !== undefined ||
+    providedError !== undefined;
+  const [fetchedMetrics, setFetchedMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
+  const [fetchedLoading, setFetchedLoading] = useState(!isProvided);
+  const [fetchedError, setFetchedError] = useState<string | null>(null);
   const info = qualityAppealInfoText();
   const sources = qualityReportSourceLinks();
   const qualityPrintRef = useRef<HTMLDivElement>(null);
@@ -62,9 +73,10 @@ export function QualityAppealsSection({
   );
 
   useEffect(() => {
+    if (isProvided) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setFetchedLoading(true);
+    setFetchedError(null);
     const params = new URLSearchParams({ period });
     if (agentFilter !== "all") params.set("agent", agentFilter);
 
@@ -72,22 +84,26 @@ export function QualityAppealsSection({
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load quality appeals");
-        if (!cancelled) setMetrics(data as QualityAppealMetricsSnapshot);
+        if (!cancelled) setFetchedMetrics(data as QualityAppealMetricsSnapshot);
       })
       .catch((err) => {
         if (!cancelled) {
-          setMetrics(null);
-          setError(err instanceof Error ? err.message : "Failed to load");
+          setFetchedMetrics(null);
+          setFetchedError(err instanceof Error ? err.message : "Failed to load");
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFetchedLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [period, agentFilter]);
+  }, [isProvided, period, agentFilter]);
+
+  const metrics = isProvided ? providedMetrics ?? null : fetchedMetrics;
+  const loading = isProvided ? Boolean(providedLoading) : fetchedLoading;
+  const error = isProvided ? providedError ?? null : fetchedError;
 
   useEffect(() => {
     if (!agentFilterControlled) {

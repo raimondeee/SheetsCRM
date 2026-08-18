@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Create a copy of SheetsCRM safe to zip for private team handoff.
-# Includes shared Google OAuth client id/secret from your local .env when present.
+# Always embeds shared Google OAuth client id/secret from your local .env into
+# the recipient .env (required unless ALLOW_SHARE_WITHOUT_OAUTH=1).
 # Still excludes Mixmax/SA secrets, overlay DB, node_modules, and .git.
 set -euo pipefail
 
@@ -57,8 +58,25 @@ if [[ -n "$GOOGLE_CLIENT_ID_VALUE" && -n "$GOOGLE_CLIENT_SECRET_VALUE" \
   OAUTH_INCLUDED=1
   USE_MOCK_DATA_VALUE="false"
 else
-  GOOGLE_CLIENT_ID_VALUE="${GOOGLE_CLIENT_ID_VALUE:-your-google-oauth-client-id.apps.googleusercontent.com}"
-  GOOGLE_CLIENT_SECRET_VALUE="${GOOGLE_CLIENT_SECRET_VALUE:-your-google-oauth-client-secret}"
+  echo "ERROR: Refusing to build a shareable copy without real Google OAuth credentials."
+  echo
+  echo "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in:"
+  echo "  $ROOT/.env"
+  echo "(Setup → Environment also writes these keys.)"
+  echo
+  echo "Team handoff always embeds those values into the recipient's .env so they"
+  echo "only need to Sign in with Google — not paste Client ID/Secret over chat."
+  echo
+  echo "To build a placeholder-only copy anyway (not recommended):"
+  echo "  ALLOW_SHARE_WITHOUT_OAUTH=1 npm run share:export"
+  if [[ "${ALLOW_SHARE_WITHOUT_OAUTH:-}" == "1" ]]; then
+    echo
+    echo "ALLOW_SHARE_WITHOUT_OAUTH=1 set — continuing with placeholders."
+    GOOGLE_CLIENT_ID_VALUE="${GOOGLE_CLIENT_ID_VALUE:-your-google-oauth-client-id.apps.googleusercontent.com}"
+    GOOGLE_CLIENT_SECRET_VALUE="${GOOGLE_CLIENT_SECRET_VALUE:-your-google-oauth-client-secret}"
+  else
+    exit 1
+  fi
 fi
 
 if [[ -z "$DEFAULT_SHEET_URL_VALUE" || "$DEFAULT_SHEET_URL_VALUE" == *YOUR_SPREADSHEET_ID* ]]; then

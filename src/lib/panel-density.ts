@@ -41,6 +41,54 @@ export function panelTextSizes(fontScale: number): {
   };
 }
 
+export type TicketListSortMode = "newest" | "oldest" | "recent";
+
+/** Map stored prefs to the ticket-list cycle control. */
+export function ticketListSortMode(
+  sortBy: "submitted" | "updated",
+  sortOrder: "asc" | "desc"
+): TicketListSortMode {
+  if (sortBy === "updated") return "recent";
+  return sortOrder === "asc" ? "oldest" : "newest";
+}
+
+export function ticketListSortModeLabel(mode: TicketListSortMode): string {
+  switch (mode) {
+    case "newest":
+      return "Newest";
+    case "oldest":
+      return "Oldest";
+    case "recent":
+      return "Recent";
+  }
+}
+
+export function ticketListSortModeTitle(mode: TicketListSortMode): string {
+  switch (mode) {
+    case "newest":
+      return "Newest form submissions first — click for oldest";
+    case "oldest":
+      return "Oldest form submissions first — click for most recently updated";
+    case "recent":
+      return "Most recently updated first — click for newest submissions";
+  }
+}
+
+/** Advance Newest → Oldest → Recent → Newest. */
+export function nextTicketListSortMode(mode: TicketListSortMode): {
+  sortBy: "submitted" | "updated";
+  sortOrder: "asc" | "desc";
+} {
+  switch (mode) {
+    case "newest":
+      return { sortBy: "submitted", sortOrder: "asc" };
+    case "oldest":
+      return { sortBy: "updated", sortOrder: "desc" };
+    case "recent":
+      return { sortBy: "submitted", sortOrder: "desc" };
+  }
+}
+
 export function panelSortByLabel(sortBy: "submitted" | "updated", compact: boolean): string {
   if (compact) {
     return sortBy === "submitted" ? "Submitted" : "Updated";
@@ -51,12 +99,10 @@ export function panelSortByLabel(sortBy: "submitted" | "updated", compact: boole
 export function panelSortOrderLabel(
   sortBy: "submitted" | "updated",
   newestFirst: boolean,
-  compact: boolean
+  _compact: boolean
 ): string {
   if (sortBy === "updated") {
-    if (newestFirst) return compact ? "Recent" : "Recent";
-    return compact ? "Stale" : "Stale";
+    return newestFirst ? "Recent" : "Stale";
   }
-  if (newestFirst) return compact ? "Newest" : "Newest";
-  return compact ? "Oldest" : "Oldest";
+  return newestFirst ? "Newest" : "Oldest";
 }

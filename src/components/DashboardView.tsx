@@ -95,8 +95,11 @@ export function DashboardView({
   const [reviewTeamFilter, setReviewTeamFilter] = useState<string>("all");
   const [qualityAgentFilter, setQualityAgentFilter] = useState<string>("all");
   const [serviceMetrics, setServiceMetrics] = useState<ServiceMetricsSnapshot | null>(null);
+  const [serviceMetricsError, setServiceMetricsError] = useState<string | null>(null);
   const [reviewMetrics, setReviewMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(null);
+  const [reviewMetricsError, setReviewMetricsError] = useState<string | null>(null);
   const [qualityMetrics, setQualityMetrics] = useState<QualityAppealMetricsSnapshot | null>(null);
+  const [qualityMetricsError, setQualityMetricsError] = useState<string | null>(null);
   const [hostProfiles, setHostProfiles] = useState<HostProfileNameMap>({});
   const [hostProfilesSheetName, setHostProfilesSheetName] = useState<string | null>(null);
   const [metricsRefreshKey, setMetricsRefreshKey] = useState(0);
@@ -142,50 +145,65 @@ export function DashboardView({
     const qualityParams = new URLSearchParams({ period });
     if (qualityAgentFilter !== "all") qualityParams.set("agent", qualityAgentFilter);
 
-    Promise.all([
-      fetch(`/api/dashboard/service-metrics?${serviceParams}`, { cache: "no-store" }).then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load service metrics");
-        return data as ServiceMetricsSnapshot;
-      }),
+    async function readJson<T>(res: Response, fallback: string): Promise<T> {
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || fallback);
+      return data as T;
+    }
+
+    Promise.allSettled([
+      fetch(`/api/dashboard/service-metrics?${serviceParams}`, { cache: "no-store" }).then((res) =>
+        readJson<ServiceMetricsSnapshot>(res, "Failed to load service metrics")
+      ),
       fetch(`/api/dashboard/review-escalation-metrics?${reviewParams}`, { cache: "no-store" }).then(
-        async (res) => {
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Failed to load review escalations");
-          return data as ReviewEscalationMetricsSnapshot;
-        }
+        (res) => readJson<ReviewEscalationMetricsSnapshot>(res, "Failed to load review escalations")
       ),
       fetch(`/api/dashboard/quality-appeal-metrics?${qualityParams}`, { cache: "no-store" }).then(
-        async (res) => {
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Failed to load quality appeals");
-          return data as QualityAppealMetricsSnapshot;
-        }
+        (res) => readJson<QualityAppealMetricsSnapshot>(res, "Failed to load quality appeals")
       ),
-      fetch("/api/dashboard/host-profiles", { cache: "no-store" }).then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load host profiles");
-        return data as { profiles?: HostProfileNameMap; sheetName?: string | null };
-      }),
-    ])
-      .then(([service, review, quality, profiles]) => {
-        if (!cancelled) {
-          setServiceMetrics(service);
-          setReviewMetrics(review);
-          setQualityMetrics(quality);
-          setHostProfiles(profiles.profiles ?? {});
-          setHostProfilesSheetName(profiles.sheetName ?? null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setServiceMetrics(null);
-          setReviewMetrics(null);
-          setQualityMetrics(null);
-          setHostProfiles({});
-          setHostProfilesSheetName(null);
-        }
-      });
+      fetch("/api/dashboard/host-profiles", { cache: "no-store" }).then((res) =>
+        readJson<{ profiles?: HostProfileNameMap; sheetName?: string | null }>(
+          res,
+          "Failed to load host profiles"
+        )
+      ),
+    ]).then(([service, review, quality, profiles]) => {
+      if (cancelled) return;
+      if (service.status === "fulfilled") {
+        setServiceMetrics(service.value);
+        setServiceMetricsError(null);
+      } else {
+        setServiceMetrics(null);
+        setServiceMetricsError(
+          service.reason instanceof Error ? service.reason.message : "Failed to load"
+        );
+      }
+      if (review.status === "fulfilled") {
+        setReviewMetrics(review.value);
+        setReviewMetricsError(null);
+      } else {
+        setReviewMetrics(null);
+        setReviewMetricsError(
+          review.reason instanceof Error ? review.reason.message : "Failed to load"
+        );
+      }
+      if (quality.status === "fulfilled") {
+        setQualityMetrics(quality.value);
+        setQualityMetricsError(null);
+      } else {
+        setQualityMetrics(null);
+        setQualityMetricsError(
+          quality.reason instanceof Error ? quality.reason.message : "Failed to load"
+        );
+      }
+      if (profiles.status === "fulfilled") {
+        setHostProfiles(profiles.value.profiles ?? {});
+        setHostProfilesSheetName(profiles.value.sheetName ?? null);
+      } else {
+        setHostProfiles({});
+        setHostProfilesSheetName(null);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -607,7 +625,13 @@ export function DashboardView({
       </div>
 
       <div className="space-y-4">
-        <ServiceMetricsSection period={period} marketManager={marketManagerFilter} />
+        <ServiceMetricsSection
+          period={period}
+          marketManager={marketManagerFilter}
+          metrics={serviceMetrics}
+          loading={serviceMetrics === null && !serviceMetricsError}
+          error={serviceMetricsError}
+        />
 
         <ReviewEscalationsSection
           period={period}
@@ -615,6 +639,9 @@ export function DashboardView({
           teamFilter={reviewTeamFilter}
           onTeamFilterChange={setReviewTeamFilter}
           showSectionExport={false}
+          metrics={reviewMetrics}
+          loading={reviewMetrics === null && !reviewMetricsError}
+          error={reviewMetricsError}
         />
 
         <QualityAppealsSection
@@ -622,6 +649,9 @@ export function DashboardView({
           agentFilter={qualityAgentFilter}
           onAgentFilterChange={setQualityAgentFilter}
           showSectionExport={false}
+          metrics={qualityMetrics}
+          loading={qualityMetrics === null && !qualityMetricsError}
+          error={qualityMetricsError}
         />
       </div>
       </div>

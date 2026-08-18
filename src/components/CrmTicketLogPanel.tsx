@@ -64,6 +64,8 @@ function kindLabel(kind: string): string {
       return "Gmail archived";
     case "gmail_thread_reset":
       return "Gmail reset";
+    case "intake_replaced":
+      return "New intake";
     default:
       return kind;
   }

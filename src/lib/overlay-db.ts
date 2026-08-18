@@ -40,7 +40,12 @@ import {
   normalizeStatusId,
 } from "./status-mapper";
 import { businessHoursFromSheetConfig, type BusinessHoursConfig } from "./business-hours";
-import { ensureCrmTicketEventsTable, logCrmTicketEvent } from "./crm-ticket-log";
+import {
+  deleteCrmTicketEventsBefore,
+  ensureCrmTicketEventsTable,
+  logCrmTicketEvent,
+} from "./crm-ticket-log";
+import { parseSheetTimestamp } from "./ticket-activity";
 import {
   combineNotesForPendingInference,
   resolvePendingTimerAnchor,
@@ -402,6 +407,11 @@ function getDb(): Database.Database {
   } catch {
     /* column exists */
   }
+  try {
+    db.exec(`ALTER TABLE ticket_overlay ADD COLUMN intake_identity TEXT`);
+  } catch {
+    /* column exists */
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS message_attachments (
@@ -549,13 +559,15 @@ export interface TicketOverlay {
   airbnbUserIdSource: AirbnbUserIdSource;
   initialResponseSlaCleared: boolean;
   linkedCases: [string, string, string];
+  /** Timestamp + requester email when this overlay row was last bound to a sheet intake. */
+  intakeIdentity: string | null;
   exists: boolean;
 }
 
 function readOverlayRow(rowId: string): TicketOverlay {
   const row = getDb()
     .prepare(
-      "SELECT status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, gmail_thread_open_url, contact_reason, contact_reason_source, status_changed_at, pending_reopen_hours, resolved_closed, sla_hours, sla_due_at, crm_airbnb_user_id, airbnb_user_id_source, initial_response_sla_cleared, linked_case_1, linked_case_2, linked_case_3 FROM ticket_overlay WHERE row_id = ?"
+      "SELECT status, status_source, sheet_status, crm_subject, admin_notes, admin_notes_source, sheet_case_summary, gmail_thread_id, gmail_thread_open_url, contact_reason, contact_reason_source, status_changed_at, pending_reopen_hours, resolved_closed, sla_hours, sla_due_at, crm_airbnb_user_id, airbnb_user_id_source, initial_response_sla_cleared, linked_case_1, linked_case_2, linked_case_3, intake_identity FROM ticket_overlay WHERE row_id = ?"
     )
     .get(rowId) as
     | {
@@ -581,6 +593,7 @@ function readOverlayRow(rowId: string): TicketOverlay {
         linked_case_1: string | null;
         linked_case_2: string | null;
         linked_case_3: string | null;
+        intake_identity: string | null;
       }
     | undefined;
 
@@ -605,6 +618,7 @@ function readOverlayRow(rowId: string): TicketOverlay {
       airbnbUserIdSource: "sheet",
       initialResponseSlaCleared: false,
       linkedCases: ["", "", ""],
+      intakeIdentity: null,
       exists: false,
     };
   }
@@ -640,6 +654,7 @@ function readOverlayRow(rowId: string): TicketOverlay {
       row.linked_case_2?.trim() ?? "",
       row.linked_case_3?.trim() ?? "",
     ],
+    intakeIdentity: row.intake_identity?.trim() || null,
     exists: true,
   };
 }
@@ -2473,18 +2488,225 @@ export function resyncCoverTicketOverlayFromSheet(
 
 // --- Sheet row ⊕ overlay merge (used on every ticket list/detail load) --------
 
+function buildIntakeIdentity(ticket: Ticket): string {
+  const timestamp = ticket.timestamp.trim();
+  const email = ticket.requesterEmail.trim().toLowerCase();
+  if (!timestamp && !email) return "";
+  return `${timestamp}\u0000${email}`;
+}
+
+function writeIntakeIdentity(rowId: string, identity: string | null): void {
+  getDb()
+    .prepare(`UPDATE ticket_overlay SET intake_identity = ? WHERE row_id = ?`)
+    .run(identity, rowId);
+}
+
+/** Timezone slack when comparing sheet intake time to overlay event timestamps. */
+const INTAKE_ACTIVITY_SKEW_MS = 12 * 60 * 60 * 1000;
+
+function overlayActivityCutoffIso(intakeTimestamp: string): string | null {
+  const intake = parseSheetTimestamp(intakeTimestamp);
+  if (!intake) return null;
+  return new Date(intake.getTime() - INTAKE_ACTIVITY_SKEW_MS).toISOString();
+}
+
+/**
+ * True when this row's CRM log or Gmail system notices started before the sheet
+ * intake. Imported customer mail is ignored so linking an older Gmail thread
+ * after intake does not look like a reused row.
+ */
+function overlayActivityPredatesIntake(rowId: string, intakeTimestamp: string): boolean {
+  const cutoffIso = overlayActivityCutoffIso(intakeTimestamp);
+  if (!cutoffIso) return false;
+
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS hit WHERE EXISTS (
+         SELECT 1 FROM crm_ticket_events
+         WHERE ticket_row_id = ? AND created_at < ?
+       ) OR EXISTS (
+         SELECT 1 FROM thread_messages
+         WHERE ticket_row_id = ? AND direction = 'system' AND sent_at < ?
+       )`
+    )
+    .get(rowId, cutoffIso, rowId, cutoffIso) as { hit: number } | undefined;
+  return Boolean(row);
+}
+
+function crmAirbnbUserIdWasSetAfterIntake(rowId: string, cutoffIso: string): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT created_at FROM crm_ticket_events
+       WHERE ticket_row_id = ?
+         AND kind = 'sheet_write'
+         AND summary LIKE '%airbnbUserId%'
+         AND created_at >= ?
+       ORDER BY created_at DESC
+       LIMIT 1`
+    )
+    .get(rowId, cutoffIso) as { created_at: string } | undefined;
+  return Boolean(row?.created_at);
+}
+
+function deleteComposerStateBefore(rowId: string, beforeIso: string): void {
+  const tables = getDb()
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name IN ('reply_drafts', 'admin_note_drafts', 'ticket_compose_prefs')`
+    )
+    .all() as Array<{ name: string }>;
+  const have = new Set(tables.map((row) => row.name));
+  if (have.has("reply_drafts")) {
+    getDb()
+      .prepare(
+        `DELETE FROM reply_drafts WHERE ticket_row_id = ? AND (updated_at IS NULL OR updated_at < ?)`
+      )
+      .run(rowId, beforeIso);
+  }
+  if (have.has("admin_note_drafts")) {
+    getDb()
+      .prepare(
+        `DELETE FROM admin_note_drafts WHERE ticket_row_id = ? AND (updated_at IS NULL OR updated_at < ?)`
+      )
+      .run(rowId, beforeIso);
+  }
+  if (have.has("ticket_compose_prefs")) {
+    getDb().prepare(`DELETE FROM ticket_compose_prefs WHERE ticket_row_id = ?`).run(rowId);
+  }
+}
+
+/**
+ * Drop leftover CRM state when a sheet row number is reused by a new form
+ * response (sort, insert, delete, or a later intake landing on the same row).
+ */
+function resetOverlayForReplacedIntake(
+  ticket: Ticket,
+  overlay: TicketOverlay,
+  timerSettings: TimerSettings
+): TicketOverlay {
+  const rowId = ticket.rowId;
+  const cutoffIso =
+    overlayActivityCutoffIso(ticket.timestamp) ?? new Date().toISOString();
+  const mappedFromSheet = mapSheetStatusToCrmId(ticket.sheetStatus);
+  const sheetStatusValue = ticket.sheetStatus.trim() || null;
+  const sheetCaseSummaryValue = ticket.sheetCaseSummary.trim() || null;
+  const sheetContactReason = ticket.contactReason.trim() || null;
+  const keepAirbnbUserId =
+    overlay.airbnbUserIdSource === "crm" &&
+    Boolean(overlay.crmAirbnbUserId?.trim()) &&
+    crmAirbnbUserIdWasSetAfterIntake(rowId, cutoffIso);
+  const now = new Date().toISOString();
+
+  const apply = getDb().transaction(() => {
+    getDb()
+      .prepare(
+        `DELETE FROM message_attachments WHERE thread_message_id IN (
+           SELECT id FROM thread_messages WHERE ticket_row_id = ? AND sent_at < ?
+         )`
+      )
+      .run(rowId, cutoffIso);
+    getDb()
+      .prepare(`DELETE FROM thread_messages WHERE ticket_row_id = ? AND sent_at < ?`)
+      .run(rowId, cutoffIso);
+    getDb()
+      .prepare(`DELETE FROM blocked_gmail_messages WHERE ticket_row_id = ?`)
+      .run(rowId);
+    getDb().prepare(`DELETE FROM ticket_gmail_threads WHERE ticket_row_id = ?`).run(rowId);
+    deleteCrmTicketEventsBefore(rowId, cutoffIso);
+    deleteComposerStateBefore(rowId, cutoffIso);
+
+    getDb()
+      .prepare(
+        `UPDATE ticket_overlay SET
+           status = ?,
+           status_source = 'sheet',
+           sheet_status = ?,
+           crm_subject = NULL,
+           admin_notes = ?,
+           admin_notes_source = 'sheet',
+           sheet_case_summary = ?,
+           gmail_thread_id = NULL,
+           gmail_thread_open_url = NULL,
+           gmail_thread_linked_at = NULL,
+           force_new_gmail_thread_on_send = 0,
+           contact_reason = ?,
+           contact_reason_source = 'sheet',
+           status_changed_at = NULL,
+           pending_reopen_hours = NULL,
+           resolved_closed = 0,
+           sla_hours = ?,
+           sla_due_at = NULL,
+           crm_airbnb_user_id = ?,
+           airbnb_user_id_source = ?,
+           linked_case_1 = NULL,
+           linked_case_2 = NULL,
+           linked_case_3 = NULL,
+           bg_gmail_sync_enabled_at = NULL,
+           bg_gmail_sync_last_at = NULL,
+           resolved_at = NULL,
+           gmail_link_archived_at = NULL,
+           intake_identity = ?,
+           updated_at = ?
+         WHERE row_id = ?`
+      )
+      .run(
+        mappedFromSheet,
+        sheetStatusValue,
+        sheetCaseSummaryValue,
+        sheetCaseSummaryValue,
+        sheetContactReason,
+        overlay.slaHours || timerSettings.defaultSlaHours,
+        keepAirbnbUserId ? overlay.crmAirbnbUserId : null,
+        keepAirbnbUserId ? "crm" : "sheet",
+        buildIntakeIdentity(ticket) || null,
+        now,
+        rowId
+      );
+  });
+  apply();
+
+  logCrmTicketEvent({
+    ticketRowId: rowId,
+    kind: "intake_replaced",
+    summary: "Reset CRM overlay — this sheet row now belongs to a new intake",
+    detail: {
+      previousStatus: overlay.status,
+      previousContactReason: overlay.contactReason,
+    },
+  });
+  console.warn(
+    `[SheetsCRM] Intake replaced on ${rowId}; cleared leftover CRM reason/status/Gmail state`
+  );
+
+  return readOverlayRow(rowId);
+}
+
 export function mergeOverlayOntoTicket(
   ticket: Ticket,
   sheetAirbnbUserId?: string,
   timerSettings: TimerSettings = DEFAULT_TIMER_SETTINGS
 ): Ticket {
-  const overlay = readOverlayRow(ticket.rowId);
+  let overlay = readOverlayRow(ticket.rowId);
   const sheetAd = sheetAirbnbUserId ?? ticket.airbnbUserId;
   const mappedFromSheet = mapSheetStatusToCrmId(ticket.sheetStatus);
   const sheetStatusValue = ticket.sheetStatus.trim() || null;
   const sheetCaseSummaryValue = ticket.sheetCaseSummary.trim() || null;
 
   const sheetContactReason = ticket.contactReason.trim() || null;
+  const intakeIdentity = buildIntakeIdentity(ticket);
+  const intakeIdentityChanged = Boolean(
+    overlay.exists &&
+      intakeIdentity &&
+      overlay.intakeIdentity &&
+      overlay.intakeIdentity !== intakeIdentity
+  );
+
+  if (
+    overlay.exists &&
+    (intakeIdentityChanged || overlayActivityPredatesIntake(ticket.rowId, ticket.timestamp))
+  ) {
+    overlay = resetOverlayForReplacedIntake(ticket, overlay, timerSettings);
+  }
 
   let status = overlay.status;
   let statusSource = overlay.statusSource;
@@ -2518,6 +2740,7 @@ export function mergeOverlayOntoTicket(
     if (mappedFromSheet === "pending" || mappedFromSheet === "resolved") {
       syncBackgroundGmailSyncForTicket(ticket.rowId, mappedFromSheet, false);
     }
+    if (intakeIdentity) writeIntakeIdentity(ticket.rowId, intakeIdentity);
   } else {
     if (contactReasonSource === "sheet" && sheetContactReason !== overlay.contactReason) {
       contactReason = sheetContactReason ?? "";
@@ -2636,6 +2859,10 @@ export function mergeOverlayOntoTicket(
     contactReason = refreshed.contactReason;
   } else if (refreshed.contactReason) {
     contactReason = refreshed.contactReason;
+  }
+
+  if (intakeIdentity && refreshed.intakeIdentity !== intakeIdentity) {
+    writeIntakeIdentity(ticket.rowId, intakeIdentity);
   }
 
   const slaHours = refreshed.slaHours || timerSettings.defaultSlaHours;

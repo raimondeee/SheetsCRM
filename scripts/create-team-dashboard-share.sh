@@ -57,8 +57,16 @@ if [[ -n "$GOOGLE_CLIENT_ID_VALUE" && -n "$GOOGLE_CLIENT_SECRET_VALUE" \
   && "$GOOGLE_CLIENT_SECRET_VALUE" != *your-google-oauth* ]]; then
   OAUTH_INCLUDED=1
 else
-  GOOGLE_CLIENT_ID_VALUE="${GOOGLE_CLIENT_ID_VALUE:-your-google-oauth-client-id.apps.googleusercontent.com}"
-  GOOGLE_CLIENT_SECRET_VALUE="${GOOGLE_CLIENT_SECRET_VALUE:-your-google-oauth-client-secret}"
+  echo "ERROR: Refusing to build Team Dashboard share without real Google OAuth credentials."
+  echo "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in $ROOT/.env first."
+  echo "Override (not recommended): ALLOW_SHARE_WITHOUT_OAUTH=1 npm run share:team-dashboard"
+  if [[ "${ALLOW_SHARE_WITHOUT_OAUTH:-}" == "1" ]]; then
+    echo "ALLOW_SHARE_WITHOUT_OAUTH=1 set — continuing with placeholders."
+    GOOGLE_CLIENT_ID_VALUE="${GOOGLE_CLIENT_ID_VALUE:-your-google-oauth-client-id.apps.googleusercontent.com}"
+    GOOGLE_CLIENT_SECRET_VALUE="${GOOGLE_CLIENT_SECRET_VALUE:-your-google-oauth-client-secret}"
+  else
+    exit 1
+  fi
 fi
 
 echo "Creating Team Dashboard shareable copy at:"

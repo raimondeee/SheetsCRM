@@ -41,6 +41,10 @@ interface ReviewEscalationsSectionProps {
   teamFilter?: string;
   onTeamFilterChange?: (value: string) => void;
   showSectionExport?: boolean;
+  /** When passed, skip the section's own fetch (parent already loaded metrics). */
+  metrics?: ReviewEscalationMetricsSnapshot | null;
+  loading?: boolean;
+  error?: string | null;
 }
 
 export function ReviewEscalationsSection({
@@ -49,14 +53,23 @@ export function ReviewEscalationsSection({
   teamFilter: teamFilterProp,
   onTeamFilterChange,
   showSectionExport = true,
+  metrics: providedMetrics,
+  loading: providedLoading,
+  error: providedError,
 }: ReviewEscalationsSectionProps) {
   const [internalTeamFilter, setInternalTeamFilter] = useState<string>("all");
   const teamFilterControlled = teamFilterProp !== undefined && onTeamFilterChange !== undefined;
   const teamFilter = teamFilterControlled ? teamFilterProp : internalTeamFilter;
   const setTeamFilter = teamFilterControlled ? onTeamFilterChange : setInternalTeamFilter;
-  const [metrics, setMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const isProvided =
+    providedMetrics !== undefined ||
+    providedLoading !== undefined ||
+    providedError !== undefined;
+  const [fetchedMetrics, setFetchedMetrics] = useState<ReviewEscalationMetricsSnapshot | null>(
+    null
+  );
+  const [fetchedLoading, setFetchedLoading] = useState(!isProvided);
+  const [fetchedError, setFetchedError] = useState<string | null>(null);
   const info = reviewEscalationInfoText();
   const sources = qualityReportSourceLinks();
   const reviewPrintRef = useRef<HTMLDivElement>(null);
@@ -68,9 +81,10 @@ export function ReviewEscalationsSection({
   );
 
   useEffect(() => {
+    if (isProvided) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setFetchedLoading(true);
+    setFetchedError(null);
     const params = new URLSearchParams({ period });
     if (marketManager !== "all") params.set("marketManager", marketManager);
     if (teamFilter !== "all") params.set("team", teamFilter);
@@ -79,22 +93,26 @@ export function ReviewEscalationsSection({
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load review escalations");
-        if (!cancelled) setMetrics(data as ReviewEscalationMetricsSnapshot);
+        if (!cancelled) setFetchedMetrics(data as ReviewEscalationMetricsSnapshot);
       })
       .catch((err) => {
         if (!cancelled) {
-          setMetrics(null);
-          setError(err instanceof Error ? err.message : "Failed to load");
+          setFetchedMetrics(null);
+          setFetchedError(err instanceof Error ? err.message : "Failed to load");
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFetchedLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [period, marketManager, teamFilter]);
+  }, [isProvided, period, marketManager, teamFilter]);
+
+  const metrics = isProvided ? providedMetrics ?? null : fetchedMetrics;
+  const loading = isProvided ? Boolean(providedLoading) : fetchedLoading;
+  const error = isProvided ? providedError ?? null : fetchedError;
 
   useEffect(() => {
     if (!teamFilterControlled) {

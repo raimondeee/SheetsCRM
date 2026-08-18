@@ -88,7 +88,8 @@ export type TicketListRefreshReason =
   | "after-edit"
   | "visibility"
   | "manual"
-  | "setup";
+  | "setup"
+  | "gmail-sync";
 
 export function formatCrmRowRef(
   rowNumber?: number | null,

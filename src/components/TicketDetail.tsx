@@ -408,7 +408,6 @@ export function TicketDetail({
   const bccDraftRef = useRef(bccDraft);
   const newAdminNoteRef = useRef(newAdminNote);
   const ticketRowIdRef = useRef(ticket?.rowId ?? null);
-  const replyAttachmentsCountRef = useRef(0);
 
   useEffect(() => {
     replyBodyRef.current = replyBody;
@@ -418,10 +417,6 @@ export function TicketDetail({
     newAdminNoteRef.current = newAdminNote;
     ticketRowIdRef.current = ticket?.rowId ?? null;
   }, [replyBody, subjectSuffix, ccDraft, bccDraft, newAdminNote, ticket?.rowId]);
-
-  useEffect(() => {
-    replyAttachmentsCountRef.current = replyAttachments.length;
-  }, [replyAttachments.length]);
 
   useEffect(() => {
     onThreadUpdateRef.current = onThreadUpdate;
@@ -759,18 +754,6 @@ export function TicketDetail({
       void saveAdminNoteDraft(rowId, newAdminNoteRef.current);
     }
 
-    function hasUnsavedComposeWork(): boolean {
-      const flushed = replyEditorRef.current?.flush();
-      const body = normalizeDraftHtml(flushed ?? replyBodyRef.current);
-      replyBodyRef.current = body;
-      return (
-        !isRichTextEmpty(body) ||
-        replyAttachmentsCountRef.current > 0 ||
-        Boolean(ccDraftRef.current.trim()) ||
-        Boolean(bccDraftRef.current.trim())
-      );
-    }
-
     function onPageHide() {
       flushDraftsToStorage();
     }
@@ -779,12 +762,8 @@ export function TicketDetail({
       if (document.visibilityState === "hidden") flushDraftsToStorage();
     }
 
-    function onBeforeUnload(event: BeforeUnloadEvent) {
+    function onBeforeUnload() {
       flushDraftsToStorage();
-      if (!hasUnsavedComposeWork()) return;
-      // Browser shows a generic leave confirmation (Sheets-style).
-      event.preventDefault();
-      event.returnValue = "";
     }
 
     window.addEventListener("pagehide", onPageHide);

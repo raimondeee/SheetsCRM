@@ -17,7 +17,7 @@ import {
   ChevronRight,
   Search,
 } from "lucide-react";
-import { panelTextSizes, panelSortByLabel, panelSortOrderLabel } from "@/lib/panel-density";
+import { panelTextSizes, ticketListSortMode, ticketListSortModeLabel, ticketListSortModeTitle, nextTicketListSortMode } from "@/lib/panel-density";
 import { ticketListPrimaryLine } from "@/lib/email-subject";
 
 interface TicketListProps {
@@ -31,6 +31,7 @@ interface TicketListProps {
   onSortByChange: (by: SortBy) => void;
   sortOrder: SortOrder;
   onSortOrderChange: (order: SortOrder) => void;
+  onListSortCycle?: (next: { sortBy: SortBy; sortOrder: SortOrder }) => void;
   qualityFilters: TicketQualityFilter[];
   onQualityFilterToggle: (filter: TicketQualityFilter) => void;
   collapsed: boolean;
@@ -55,6 +56,7 @@ export function TicketList({
   onSortByChange,
   sortOrder,
   onSortOrderChange,
+  onListSortCycle,
   qualityFilters,
   onQualityFilterToggle,
   collapsed,
@@ -65,7 +67,7 @@ export function TicketList({
 }: TicketListProps) {
   const text = panelTextSizes(fontScale);
   const initialResponseLabel = `${initialResponseHours}h+`;
-  const sortNewestFirst = sortOrder === "desc";
+  const listSortMode = ticketListSortMode(sortBy, sortOrder);
   const missingReasonActive = qualityFilters.includes("missing_reason");
   const missingIdActive = qualityFilters.includes("missing_id");
 
@@ -78,10 +80,18 @@ export function TicketList({
   }
 
   const sortButtonBase = `h-7 rounded border px-2 ${text.tiny} font-medium leading-none`;
-  const sortByLabel = panelSortByLabel(sortBy, text.compact);
-  const sortOrderLabel = panelSortOrderLabel(sortBy, sortNewestFirst, text.compact);
   const listRef = useRef<HTMLDivElement>(null);
   const prevSelectedRef = useRef<string | null>(selectedId);
+
+  function cycleListSortMode() {
+    const next = nextTicketListSortMode(listSortMode);
+    if (onListSortCycle) {
+      onListSortCycle(next);
+      return;
+    }
+    onSortByChange(next.sortBy);
+    onSortOrderChange(next.sortOrder);
+  }
 
   useEffect(() => {
     if (!selectedId || selectedId === prevSelectedRef.current) return;
@@ -178,45 +188,23 @@ export function TicketList({
           >
             <span className="truncate">{text.compact ? "No ID" : "Missing ID"}</span>
           </button>
-        </div>
-        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_5rem] items-stretch gap-2">
           <button
             type="button"
-            onClick={() => onSortByChange(sortBy === "submitted" ? "updated" : "submitted")}
-            className={`${sortButtonBase} min-w-0 truncate ${
-              sortBy === "updated"
+            onClick={cycleListSortMode}
+            className={`${sortButtonBase} flex max-w-full items-center gap-1 ${
+              listSortMode === "recent"
                 ? "border-zendesk-green bg-green-50 text-zendesk-navy"
                 : "border-zendesk-border text-zendesk-muted hover:bg-gray-100"
             }`}
-            title={
-              sortBy === "submitted"
-                ? "Sorted by form submission date — click for recently updated"
-                : "Sorted by recently updated — click for form submission date"
-            }
-            aria-pressed={sortBy === "updated"}
+            title={ticketListSortModeTitle(listSortMode)}
+            aria-label={`Ticket sort: ${ticketListSortModeLabel(listSortMode)}. ${ticketListSortModeTitle(listSortMode)}`}
           >
-            <span className="block truncate">{sortByLabel}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSortOrderChange(sortNewestFirst ? "asc" : "desc")}
-            className={`${sortButtonBase} flex w-full shrink-0 items-center justify-center gap-1 border-zendesk-border text-zendesk-muted hover:bg-gray-100`}
-            title={
-              sortNewestFirst
-                ? sortBy === "updated"
-                  ? "Most recently updated first — click for least recent"
-                  : "Newest form submissions first — click for oldest first"
-                : sortBy === "updated"
-                  ? "Least recently updated first — click for most recent"
-                  : "Oldest form submissions first — click for newest first"
-            }
-          >
-            {sortNewestFirst ? (
-              <ArrowDownWideNarrow className={`${text.icon} shrink-0`} />
-            ) : (
+            {listSortMode === "oldest" ? (
               <ArrowUpWideNarrow className={`${text.icon} shrink-0`} />
+            ) : (
+              <ArrowDownWideNarrow className={`${text.icon} shrink-0`} />
             )}
-            <span className="truncate">{sortOrderLabel}</span>
+            <span className="truncate">{ticketListSortModeLabel(listSortMode)}</span>
           </button>
         </div>
       </div>

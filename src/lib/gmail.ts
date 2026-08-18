@@ -7,7 +7,7 @@
  * (overlay-db); Gmail remains the mailbox source of truth. Linking a thread to a
  * ticket is CRM-local — redaction clears CRM cache only, not Gmail itself.
  *
- * Related: background-gmail-sync (poll on ticket list refresh), ticket-gmail-threads
+ * Related: background-gmail-sync (poll after ticket list refresh), ticket-gmail-threads
  * (multi-thread link table), gmail-thread-link / gmail-urls for ID formats.
  */
 import { google } from "googleapis";
