@@ -1,7 +1,8 @@
 /**
  * Global API auth gate: require Google OAuth refresh cookie for /api/* except
- * auth routes (sign-in flow) and /api/env (localhost Host-gated setup before
- * first sign-in). Service accounts do not satisfy this check.
+ * auth routes (sign-in flow), /api/env (localhost Host-gated setup before
+ * first sign-in), and /api/ops/metrics (localhost-gated stall diagnostics).
+ * Service accounts do not satisfy this check.
  *
  * USE_MOCK_DATA=true bypasses the gate for local demos with synthetic tickets.
  */
@@ -11,6 +12,8 @@ import { GOOGLE_REFRESH_COOKIE } from "@/lib/auth-cookies";
 function isPublicApiPath(pathname: string): boolean {
   if (pathname.startsWith("/api/auth/")) return true;
   if (pathname === "/api/env" || pathname.startsWith("/api/env/")) return true;
+  // Localhost-gated in the route so stall/auth timings are visible before sign-in.
+  if (pathname === "/api/ops/metrics") return true;
   return false;
 }
 

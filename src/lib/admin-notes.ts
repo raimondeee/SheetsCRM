@@ -7,6 +7,9 @@ export function pendingWithoutEmailAdminNote(hours: PendingWithoutEmailHours): s
   return `Set to pending ${hours}h (no email sent)`;
 }
 
+export const LONGTERM_HOLD_WITHOUT_EMAIL_NOTE =
+  "Set to Longterm Hold/Bugs (no email sent)";
+
 /** @deprecated Use pendingWithoutEmailAdminNote(hours) */
 export const PENDING_WITHOUT_EMAIL_NOTE = "Set to pending (no email sent)";
 

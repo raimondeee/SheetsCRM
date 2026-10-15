@@ -6,7 +6,7 @@ export interface TimerSettings {
   longtermHoldReopenDays: number;
   /** Flag tickets with no outbound reply after this many business hours since intake. */
   initialResponseHours: number;
-  /** Default Response SLA hours — due time is anchored on the customer's last message. */
+  /** Default Response SLA hours — anchored on the customer's last message. Fri 5pm–Mon 7am Pacific does not count. */
   defaultSlaHours: number;
   /** How often to poll Gmail for reopen on Resolved tickets (not Resolve & Close), in hours. */
   resolvedGmailPollHours: number;

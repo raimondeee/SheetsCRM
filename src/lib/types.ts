@@ -23,6 +23,9 @@ export type ColumnRole =
   | "internalToolK"
   | "internalToolM"
   | "internalToolR"
+  | "inFavorOfHost"
+  | "csInTheWrong"
+  | "remediationSuccessful"
   | "airbnbUserId"
   | "reservationCode"
   | "claimNumber"
@@ -123,6 +126,12 @@ export interface Ticket {
   claimNumber: string;
   /** Listing ID from the mapped listing ID column */
   listingId: string;
+  /** Sheet P — In favor of host? (required when closing) */
+  inFavorOfHost: string;
+  /** Sheet Q — Was CS in the wrong / original decision wrong? */
+  csInTheWrong: string;
+  /** Sheet R — Was remediation successful (CS overturned)? */
+  remediationSuccessful: string;
   /** CRM overlay status */
   status: string;
   /** When status was set to pending/longterm_hold — anchors response timer while waiting */

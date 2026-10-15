@@ -342,3 +342,175 @@ export function formatBusinessMinutes(minutes: number | null): string {
   if (mins === 0) return `${hours}h`;
   return `${hours}h ${mins}m`;
 }
+
+/**
+ * Response SLA clock pause: Friday 5:00 PM through Monday 7:00 AM.
+ * Weeknights (Monday 7:00 AM–Friday 5:00 PM) still count. Pacific time so the
+ * server due instant and the browser countdown use the same window.
+ */
+export const SLA_WEEKEND_TIMEZONE = "America/Los_Angeles";
+export const SLA_WEEKEND_PAUSE_START_WEEKDAY = 5;
+export const SLA_WEEKEND_PAUSE_START_HOUR = 17;
+export const SLA_WEEKEND_PAUSE_END_WEEKDAY = 1;
+export const SLA_WEEKEND_PAUSE_END_HOUR = 7;
+export const SLA_WEEKEND_PAUSE_LABEL = "Fri 5:00 PM–Mon 7:00 AM Pacific";
+
+function zonedClockParts(date: Date, timezone: string) {
+  const parts = partsInTimezone(date, timezone);
+  return { ...parts, hour: parts.hour === 24 ? 0 : parts.hour };
+}
+
+/** True from Friday 5:00 PM inclusive until Monday 7:00 AM exclusive. */
+export function isSlaWeekendPaused(
+  date: Date,
+  timezone = SLA_WEEKEND_TIMEZONE
+): boolean {
+  const parts = zonedClockParts(date, timezone);
+  if (parts.weekday === 6 || parts.weekday === 0) return true;
+  if (
+    parts.weekday === SLA_WEEKEND_PAUSE_START_WEEKDAY &&
+    parts.hour >= SLA_WEEKEND_PAUSE_START_HOUR
+  ) {
+    return true;
+  }
+  if (
+    parts.weekday === SLA_WEEKEND_PAUSE_END_WEEKDAY &&
+    parts.hour < SLA_WEEKEND_PAUSE_END_HOUR
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Next Friday 5:00 PM at or after `instant` (the following week if already there). */
+function nextSlaWeekendPauseStart(instant: Date, timezone: string): Date {
+  const parts = zonedClockParts(instant, timezone);
+  let dayOffset = (SLA_WEEKEND_PAUSE_START_WEEKDAY - parts.weekday + 7) % 7;
+  if (dayOffset === 0 && parts.hour >= SLA_WEEKEND_PAUSE_START_HOUR) dayOffset = 7;
+  return makeZonedDate(
+    parts.year,
+    parts.month,
+    parts.day + dayOffset,
+    SLA_WEEKEND_PAUSE_START_HOUR,
+    0,
+    timezone
+  );
+}
+
+/** Next Monday 7:00 AM strictly after a paused instant. */
+function nextSlaWeekendResume(instant: Date, timezone: string): Date {
+  const parts = zonedClockParts(instant, timezone);
+  let dayOffset: number;
+  if (parts.weekday === SLA_WEEKEND_PAUSE_END_WEEKDAY && parts.hour < SLA_WEEKEND_PAUSE_END_HOUR) {
+    dayOffset = 0;
+  } else if (parts.weekday === 5) {
+    dayOffset = 3;
+  } else if (parts.weekday === 6) {
+    dayOffset = 2;
+  } else if (parts.weekday === 0) {
+    dayOffset = 1;
+  } else {
+    dayOffset = (SLA_WEEKEND_PAUSE_END_WEEKDAY - parts.weekday + 7) % 7;
+    if (dayOffset === 0) dayOffset = 7;
+  }
+  const resume = makeZonedDate(
+    parts.year,
+    parts.month,
+    parts.day + dayOffset,
+    SLA_WEEKEND_PAUSE_END_HOUR,
+    0,
+    timezone
+  );
+  if (resume.getTime() > instant.getTime()) return resume;
+  return makeZonedDate(
+    parts.year,
+    parts.month,
+    parts.day + dayOffset + 7,
+    SLA_WEEKEND_PAUSE_END_HOUR,
+    0,
+    timezone
+  );
+}
+
+/**
+ * Advance `hoursToAdd` on the response SLA clock.
+ * Time inside the Friday 5:00 PM–Monday 7:00 AM pause is skipped.
+ * An anchor that falls inside the pause starts at the following Monday 7:00 AM.
+ */
+export function addSlaClockHours(
+  start: Date,
+  hoursToAdd: number,
+  timezone = SLA_WEEKEND_TIMEZONE
+): Date {
+  if (!Number.isFinite(hoursToAdd) || hoursToAdd <= 0) return new Date(start);
+  let remainingMs = hoursToAdd * 60 * 60 * 1000;
+  let current = new Date(start);
+
+  for (let guard = 0; guard < 366 * 4 && remainingMs > 0; guard += 1) {
+    if (isSlaWeekendPaused(current, timezone)) {
+      const resume = nextSlaWeekendResume(current, timezone);
+      current =
+        resume.getTime() > current.getTime()
+          ? resume
+          : new Date(current.getTime() + 60 * 60 * 1000);
+      continue;
+    }
+
+    const pauseAt = nextSlaWeekendPauseStart(current, timezone);
+    let chunkMs = pauseAt.getTime() - current.getTime();
+    if (chunkMs <= 0) {
+      const resume = nextSlaWeekendResume(current, timezone);
+      current =
+        resume.getTime() > current.getTime()
+          ? resume
+          : new Date(current.getTime() + 60 * 60 * 1000);
+      continue;
+    }
+    if (chunkMs > remainingMs) chunkMs = remainingMs;
+    current = new Date(current.getTime() + chunkMs);
+    remainingMs -= chunkMs;
+  }
+
+  return current;
+}
+
+/** Signed SLA-clock milliseconds from `start` to `end`. Weekend pause hours are omitted. */
+export function diffSlaClockMs(
+  start: Date,
+  end: Date,
+  timezone = SLA_WEEKEND_TIMEZONE
+): number {
+  if (end.getTime() === start.getTime()) return 0;
+  const forward = end.getTime() > start.getTime();
+  const from = forward ? start : end;
+  const to = forward ? end : start;
+  let total = 0;
+  let cursor = new Date(from);
+
+  for (let guard = 0; guard < 366 * 4 && cursor.getTime() < to.getTime(); guard += 1) {
+    if (isSlaWeekendPaused(cursor, timezone)) {
+      const resume = nextSlaWeekendResume(cursor, timezone);
+      if (resume.getTime() <= cursor.getTime()) {
+        cursor = new Date(cursor.getTime() + 60 * 60 * 1000);
+        continue;
+      }
+      cursor = resume.getTime() >= to.getTime() ? new Date(to) : resume;
+      continue;
+    }
+
+    const pauseAt = nextSlaWeekendPauseStart(cursor, timezone);
+    const segmentEndMs = Math.min(to.getTime(), pauseAt.getTime());
+    if (segmentEndMs <= cursor.getTime()) {
+      const resume = nextSlaWeekendResume(cursor, timezone);
+      cursor =
+        resume.getTime() > cursor.getTime()
+          ? resume
+          : new Date(cursor.getTime() + 60 * 60 * 1000);
+      continue;
+    }
+    total += segmentEndMs - cursor.getTime();
+    cursor = new Date(segmentEndMs);
+  }
+
+  return forward ? total : -total;
+}

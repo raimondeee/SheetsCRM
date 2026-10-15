@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { fetchMixmaxTemplates, isMixmaxConfigured } from "@/lib/mixmax";
+import { withApiRequestLog } from "@/lib/ops-diagnostics";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  return withApiRequestLog(request, "/api/mixmax/templates", () => handleGet(request));
+}
+
+async function handleGet(request: Request) {
   if (!isMixmaxConfigured()) {
     return NextResponse.json({ enabled: false, templates: [] });
   }

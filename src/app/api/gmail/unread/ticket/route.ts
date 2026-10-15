@@ -6,6 +6,7 @@ import { extractEmailFromField } from "@/lib/email-utils";
 import { loadSheetConfig, linkExistingGmailThread } from "@/lib/overlay-db";
 import { getColumnByRole } from "@/lib/column-mapper";
 import { buildGmailThreadUrl } from "@/lib/gmail-urls";
+import { invalidateUnreadGmailCache } from "@/lib/gmail-unread-store";
 
 function displayNameFromFromHeader(from: string): string {
   const trimmed = from.trim();
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
       });
     }
 
+    invalidateUnreadGmailCache();
     return NextResponse.json({ ok: true, rowId, rowNumber, linked: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create ticket from unread Gmail";

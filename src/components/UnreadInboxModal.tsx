@@ -6,6 +6,11 @@ import { ChevronDown, ChevronRight, ExternalLink, Loader2, RefreshCw, X } from "
 import type { GmailUnreadThreadPreview, Ticket } from "@/lib/types";
 import { parseTicketRowId } from "@/lib/types";
 import { findLinkableTicketsForThread } from "@/lib/gmail-ticket-match";
+import {
+  getStaleCachedUnreadGmail,
+  removeCachedUnreadGmailThread,
+  setCachedUnreadGmail,
+} from "@/lib/gmail-unread-cache";
 
 interface UnreadInboxModalProps {
   tickets: Ticket[];
@@ -27,10 +32,13 @@ export function UnreadInboxModal({
   onCreatedTicket,
 }: UnreadInboxModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getStaleCachedUnreadGmail());
+  const [refreshing, setRefreshing] = useState(false);
   const [savingThreadId, setSavingThreadId] = useState<string | null>(null);
   const [dismissingThreadId, setDismissingThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<GmailUnreadThreadPreview[]>([]);
+  const [threads, setThreads] = useState<GmailUnreadThreadPreview[]>(
+    () => getStaleCachedUnreadGmail()?.threads ?? []
+  );
   const [error, setError] = useState<string | null>(null);
   const [expandedMatches, setExpandedMatches] = useState<Record<string, boolean>>({});
 
@@ -69,10 +77,22 @@ export function UnreadInboxModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  async function loadUnread() {
-    setLoading(true);
+  async function loadUnread(force = false) {
+    const stale = getStaleCachedUnreadGmail();
+    if (stale && !force) {
+      setThreads(stale.threads);
+      setLoading(false);
+      setRefreshing(true);
+    } else if (threads.length === 0) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
     try {
-      const res = await fetch("/api/gmail/unread?limit=50", {
+      const params = new URLSearchParams({ limit: "50" });
+      if (force) params.set("refresh", "1");
+      const res = await fetch(`/api/gmail/unread?${params.toString()}`, {
         cache: "no-store",
         credentials: "same-origin",
       });
@@ -80,19 +100,22 @@ export function UnreadInboxModal({
       if (!res.ok || data.error) {
         throw new Error(data.error ?? "Failed to load unread inbox");
       }
-      setThreads((data.unread ?? []) as GmailUnreadThreadPreview[]);
+      const next = (data.unread ?? []) as GmailUnreadThreadPreview[];
+      setCachedUnreadGmail(next);
+      setThreads(next);
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load unread inbox";
       setError(message);
-      setThreads([]);
+      if (!stale) setThreads([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
   useEffect(() => {
-    void loadUnread();
+    void loadUnread(false);
   }, []);
 
   async function prefetchTicketThread(rowId: string) {
@@ -142,7 +165,7 @@ export function UnreadInboxModal({
         throw new Error(data.error ?? "Failed to link thread to ticket");
       }
       onOpenTicket(ticket.rowId);
-      await loadUnread();
+      await loadUnread(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to link thread");
     } finally {
@@ -174,7 +197,7 @@ export function UnreadInboxModal({
         throw new Error(data.error ?? "Failed to create ticket");
       }
       onCreatedTicket(data.rowId as string);
-      await loadUnread();
+      await loadUnread(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create ticket");
     } finally {
@@ -195,6 +218,7 @@ export function UnreadInboxModal({
       if (!res.ok || data.error) {
         throw new Error(data.error ?? "Failed to mark thread as read");
       }
+      removeCachedUnreadGmailThread(thread.threadId);
       setThreads((prev) => prev.filter((item) => item.threadId !== thread.threadId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to mark thread as read");
@@ -233,11 +257,12 @@ export function UnreadInboxModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void loadUnread()}
-              className="inline-flex items-center gap-1 rounded border border-zendesk-border bg-white px-2 py-1 text-xs text-zendesk-navy hover:bg-gray-100"
+              onClick={() => void loadUnread(true)}
+              disabled={loading || refreshing}
+              className="inline-flex items-center gap-1 rounded border border-zendesk-border bg-white px-2 py-1 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-60"
             >
-              <RefreshCw className="h-3 w-3" />
-              Refresh
+              <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Updating…" : "Refresh"}
             </button>
             <button
               type="button"

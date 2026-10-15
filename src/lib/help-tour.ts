@@ -70,14 +70,14 @@ export const HELP_TOUR_SPOTS: HelpTourSpot[] = [
   {
     id: "set-pending",
     title: "Set to Pending",
-    body: "Marks the ticket Pending without sending email — useful when you are waiting on the customer or another team. Use the chevron to choose how long the pending timer should run.",
+    body: "Marks the ticket Pending without sending email — useful when you are waiting on the customer or another team. Open the menu to choose how long the pending timer should run, or set Longterm Hold/Bugs (reopens when the customer replies).",
     match: { text: "Set to Pending", tagNames: ["button"] },
     missingHint: "Select a ticket and keep the Email draft tab open to see status actions.",
   },
   {
     id: "resolve-close",
     title: "Resolve & Close",
-    body: "Resolves the ticket and closes it without sending a reply. Use this when the case is done and no outbound email is needed.",
+    body: "Resolves the ticket and closes it without sending a reply. You will be asked three required close-case questions (host outcome, CS, remediation) which write to sheet columns P–R.",
     match: { text: "Resolve & Close", tagNames: ["button"] },
     missingHint: "Select a ticket and keep the Email draft tab open to see status actions.",
   },

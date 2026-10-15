@@ -9,7 +9,7 @@ import {
   getTicketOverlay,
   ticketHasExplicitGmailLink,
 } from "./overlay-db";
-import { normalizeStatusId } from "./status-mapper";
+import { isClosedTicketStatus } from "./status-mapper";
 import type { Ticket } from "./types";
 import { defaultResolvedGmailLinkArchiveDays } from "./timer-settings";
 
@@ -20,11 +20,7 @@ function gmailLinkArchiveMs(days: number): number {
   return days * 24 * 60 * 60 * 1000;
 }
 
-const CLOSED_STATUSES = new Set(["resolved", "do_not_action"]);
-
-export function isClosedTicketStatus(status: string): boolean {
-  return CLOSED_STATUSES.has(normalizeStatusId(status));
-}
+export { isClosedTicketStatus };
 
 function ensureArchiveColumns(): void {
   const db = getOverlayDb();

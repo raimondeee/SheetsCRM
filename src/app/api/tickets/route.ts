@@ -34,6 +34,7 @@ import {
   listEnabledCoverSheetEntries,
 } from "@/lib/cover-sheets";
 import { prepareSheetConfig } from "@/lib/ui-field-slots";
+import { withApiRequestLog } from "@/lib/ops-diagnostics";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,7 +43,11 @@ const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  return withApiRequestLog(request, "/api/tickets", handleGet);
+}
+
+async function handleGet() {
   const started = Date.now();
   try {
     let config = loadSheetConfig("default");

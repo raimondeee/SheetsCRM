@@ -1,7 +1,10 @@
+import { addSlaClockHours, diffSlaClockMs, SLA_WEEKEND_PAUSE_LABEL } from "./business-hours";
 import { parseSheetTimestamp } from "./ticket-activity";
 import { normalizeStatusId } from "./status-mapper";
 import { DEFAULT_TIMER_SETTINGS } from "./timer-settings";
 import type { Ticket } from "./types";
+
+export { SLA_WEEKEND_PAUSE_LABEL };
 
 export const DEFAULT_SLA_HOURS = DEFAULT_TIMER_SETTINGS.defaultSlaHours;
 
@@ -45,10 +48,14 @@ export interface SlaCountdownPreview {
   tone: SlaCountdownTone;
 }
 
+/**
+ * Wall-clock instant when `slaHours` of SLA time have elapsed.
+ * Friday 5:00 PM through Monday 7:00 AM Pacific does not count.
+ */
 export function computeResponseSlaDueAt(anchorIso: string, slaHours: number): string {
   const anchor = new Date(anchorIso);
-  const base = Number.isNaN(anchor.getTime()) ? Date.now() : anchor.getTime();
-  return new Date(base + slaHours * 60 * 60 * 1000).toISOString();
+  const base = Number.isNaN(anchor.getTime()) ? new Date() : anchor;
+  return addSlaClockHours(base, slaHours).toISOString();
 }
 
 /** Anchor = latest inbound thread message, else form intake time. */
@@ -71,10 +78,21 @@ export function getSlaCountdownPreviewForTicket(ticket: Ticket): SlaCountdownPre
   return getSlaCountdownPreview(ticket.slaDueAt);
 }
 
-export function getSlaCountdownPreview(slaDueAt: string | null): SlaCountdownPreview | null {
-  if (!slaDueAt) return null;
+export function slaCountdownTitle(slaDueAt: string | null): string {
+  const due = slaDueAt ? new Date(slaDueAt).toLocaleString() : "";
+  const when = due ? `due ${due}. ` : "";
+  return `Response SLA ${when}${SLA_WEEKEND_PAUSE_LABEL} does not count.`;
+}
 
-  const diffMs = new Date(slaDueAt).getTime() - Date.now();
+export function getSlaCountdownPreview(
+  slaDueAt: string | null,
+  now = new Date()
+): SlaCountdownPreview | null {
+  if (!slaDueAt) return null;
+  const due = new Date(slaDueAt);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const diffMs = diffSlaClockMs(now, due);
   const hours = Math.round(diffMs / (60 * 60 * 1000));
 
   if (hours < 0) {

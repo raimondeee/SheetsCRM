@@ -43,10 +43,12 @@ export function BusinessHoursPanel({ value, onChange }: BusinessHoursPanelProps)
       <div>
         <h3 className="text-sm font-semibold text-zendesk-navy">Business hours</h3>
         <p className="mt-1 text-sm text-zendesk-muted">
-          Used for service metrics and SLA clocks. Time outside these hours does not count —
-          including intakes submitted after hours (the clock starts at the next open window). US
-          federal holidays from the shared Google Holidays calendar are also excluded. Pending
-          auto-reopen uses weekday hours (24h on workdays, weekends excluded), not this schedule.
+          Used for service metrics and the initial-response flag. Time outside these hours does
+          not count — including intakes submitted after hours (the clock starts at the next open
+          window). US federal holidays from the shared Google Holidays calendar are also excluded.
+          Inbox response-SLA tags pause Friday 5:00 PM–Monday 7:00 AM Pacific instead (weeknights
+          still count). Pending auto-reopen uses weekday hours (24h on workdays, weekends excluded),
+          not this schedule.
         </p>
         <p className="mt-2 text-xs text-zendesk-muted">
           Current schedule: <strong>{formatBusinessHoursLabel(hours)}</strong>

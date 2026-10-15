@@ -84,6 +84,12 @@ export function isTerminalTicketStatus(statusId: string): boolean {
   return normalizeStatusId(statusId) === "do_not_action";
 }
 
+/** Resolved or Do Not Action — ticket is closed for intake reporting. */
+export function isClosedTicketStatus(statusId: string): boolean {
+  const normalized = normalizeStatusId(statusId);
+  return normalized === "resolved" || normalized === "do_not_action";
+}
+
 /** Resolved via Resolve & Close — no auto-reopen or background Gmail polling. */
 export function blocksTicketAutoReopen(statusId: string, resolvedClosed: boolean): boolean {
   if (isTerminalTicketStatus(statusId)) return true;

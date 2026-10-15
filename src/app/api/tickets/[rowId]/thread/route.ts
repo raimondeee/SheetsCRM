@@ -23,12 +23,18 @@ import { sendReplyEmail, syncGmailThreadForTicket } from "@/lib/gmail";
 import { parseOutboundAttachments } from "@/lib/outbound-attachments";
 import { isCompleteEmailSubject } from "@/lib/email-subject";
 import { mapCrmStatusToSheetValue } from "@/lib/status-mapper";
-import { markUserEmailedOnSheet, updateSheetStatusOnSheet } from "@/lib/sheets";
+import { markUserEmailedOnSheet, updateCloseOutcomeOnSheet, updateSheetStatusOnSheet } from "@/lib/sheets";
 import { loadTimerSettings } from "@/lib/crm-preferences-store";
 import { getSignedInUser } from "@/lib/google-auth";
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
 import { logCrmTicketEvent } from "@/lib/crm-ticket-log";
+import {
+  CLOSE_OUTCOME_REQUIRED_MESSAGE,
+  parseCloseOutcomeFromUnknown,
+  requiresCloseOutcomeAnswers,
+} from "@/lib/close-outcome";
+import { withApiRequestLog } from "@/lib/ops-diagnostics";
 
 function queueSheetSync(label: string, task: () => Promise<void>): void {
   void task().catch((error) => {
@@ -49,6 +55,15 @@ function queuePostSendThreadSync(params: {
 }
 
 export async function GET(
+  request: Request,
+  context: { params: Promise<{ rowId: string }> }
+) {
+  return withApiRequestLog(request, "/api/tickets/:rowId/thread", () =>
+    handleGet(request, context)
+  );
+}
+
+async function handleGet(
   request: Request,
   { params }: { params: Promise<{ rowId: string }> }
 ) {
@@ -97,23 +112,42 @@ export async function GET(
 
 export async function POST(
   request: Request,
+  context: { params: Promise<{ rowId: string }> }
+) {
+  return withApiRequestLog(request, "/api/tickets/:rowId/thread", () =>
+    handlePost(request, context)
+  );
+}
+
+async function handlePost(
+  request: Request,
   { params }: { params: Promise<{ rowId: string }> }
 ) {
   try {
     const { rowId } = await params;
     const decoded = decodeURIComponent(rowId);
     const body = await request.json();
-    const { to, subject, message, cc, bcc, status, attachments: rawAttachments, intakeTimestamp } =
-      body as {
-        to: string;
-        subject: string;
-        message: string;
-        cc?: string | null;
-        bcc?: string | null;
-        status?: string;
-        attachments?: unknown;
-        intakeTimestamp?: string;
-      };
+    const {
+      to,
+      subject,
+      message,
+      cc,
+      bcc,
+      status,
+      attachments: rawAttachments,
+      intakeTimestamp,
+      closeOutcome,
+    } = body as {
+      to: string;
+      subject: string;
+      message: string;
+      cc?: string | null;
+      bcc?: string | null;
+      status?: string;
+      attachments?: unknown;
+      intakeTimestamp?: string;
+      closeOutcome?: unknown;
+    };
 
     const attachmentsResult = parseOutboundAttachments(rawAttachments);
     if (!Array.isArray(attachmentsResult)) {
@@ -132,16 +166,6 @@ export async function POST(
       return NextResponse.json({ error: "subject is required" }, { status: 400 });
     }
 
-    const sent = await sendReplyEmail({
-      ticketRowId: decoded,
-      to,
-      subject: subject.trim(),
-      body: hasMessage ? message : "(see attachments)",
-      cc: cc?.trim() || null,
-      bcc: bcc?.trim() || null,
-      attachments: attachmentsResult,
-    });
-
     const statusRaw = typeof status === "string" ? status.trim().toLowerCase() : "";
     const statusAfterSend =
       statusRaw === "resolved" || statusRaw === "solved"
@@ -149,21 +173,7 @@ export async function POST(
         : statusRaw === "pending"
           ? "pending"
           : null;
-
-    logCrmTicketEvent({
-      ticketRowId: decoded,
-      kind: "email_sent",
-      summary: `Sent email to ${to}`,
-      detail: {
-        to,
-        cc: cc?.trim() || null,
-        bcc: bcc?.trim() || null,
-        subject: subject.trim(),
-        attachmentCount: attachmentsResult.length,
-        statusAfterSend: statusAfterSend ?? "unchanged",
-        gmailMessageId: sent.gmailMessageId ?? null,
-      },
-    });
+    const parsedCloseOutcome = parseCloseOutcomeFromUnknown(closeOutcome);
 
     if (statusAfterSend === "resolved") {
       const overlay = getTicketOverlay(decoded);
@@ -181,7 +191,38 @@ export async function POST(
           { status: 400 }
         );
       }
+      if (requiresCloseOutcomeAnswers(overlay.status, "resolved") && !parsedCloseOutcome) {
+        return NextResponse.json(
+          { error: CLOSE_OUTCOME_REQUIRED_MESSAGE },
+          { status: 400 }
+        );
+      }
     }
+
+    const sent = await sendReplyEmail({
+      ticketRowId: decoded,
+      to,
+      subject: subject.trim(),
+      body: hasMessage ? message : "(see attachments)",
+      cc: cc?.trim() || null,
+      bcc: bcc?.trim() || null,
+      attachments: attachmentsResult,
+    });
+
+    logCrmTicketEvent({
+      ticketRowId: decoded,
+      kind: "email_sent",
+      summary: `Sent email to ${to}`,
+      detail: {
+        to,
+        cc: cc?.trim() || null,
+        bcc: bcc?.trim() || null,
+        subject: subject.trim(),
+        attachmentCount: attachmentsResult.length,
+        statusAfterSend: statusAfterSend ?? "unchanged",
+        gmailMessageId: sent.gmailMessageId ?? null,
+      },
+    });
 
     if (statusAfterSend) {
       const { email } = await getSignedInUser();
@@ -209,6 +250,17 @@ export async function POST(
             });
           }
         }
+        if (parsedCloseOutcome) {
+          queueSheetSync("closeOutcome", () =>
+            updateCloseOutcomeOnSheet(config, parsed.rowNumber, parsedCloseOutcome)
+          );
+          logCrmTicketEvent({
+            ticketRowId: decoded,
+            kind: "sheet_write",
+            summary: "Queued sheet close-outcome write",
+            detail: { field: "closeOutcome" },
+          });
+        }
         queueSheetSync("userEmailed", () =>
           markUserEmailedOnSheet(config, parsed.rowNumber)
         );
@@ -233,6 +285,15 @@ export async function POST(
       sheetSyncQueued,
     });
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        {
+          error:
+            "Could not read this email (it may be too large). Try a smaller attachment.",
+        },
+        { status: 400 }
+      );
+    }
     const msg = error instanceof Error ? error.message : "Send failed";
     return NextResponse.json({ error: msg }, { status: 500 });
   }

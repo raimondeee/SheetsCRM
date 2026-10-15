@@ -92,7 +92,6 @@ export async function saveReplyDraft(
   draft: { body: string; subject: string; cc?: string; bcc?: string }
 ): Promise<void> {
   if (typeof window === "undefined") return;
-  if (skipSaveRowIds.has(rowId)) return;
 
   const body = draft.body;
   const subject = draft.subject.trim();
@@ -100,6 +99,9 @@ export async function saveReplyDraft(
   const bcc = draft.bcc?.trim() ?? "";
   const hasSubject = isCompleteEmailSubject(subject);
   if (isRichTextEmpty(body) && !hasSubject && !cc && !bcc) {
+    // After an intentional clear (successful send), ignore empty autosaves so they
+    // cannot race a restore. Non-empty saves below re-enable persistence.
+    if (skipSaveRowIds.has(rowId)) return;
     await clearReplyDraft(rowId);
     return;
   }

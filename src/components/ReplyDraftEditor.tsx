@@ -4,6 +4,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ClipboardEvent,
@@ -420,7 +421,7 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
       underline: false,
     });
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const editor = editorRef.current;
       if (!editor) return;
 
@@ -434,7 +435,10 @@ export const ReplyDraftEditor = forwardRef<ReplyDraftEditorHandle, ReplyDraftEdi
         if (!valueEmpty || editorEmpty) {
           return;
         }
-      } else if (normalized === lastValueRef.current) {
+      } else if (
+        normalized === lastValueRef.current &&
+        editor.innerHTML === normalized
+      ) {
         return;
       }
 

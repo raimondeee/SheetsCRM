@@ -5,7 +5,11 @@
 import { useEffect, useRef } from "react";
 import type { Ticket } from "@/lib/types";
 import { DEFAULT_STATUSES } from "@/lib/types";
-import { getSlaCountdownPreviewForTicket, slaCountdownClassName } from "@/lib/sla-display";
+import {
+  getSlaCountdownPreviewForTicket,
+  slaCountdownClassName,
+  slaCountdownTitle,
+} from "@/lib/sla-display";
 import { formatLastResponseHours } from "@/lib/ticket-activity";
 import { getResoAndListingValues } from "@/lib/ticket-search";
 import type { SortBy, SortOrder } from "@/lib/user-preferences";
@@ -265,7 +269,7 @@ export function TicketList({
                   {slaPreview && (
                     <span
                       className={`rounded px-1.5 py-0.5 ${text.tiny} font-semibold ${slaCountdownClassName(slaPreview.tone)}`}
-                      title={`Response SLA due ${ticket.slaDueAt ? new Date(ticket.slaDueAt).toLocaleString() : ""}`}
+                      title={slaCountdownTitle(ticket.slaDueAt)}
                     >
                       {slaPreview.label}
                     </span>

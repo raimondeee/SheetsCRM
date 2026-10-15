@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { markGmailThreadAsRead } from "@/lib/gmail";
+import { removeUnreadGmailThreadFromCache } from "@/lib/gmail-unread-store";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
       );
     }
 
+    removeUnreadGmailThreadFromCache(threadId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to mark thread as read";

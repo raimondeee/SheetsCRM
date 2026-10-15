@@ -1,3 +1,5 @@
+import type { CloseOutcomeAnswers } from "./close-outcome";
+
 export type StatusAfterSend = "pending" | "resolved" | "unchanged";
 
 export interface QueuedSendPayload {
@@ -11,4 +13,5 @@ export interface QueuedSendPayload {
   attachmentFiles: File[];
   intakeTimestamp?: string;
   label: string;
+  closeOutcome?: CloseOutcomeAnswers;
 }

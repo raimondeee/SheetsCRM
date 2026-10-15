@@ -45,6 +45,18 @@ const HEADER_PATTERNS: { role: ColumnRole; patterns: RegExp[] }[] = [
     patterns: [/listing\s*id/i, /^listing$/i, /property\s*id/i, /space\s*id/i],
   },
   {
+    role: "inFavorOfHost",
+    patterns: [/in\s*favor\s*of\s*host/i, /favour\s*of\s*host/i],
+  },
+  {
+    role: "csInTheWrong",
+    patterns: [/cs\s*in\s*the\s*wrong/i, /original\s*decision\s*wrong/i],
+  },
+  {
+    role: "remediationSuccessful",
+    patterns: [/remediation\s*successful/i, /overturn.*decision/i],
+  },
+  {
     role: "internalToolK",
     patterns: [/tool.*k/i, /internal.*k/i, /account.*id/i, /customer.*id/i, /portal/i],
   },

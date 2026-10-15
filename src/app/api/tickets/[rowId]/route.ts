@@ -29,8 +29,14 @@ import {
   normalizeStatusId,
 } from "@/lib/status-mapper";
 import {
+  CLOSE_OUTCOME_REQUIRED_MESSAGE,
+  parseCloseOutcomeFromUnknown,
+  requiresCloseOutcomeAnswers,
+} from "@/lib/close-outcome";
+import {
   updateAirbnbUserIdOnSheet,
   updateClaimNumberOnSheet,
+  updateCloseOutcomeOnSheet,
   updateContactReasonOnSheet,
   updateListingIdOnSheet,
   updateReservationCodeOnSheet,
@@ -46,6 +52,7 @@ import { getSignedInUser } from "@/lib/google-auth";
 import { parseTicketRowId } from "@/lib/types";
 import type { SheetConfig } from "@/lib/types";
 import { logCrmTicketEvent } from "@/lib/crm-ticket-log";
+import { withApiRequestLog } from "@/lib/ops-diagnostics";
 
 /** Fire-and-forget sheet write; failures are logged, not returned to the client. */
 function queueSheetSync(
@@ -81,6 +88,10 @@ function sheetContext(rowId: string): {
 }
 
 export async function PATCH(request: Request) {
+  return withApiRequestLog(request, "/api/tickets/:rowId", () => handlePatch(request));
+}
+
+async function handlePatch(request: Request) {
   try {
     const body = await request.json();
     const {
@@ -105,6 +116,7 @@ export async function PATCH(request: Request) {
       requesterEmail,
       pendingReopenHours,
       closeTicket,
+      closeOutcome,
     } = body as {
       rowId: string;
       status?: string;
@@ -127,6 +139,7 @@ export async function PATCH(request: Request) {
       requesterEmail?: string;
       pendingReopenHours?: number | null;
       closeTicket?: boolean;
+      closeOutcome?: unknown;
     };
 
     let updatedAdminNotes: string | undefined;
@@ -144,10 +157,10 @@ export async function PATCH(request: Request) {
 
     if (status) {
       const normalizedStatus = normalizeStatusId(status);
+      const overlay = getTicketOverlay(rowId);
       if (normalizedStatus === "resolved") {
         const pendingUserId =
           typeof airbnbUserId === "string" ? airbnbUserId.trim() : "";
-        const overlay = getTicketOverlay(rowId);
         const resolvedUserId = pendingUserId || overlay.crmAirbnbUserId?.trim() || "";
         const exempt =
           airbnbUserIdExempt === true || isAirbnbUserIdExempt(overlay);
@@ -160,6 +173,16 @@ export async function PATCH(request: Request) {
             { status: 400 }
           );
         }
+      }
+      const parsedCloseOutcome = parseCloseOutcomeFromUnknown(closeOutcome);
+      if (
+        requiresCloseOutcomeAnswers(overlay.status, normalizedStatus) &&
+        !parsedCloseOutcome
+      ) {
+        return NextResponse.json(
+          { error: CLOSE_OUTCOME_REQUIRED_MESSAGE },
+          { status: 400 }
+        );
       }
       const { email } = await getSignedInUser();
       const timerSettings = loadTimerSettings(email);
@@ -189,6 +212,12 @@ export async function PATCH(request: Request) {
       if (sheetStatusValue && canSyncSheet) {
         queueSheetSync(rowId, "status", () =>
           updateSheetStatusOnSheet(config!, rowNumber!, sheetStatusValue)
+        );
+      }
+
+      if (parsedCloseOutcome && canSyncSheet) {
+        queueSheetSync(rowId, "closeOutcome", () =>
+          updateCloseOutcomeOnSheet(config!, rowNumber!, parsedCloseOutcome)
         );
       }
 

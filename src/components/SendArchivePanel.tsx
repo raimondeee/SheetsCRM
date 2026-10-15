@@ -181,13 +181,17 @@ function ArchiveRow({ entry }: { entry: SendArchiveEntry }) {
             <ul className="space-y-0.5">
               {entry.attachments.map((file) => (
                 <li key={file.filename}>
-                  <a
-                    href={`data:${file.mimeType};base64,${file.data}`}
-                    download={file.filename}
-                    className="text-blue-600 hover:underline"
-                  >
-                    {file.filename}
-                  </a>
+                  {file.data ? (
+                    <a
+                      href={`data:${file.mimeType};base64,${file.data}`}
+                      download={file.filename}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {file.filename}
+                    </a>
+                  ) : (
+                    <span>{file.filename}</span>
+                  )}
                 </li>
               ))}
             </ul>

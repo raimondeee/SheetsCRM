@@ -23,6 +23,9 @@ export const CRM_ROLE_DESTINATIONS: Partial<Record<ColumnRole, string>> = {
   internalToolK: "Legacy sheet column — not shown in CRM",
   internalToolM: "Legacy sheet column — not shown in CRM",
   internalToolR: "Legacy sheet column — not shown in CRM",
+  inFavorOfHost: "Close-case modal → sheet column P",
+  csInTheWrong: "Close-case modal → sheet column Q",
+  remediationSuccessful: "Close-case modal → sheet column R",
 };
 
 export const COLUMN_ROLE_OPTIONS: { value: ColumnRole; label: string; hint?: string }[] = [
@@ -122,6 +125,21 @@ export const COLUMN_ROLE_OPTIONS: { value: ColumnRole; label: string; hint?: str
     label: "Legacy sheet link R (not used in CRM)",
     hint: CRM_ROLE_DESTINATIONS.internalToolR,
   },
+  {
+    value: "inFavorOfHost",
+    label: "In favor of host? → close modal (P)",
+    hint: CRM_ROLE_DESTINATIONS.inFavorOfHost,
+  },
+  {
+    value: "csInTheWrong",
+    label: "CS in the wrong? → close modal (Q)",
+    hint: CRM_ROLE_DESTINATIONS.csInTheWrong,
+  },
+  {
+    value: "remediationSuccessful",
+    label: "Remediation successful? → close modal (R)",
+    hint: CRM_ROLE_DESTINATIONS.remediationSuccessful,
+  },
 ];
 
 export const RECOMMENDED_ROLES: ColumnRole[] = [
@@ -136,6 +154,9 @@ export const RECOMMENDED_ROLES: ColumnRole[] = [
   "reservationCode",
   "claimNumber",
   "listingId",
+  "inFavorOfHost",
+  "csInTheWrong",
+  "remediationSuccessful",
 ];
 
 export function getMappingSummary(config: SheetConfig): {

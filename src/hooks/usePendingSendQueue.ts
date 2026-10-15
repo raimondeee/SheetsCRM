@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clearReplyDraft } from "@/lib/reply-drafts";
+import { clearReplyDraft, saveReplyDraft } from "@/lib/reply-drafts";
 import { readFilesAsAttachmentPayload } from "@/lib/outbound-attachments";
 import {
   markSendArchiveCancelled,
@@ -12,17 +12,43 @@ import {
 } from "@/lib/send-archive";
 
 import type { QueuedSendPayload, StatusAfterSend } from "@/lib/queued-send";
+import type { CloseOutcomeAnswers } from "@/lib/close-outcome";
 import { playOutboundSendSound } from "@/lib/notification-sounds";
 
 export type { QueuedSendPayload, StatusAfterSend };
 
 const UNDO_SEND_SECONDS = 10;
 
+async function readSendResponse(res: Response): Promise<{ error?: string }> {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) return {};
+  try {
+    return (await res.json()) as { error?: string };
+  } catch {
+    return {};
+  }
+}
+
+function sendFailureMessage(res: Response, data: { error?: string }, fallback: string): string {
+  const raw = typeof data.error === "string" ? data.error.trim() : "";
+  const looksTruncated = /unexpected end of json|unterminated string|not valid json/i.test(raw);
+  if (raw && !looksTruncated) return raw;
+  if (res.status === 413 || looksTruncated) {
+    return "This email is too large to send. Try a smaller attachment.";
+  }
+  if (res.status >= 400) return raw || `Failed to send email (${res.status})`;
+  return raw || fallback;
+}
+
 interface UsePendingSendQueueOptions {
-  onTicketSent: (rowId: string, status: StatusAfterSend) => Promise<void>;
+  onTicketSent: (
+    rowId: string,
+    status: StatusAfterSend,
+    closeOutcome?: CloseOutcomeAnswers
+  ) => Promise<void>;
   onAdvanceAfterSend: (rowId: string, statusAfterSend: StatusAfterSend) => boolean;
   onShowInboxVictory: () => void;
-  onRestoreSentTicket: (rowId: string) => void;
+  onRestoreSentTicket: (rowId: string, compose?: QueuedSendPayload) => void;
   onThreadUpdate: () => void;
   /** Fires after a successful send (Send only / Pending / Resolved). */
   onSendSucceeded?: (status: StatusAfterSend) => void;
@@ -92,8 +118,6 @@ export function usePendingSendQueue({
     setSending(true);
     setSendingTicketRowId(payload.ticketRowId);
     setPendingSend(false);
-    setQueuedSendLabel(null);
-    setQueuedAttachmentCount(0);
     setUndoSecondsLeft(0);
     setQueuedTicketRowId(null);
     setSendError(null);
@@ -117,16 +141,16 @@ export function usePendingSendQueue({
           ...(attachments?.length ? { attachments } : {}),
         }),
       });
-      const data = await res.json();
+      const data = await readSendResponse(res);
       if (!isMountedRef.current) return;
       if (!res.ok || data.error) {
-        const message = data.error ?? "Failed to send email";
+        const message = sendFailureMessage(res, data, "Failed to send email");
         if (pendingArchiveIdRef.current) {
           markSendArchiveFailed(pendingArchiveIdRef.current, message);
           pendingArchiveIdRef.current = null;
         }
         setSendError({ rowId: ticketRowId, message });
-        onRestoreSentTicketRef.current(ticketRowId);
+        onRestoreSentTicketRef.current(ticketRowId, payload);
         return;
       }
 
@@ -135,7 +159,7 @@ export function usePendingSendQueue({
         pendingArchiveIdRef.current = null;
       }
       void clearReplyDraft(ticketRowId);
-      await onTicketSentRef.current(ticketRowId, statusAfterSend);
+      await onTicketSentRef.current(ticketRowId, statusAfterSend, payload.closeOutcome);
       onSendSucceededRef.current?.(statusAfterSend);
       if (!isMountedRef.current) return;
       onThreadUpdateRef.current();
@@ -145,18 +169,24 @@ export function usePendingSendQueue({
       }
     } catch (error) {
       if (!isMountedRef.current) return;
-      const message = error instanceof Error ? error.message : "Failed to send email";
+      let message = error instanceof Error ? error.message : "Failed to send email";
+      if (/failed to fetch|networkerror|load failed/i.test(message)) {
+        message =
+          "Could not send this email. Check your connection, or try a smaller attachment.";
+      }
       const rowId = payload.ticketRowId;
       if (pendingArchiveIdRef.current) {
         markSendArchiveFailed(pendingArchiveIdRef.current, message);
         pendingArchiveIdRef.current = null;
       }
       setSendError({ rowId, message });
-      onRestoreSentTicketRef.current(rowId);
+      onRestoreSentTicketRef.current(rowId, payload);
     } finally {
       if (isMountedRef.current) {
         setSending(false);
         setSendingTicketRowId(null);
+        setQueuedSendLabel(null);
+        setQueuedAttachmentCount(0);
       }
     }
   }, []);
@@ -168,6 +198,14 @@ export function usePendingSendQueue({
       playOutboundSendSound();
       setSendError(null);
       pendingPayloadRef.current = payload;
+      // Persist the flushed compose before auto-advance unmounts the editor, so
+      // Undo (or a failed send) can reload the exact message that was queued.
+      void saveReplyDraft(payload.ticketRowId, {
+        body: payload.message,
+        subject: payload.subject,
+        cc: payload.cc ?? "",
+        bcc: payload.bcc ?? "",
+      });
       setPendingSendStatus(payload.statusAfterSend);
       setQueuedSendLabel(payload.label);
       setQueuedAttachmentCount(payload.attachmentFiles.length);
@@ -212,7 +250,7 @@ export function usePendingSendQueue({
   );
 
   const undoSend = useCallback(() => {
-    const queuedRowId = pendingPayloadRef.current?.ticketRowId;
+    const payload = pendingPayloadRef.current;
     if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
     if (pendingArchiveIdRef.current) {
@@ -226,7 +264,7 @@ export function usePendingSendQueue({
     setUndoSecondsLeft(0);
     setQueuedTicketRowId(null);
     pendingVictoryRef.current = false;
-    if (queuedRowId) onRestoreSentTicketRef.current(queuedRowId);
+    if (payload) onRestoreSentTicketRef.current(payload.ticketRowId, payload);
   }, []);
 
   const clearSendError = useCallback((rowId?: string) => {

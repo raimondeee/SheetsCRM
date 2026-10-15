@@ -1,6 +1,15 @@
+import {
+  getDiagnosticsSnapshot,
+  startOpsDiagnostics,
+  type OpsAuthTimingSnapshot,
+  type OpsDiagnosticsSnapshot,
+} from "./ops-diagnostics";
+
 export type OpsIntegrationId = "sheets" | "gmail" | "mixmax";
 
 export type OpsHealthStatus = "ok" | "warn" | "error" | "idle" | "disabled";
+
+export type { OpsAuthTimingSnapshot };
 
 export interface OpsCallRecord {
   at: number;
@@ -25,6 +34,12 @@ const MAX_APP_EVENTS = 200;
 
 const callRecords: OpsCallRecord[] = [];
 const appEvents: OpsAppEvent[] = [];
+
+const inFlightGoogle: Record<OpsIntegrationId, number> = {
+  sheets: 0,
+  gmail: 0,
+  mixmax: 0,
+};
 
 const INTEGRATION_LABELS: Record<OpsIntegrationId, string> = {
   sheets: "Google Sheets",
@@ -57,6 +72,8 @@ export async function withOpsMetric<T>(
   operation: string,
   fn: () => Promise<T>
 ): Promise<T> {
+  startOpsDiagnostics();
+  inFlightGoogle[integration] += 1;
   const started = Date.now();
   try {
     const result = await fn();
@@ -77,6 +94,8 @@ export async function withOpsMetric<T>(
       error: message,
     });
     throw error;
+  } finally {
+    inFlightGoogle[integration] = Math.max(0, inFlightGoogle[integration] - 1);
   }
 }
 
@@ -143,6 +162,15 @@ export interface OpsIntegrationSnapshot {
   recentOperations: string[];
 }
 
+export interface OpsInFlightSnapshot {
+  apiRequests: number;
+  googleCalls: number;
+  sheets: number;
+  gmail: number;
+  mixmax: number;
+  paths: { path: string; count: number }[];
+}
+
 export interface OpsMetricsSnapshot {
   generatedAt: string;
   integrations: OpsIntegrationSnapshot[];
@@ -150,6 +178,12 @@ export interface OpsMetricsSnapshot {
   lastTicketListRefreshAt: string | null;
   lastTicketListError: string | null;
   autoRefreshSeconds: number;
+  eventLoop: OpsDiagnosticsSnapshot["eventLoop"];
+  inFlight: OpsInFlightSnapshot;
+  stalls: OpsDiagnosticsSnapshot["stalls"];
+  auth: OpsDiagnosticsSnapshot["auth"];
+  recentRequests: OpsDiagnosticsSnapshot["recentRequests"];
+  httpTapInstalled: boolean;
 }
 
 function integrationSnapshot(integration: OpsIntegrationId): OpsIntegrationSnapshot {
@@ -187,6 +221,7 @@ function integrationSnapshot(integration: OpsIntegrationId): OpsIntegrationSnaps
 }
 
 export function getOpsMetricsSnapshot(): OpsMetricsSnapshot {
+  const diagnostics = getDiagnosticsSnapshot();
   const hourAgo = Date.now() - 60 * 60 * 1000;
   const ticketEvents = appEvents.filter(
     (e) => e.name === "ticket_list_refresh" && e.at >= hourAgo
@@ -198,6 +233,9 @@ export function getOpsMetricsSnapshot(): OpsMetricsSnapshot {
     .reverse()
     .find((e) => e.name === "ticket_list_refresh" && !e.ok);
 
+  const googleCalls =
+    inFlightGoogle.sheets + inFlightGoogle.gmail + inFlightGoogle.mixmax;
+
   return {
     generatedAt: new Date().toISOString(),
     integrations: (["sheets", "gmail", "mixmax"] as const).map(integrationSnapshot),
@@ -207,5 +245,18 @@ export function getOpsMetricsSnapshot(): OpsMetricsSnapshot {
       : null,
     lastTicketListError: lastTicketError?.error ?? null,
     autoRefreshSeconds: Number(process.env.NEXT_PUBLIC_AUTO_REFRESH_SECONDS) || 60,
+    eventLoop: diagnostics.eventLoop,
+    inFlight: {
+      apiRequests: diagnostics.inFlight.apiRequests,
+      googleCalls,
+      sheets: inFlightGoogle.sheets,
+      gmail: inFlightGoogle.gmail,
+      mixmax: inFlightGoogle.mixmax,
+      paths: diagnostics.inFlight.paths,
+    },
+    stalls: diagnostics.stalls,
+    auth: diagnostics.auth,
+    recentRequests: diagnostics.recentRequests,
+    httpTapInstalled: diagnostics.httpTapInstalled,
   };
 }

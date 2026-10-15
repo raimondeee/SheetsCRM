@@ -48,6 +48,7 @@ import { TrustEscalationsModal } from "./TrustEscalationsModal";
 import { GsoTriageModal } from "./GsoTriageModal";
 import { RedactMessageConfirmModal } from "./RedactMessageConfirmModal";
 import { ResetGmailLinkConfirmModal } from "./ResetGmailLinkConfirmModal";
+import { CloseCaseOutcomeModal } from "./CloseCaseOutcomeModal";
 import { LinkedCaseEditModal } from "./LinkedCaseEditModal";
 import { ReplyDraftEditor, type ReplyDraftEditorHandle } from "./ReplyDraftEditor";
 import { ThreadMessageBody } from "./ThreadMessageBody";
@@ -63,6 +64,7 @@ import { isRichTextEmpty, normalizeDraftHtml, plainTextToHtml, stripHtmlToText }
 import { parseFirstName } from "@/lib/mixmax-variables";
 import { shouldShowResponseSla } from "@/lib/sla-display";
 import {
+  LONGTERM_HOLD_WITHOUT_EMAIL_NOTE,
   PENDING_WITHOUT_EMAIL_HOURS_OPTIONS,
   pendingWithoutEmailAdminNote,
   RESOLVED_WITHOUT_EMAIL_NOTE,
@@ -99,6 +101,11 @@ import {
   GLEAN_RESPONSE_PROMPT,
   GLEAN_ESCALATION_PROMPT,
 } from "@/lib/conversation-export";
+import {
+  closeOutcomeFromTicket,
+  requiresCloseOutcomeAnswers,
+  type CloseOutcomeAnswers,
+} from "@/lib/close-outcome";
 import { normalizeStatusId } from "@/lib/status-mapper";
 import {
   formatCrmRowRef,
@@ -118,11 +125,14 @@ import type { QueuedSendPayload } from "@/lib/queued-send";
 import { fetchComposePrefs, saveComposePrefs } from "@/lib/ticket-compose-prefs";
 import {
   appendRecipient,
+  agentAddressesOnThread,
   buildOutboundBcc,
   buildOutboundCc,
   deriveThreadCcRecipients,
   mergeRecipientLists,
+  messageAddedToRecipients,
   parseRecipientList,
+  recipientsAddedSinceLastAgentSend,
   removeRecipient,
 } from "@/lib/email-recipients";
 import {
@@ -160,7 +170,11 @@ interface TicketDetailProps {
   ticket: Ticket | null;
   initialResponseHours: number;
   contactReasonOptions: string[];
-  onStatusChange: (rowId: string, status: string) => Promise<void>;
+  onStatusChange: (
+    rowId: string,
+    status: string,
+    options?: { closeOutcome?: CloseOutcomeAnswers }
+  ) => Promise<void>;
   onSubjectChange: (rowId: string, subject: string) => void | Promise<void>;
   onContactReasonChange: (rowId: string, contactReason: string) => void;
   onAppendAdminNote: (rowId: string, note: string) => Promise<void>;
@@ -193,6 +207,9 @@ interface TicketDetailProps {
     onUndo: () => void;
   };
   composeClearedRowId?: string | null;
+  onComposeCleared?: () => void;
+  composeRestore?: QueuedSendPayload | null;
+  onComposeRestoreApplied?: () => void;
   onClearSendError?: () => void;
   onSetStatusWithoutEmail: (
     rowId: string,
@@ -203,6 +220,7 @@ interface TicketDetailProps {
       airbnbUserId?: string;
       airbnbUserIdExempt?: boolean;
       closeTicket?: boolean;
+      closeOutcome?: CloseOutcomeAnswers;
     }
   ) => Promise<void>;
   onLinkedCaseChange: (rowId: string, index: 0 | 1 | 2, url: string) => Promise<void>;
@@ -286,6 +304,9 @@ export function TicketDetail({
   onQueueSend,
   pendingSendUndo,
   composeClearedRowId = null,
+  onComposeCleared,
+  composeRestore = null,
+  onComposeRestoreApplied,
   onClearSendError,
   onSetStatusWithoutEmail,
   onLinkedCaseChange,
@@ -303,12 +324,24 @@ export function TicketDetail({
     () => normalizeEmailSubjectPrefix(emailSubjectPrefix),
     [emailSubjectPrefix]
   );
+  const restoredCompose =
+    composeRestore && ticket && composeRestore.ticketRowId === ticket.rowId
+      ? composeRestore
+      : null;
+  const restoredBody = restoredCompose ? normalizeDraftHtml(restoredCompose.message) : "";
+  const restoredCc = restoredCompose?.cc ?? "";
+  const restoredBcc = restoredCompose?.bcc ?? "";
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [redactingMessageId, setRedactingMessageId] = useState<string | null>(null);
   const [redactConfirmMessage, setRedactConfirmMessage] = useState<ThreadMessage | null>(null);
-  const [replyBody, setReplyBody] = useState("");
-  const [subjectSuffix, setSubjectSuffix] = useState("");
+  const [replyBody, setReplyBody] = useState(restoredBody);
+  const [subjectSuffix, setSubjectSuffix] = useState(() =>
+    restoredCompose
+      ? emailSubjectSuffixFromStored(restoredCompose.subject, emailSubjectPrefix)
+      : ""
+  );
+  const [composeHydrated, setComposeHydrated] = useState(() => Boolean(restoredCompose));
   const [actionValidation, setActionValidation] = useState<TicketActionValidation | null>(null);
   const [pressedActionButton, setPressedActionButton] = useState<string | null>(null);
   const [newAdminNote, setNewAdminNote] = useState("");
@@ -332,19 +365,27 @@ export function TicketDetail({
   const shouldScrollConversationToNewestRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [replyAttachments, setReplyAttachments] = useState<Array<{ id: string; file: File }>>(
-    []
+    () =>
+      restoredCompose
+        ? restoredCompose.attachmentFiles.map((file) => ({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            file,
+          }))
+        : []
   );
   const [attachmentsJustAdded, setAttachmentsJustAdded] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [mixmaxAttachmentsLoading, setMixmaxAttachmentsLoading] = useState(false);
   const [ccMarketManager, setCcMarketManager] = useState(false);
-  const [ccDraft, setCcDraft] = useState("");
-  const [bccDraft, setBccDraft] = useState("");
-  const [ccFieldOpen, setCcFieldOpen] = useState(false);
-  const [bccFieldOpen, setBccFieldOpen] = useState(false);
+  const [ccDraft, setCcDraft] = useState(restoredCc);
+  const [bccDraft, setBccDraft] = useState(restoredBcc);
+  const [ccFieldOpen, setCcFieldOpen] = useState(() => Boolean(restoredCc.trim()));
+  const [bccFieldOpen, setBccFieldOpen] = useState(() => Boolean(restoredBcc.trim()));
   const ccFieldRef = useRef<HTMLDivElement>(null);
   const bccFieldRef = useRef<HTMLDivElement>(null);
-  const [replyFocused, setReplyFocused] = useState(false);
+  const [replyFocused, setReplyFocused] = useState(
+    () => Boolean(restoredBody && !isRichTextEmpty(restoredBody))
+  );
   const [composeTab, setComposeTab] = useState<
     "reply" | "admin-notes" | "attachments" | "crm-log"
   >("reply");
@@ -378,10 +419,19 @@ export function TicketDetail({
   const [ignoringCoverTicket, setIgnoringCoverTicket] = useState(false);
   const [ignoreCoverError, setIgnoreCoverError] = useState<string | null>(null);
   const [resyncError, setResyncError] = useState<string | null>(null);
+  const [closeIntent, setCloseIntent] = useState<
+    | { kind: "resolve-close" }
+    | { kind: "send-resolved" }
+    | { kind: "status"; status: string }
+    | null
+  >(null);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
 
   useEffect(() => {
     setResyncConfirmOpen(false);
     setResyncError(null);
+    setCloseIntent(null);
+    setCloseSubmitting(false);
   }, [ticket?.rowId]);
 
   useEffect(() => {
@@ -408,6 +458,43 @@ export function TicketDetail({
   const bccDraftRef = useRef(bccDraft);
   const newAdminNoteRef = useRef(newAdminNote);
   const ticketRowIdRef = useRef(ticket?.rowId ?? null);
+  const composeRestoreRef = useRef(composeRestore);
+  const appliedComposeRestoreRef = useRef<QueuedSendPayload | null>(null);
+  const restoredComposeRowIdRef = useRef<string | null>(restoredCompose?.ticketRowId ?? null);
+  const initializedFromRestoreRef = useRef(Boolean(restoredCompose));
+  composeRestoreRef.current = composeRestore;
+
+  function applyComposeRestore(payload: QueuedSendPayload) {
+    if (appliedComposeRestoreRef.current === payload) return;
+    appliedComposeRestoreRef.current = payload;
+    restoredComposeRowIdRef.current = payload.ticketRowId;
+    const body = normalizeDraftHtml(payload.message);
+    const cc = payload.cc ?? "";
+    const bcc = payload.bcc ?? "";
+    setReplyBody(body);
+    setSubjectSuffix(emailSubjectSuffixFromStored(payload.subject, emailSubjectPrefix));
+    setCcDraft(cc);
+    setBccDraft(bcc);
+    setCcFieldOpen(Boolean(cc.trim()));
+    setBccFieldOpen(Boolean(bcc.trim()));
+    setReplyAttachments(
+      payload.attachmentFiles.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+      }))
+    );
+    setAttachmentError(null);
+    setReplyFocused(!isRichTextEmpty(body));
+    setComposeTab("reply");
+    void saveReplyDraft(payload.ticketRowId, {
+      body,
+      subject: payload.subject,
+      cc,
+      bcc,
+    });
+    setComposeHydrated(true);
+    onComposeRestoreApplied?.();
+  }
 
   useEffect(() => {
     replyBodyRef.current = replyBody;
@@ -614,13 +701,15 @@ export function TicketDetail({
       setCcFieldOpen(false);
       setBccFieldOpen(false);
       setCcMarketManager(false);
+      setComposeHydrated(false);
+      appliedComposeRestoreRef.current = null;
+      restoredComposeRowIdRef.current = null;
       return;
     }
 
     setComposeTab("reply");
     setComposePanelView("split");
     setMixmaxExpanded(false);
-    setReplyAttachments([]);
     setAttachmentError(null);
     setMixmaxAttachmentsLoading(false);
     setAddingNote(false);
@@ -630,13 +719,51 @@ export function TicketDetail({
     setStatusChanging(false);
     setClearingInitialSla(false);
     setStatusOnlyError(null);
-    onClearSendError?.();
     setStatusChangeError(null);
+    setActionValidation(null);
+    setPressedActionButton(null);
+    setAirbnbUserIdDraft(ticket.crmAirbnbUserId ?? "");
+    setNoUserIdExempt(ticket.airbnbUserIdExempt === true);
+    setUiFieldDrafts(ticket.uiFields ?? {});
+    setEmailCopied(false);
+    void fetchComposePrefs(ticket.rowId).then((prefs) => {
+      setCcMarketManager(prefs.ccMarketManager);
+    });
+
+    const restore = composeRestoreRef.current;
+    const alreadyRestored =
+      initializedFromRestoreRef.current ||
+      appliedComposeRestoreRef.current?.ticketRowId === ticket.rowId ||
+      restore?.ticketRowId === ticket.rowId;
+    initializedFromRestoreRef.current = false;
+
+    if (alreadyRestored) {
+      if (restore?.ticketRowId === ticket.rowId && appliedComposeRestoreRef.current !== restore) {
+        applyComposeRestore(restore);
+      } else {
+        setComposeHydrated(true);
+      }
+      let cancelled = false;
+      void (async () => {
+        const adminDraft = await loadAdminNoteDraft(ticket.rowId);
+        if (cancelled) return;
+        setNewAdminNote(adminDraft ?? "");
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setComposeHydrated(false);
+    appliedComposeRestoreRef.current = null;
+    restoredComposeRowIdRef.current = null;
+    setReplyAttachments([]);
     let cancelled = false;
     void (async () => {
       const saved = await loadReplyDraft(ticket.rowId);
       const adminDraft = await loadAdminNoteDraft(ticket.rowId);
       if (cancelled) return;
+      if (restoredComposeRowIdRef.current === ticket.rowId) return;
       setReplyBody(saved?.body ? normalizeDraftHtml(saved.body) : "");
       setNewAdminNote(adminDraft ?? "");
       setSubjectSuffix(
@@ -653,20 +780,17 @@ export function TicketDetail({
       setCcFieldOpen(Boolean(saved?.cc?.trim()));
       setBccFieldOpen(Boolean(saved?.bcc?.trim()));
       setReplyFocused(Boolean(saved?.body && !isRichTextEmpty(saved.body)));
+      setComposeHydrated(true);
     })();
-    setActionValidation(null);
-    setPressedActionButton(null);
-    void fetchComposePrefs(ticket.rowId).then((prefs) => {
-      setCcMarketManager(prefs.ccMarketManager);
-    });
-    setAirbnbUserIdDraft(ticket.crmAirbnbUserId ?? "");
-    setNoUserIdExempt(ticket.airbnbUserIdExempt === true);
-    setUiFieldDrafts(ticket.uiFields ?? {});
-    setEmailCopied(false);
     return () => {
       cancelled = true;
     };
   }, [ticket?.rowId]);
+
+  useLayoutEffect(() => {
+    if (!ticket || !composeRestore || composeRestore.ticketRowId !== ticket.rowId) return;
+    applyComposeRestore(composeRestore);
+  }, [composeRestore, ticket?.rowId]);
 
   useEffect(() => {
     if (!ticket || composeClearedRowId !== ticket.rowId) return;
@@ -680,7 +804,8 @@ export function TicketDetail({
     setBccFieldOpen(false);
     setSubjectSuffix(emailSubjectSuffixFromStored(ticket.subject, emailSubjectPrefix));
     setReplyFocused(false);
-  }, [composeClearedRowId, ticket?.rowId, ticket?.subject]);
+    onComposeCleared?.();
+  }, [composeClearedRowId, ticket?.rowId]);
 
   useEffect(() => {
     if (!ticket) return;
@@ -700,7 +825,7 @@ export function TicketDetail({
   }, [ticket?.rowId, ticket?.requesterEmail, ticket?.subject, loadThread]);
 
   useEffect(() => {
-    if (!ticket) return;
+    if (!ticket || !composeHydrated) return;
 
     const timeout = setTimeout(() => {
       void saveReplyDraft(ticket.rowId, {
@@ -720,7 +845,7 @@ export function TicketDetail({
         bcc: bccDraft,
       });
     };
-  }, [ticket?.rowId, replyBody, subjectSuffix, ccDraft, bccDraft]);
+  }, [ticket?.rowId, replyBody, subjectSuffix, ccDraft, bccDraft, composeHydrated]);
 
   useEffect(() => {
     if (!ticket) return;
@@ -865,7 +990,11 @@ export function TicketDetail({
     if (!ticket) return;
     const fullSubject = buildEmailSubject(subjectSuffix, emailSubjectPrefix);
     if (!subjectSuffix.trim() || fullSubject === ticket.subject) return;
-    onSubjectChange(ticket.rowId, fullSubject);
+    try {
+      await onSubjectChange(ticket.rowId, fullSubject);
+    } catch {
+      /* CrmShell reports the save error */
+    }
   }
 
   async function addAdminNote() {
@@ -1160,8 +1289,13 @@ export function TicketDetail({
   }
 
   async function setStatusWithoutEmail(
-    status: "pending" | "resolved",
-    options?: { adminNote?: string; pendingHours?: PendingWithoutEmailHours; closeTicket?: boolean },
+    status: "pending" | "resolved" | "longterm_hold",
+    options?: {
+      adminNote?: string;
+      pendingHours?: PendingWithoutEmailHours;
+      closeTicket?: boolean;
+      closeOutcome?: CloseOutcomeAnswers;
+    },
     buttonId?: string
   ) {
     if (buttonId) flashActionPress(buttonId);
@@ -1210,7 +1344,8 @@ export function TicketDetail({
 
   function queueSend(
     statusAfterSend: "pending" | "resolved" | "unchanged",
-    buttonId: string
+    buttonId: string,
+    closeOutcome?: CloseOutcomeAnswers
   ) {
     flashActionPress(buttonId);
     if (!ticket || sendQueueBusy) return;
@@ -1248,8 +1383,92 @@ export function TicketDetail({
         attachmentFiles: replyAttachments.map((entry) => entry.file),
         intakeTimestamp: ticket.timestamp,
         label: ticket.requesterName || ticket.requesterEmail,
+        ...(statusAfterSend === "resolved"
+          ? {
+              closeOutcome:
+                closeOutcome ?? closeOutcomeFromTicket(ticket) ?? undefined,
+            }
+          : {}),
       });
     })();
+  }
+
+  type CloseCaseIntent =
+    | { kind: "resolve-close" }
+    | { kind: "send-resolved" }
+    | { kind: "status"; status: string };
+
+  async function completeCloseIntent(intent: CloseCaseIntent, answers: CloseOutcomeAnswers) {
+    if (!ticket) return;
+    if (intent.kind === "send-resolved") {
+      queueSend("resolved", "send-resolved", answers);
+      setCloseIntent(null);
+      return;
+    }
+    if (intent.kind === "resolve-close") {
+      await setStatusWithoutEmail(
+        "resolved",
+        {
+          adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
+          closeTicket: true,
+          closeOutcome: answers,
+        },
+        "set-resolved"
+      );
+      setCloseIntent(null);
+      return;
+    }
+    setStatusChangeError(null);
+    setStatusChanging(true);
+    setCloseSubmitting(true);
+    try {
+      await onStatusChange(ticket.rowId, intent.status, { closeOutcome: answers });
+      setCloseIntent(null);
+    } catch (error) {
+      setStatusChangeError(error instanceof Error ? error.message : "Failed to update status");
+    } finally {
+      setStatusChanging(false);
+      setCloseSubmitting(false);
+    }
+  }
+
+  async function requestCloseIfNeeded(intent: CloseCaseIntent) {
+    if (!ticket) return;
+    if (intent.kind === "send-resolved") {
+      const validation = collectSendResolvedValidation();
+      if (validation) {
+        showActionValidation(validation);
+        return;
+      }
+      const saved = await ensureAirbnbUserIdBeforeResolve();
+      if (!saved) {
+        const retryValidation = collectSendResolvedValidation() ?? collectResolvedValidation();
+        if (retryValidation) showActionValidation(retryValidation);
+        return;
+      }
+    } else if (
+      intent.kind === "resolve-close" ||
+      (intent.kind === "status" && intent.status === "resolved")
+    ) {
+      const validation = collectResolvedValidation();
+      if (validation) {
+        showActionValidation(validation);
+        return;
+      }
+      const saved = await ensureAirbnbUserIdBeforeResolve();
+      if (!saved) {
+        const retryValidation = collectResolvedValidation();
+        if (retryValidation) showActionValidation(retryValidation);
+        return;
+      }
+    }
+    setActionValidation(null);
+    const existing = closeOutcomeFromTicket(ticket);
+    if (existing) {
+      await completeCloseIntent(intent, existing);
+      return;
+    }
+    setCloseIntent(intent);
   }
 
   const salesforceSearchQuery = ticket
@@ -1488,6 +1707,9 @@ export function TicketDetail({
 
     const ccRecipients = parseRecipientList(ccDraft);
     const bccRecipients = parseRecipientList(bccDraft);
+    const addedOnThread = recipientsAddedSinceLastAgentSend(messages, {
+      requesterEmail: ticket.requesterEmail,
+    });
     const ccHasRecipients = ccRecipients.length > 0;
     const bccHasRecipients = bccRecipients.length > 0;
     const canCollapseRecipients =
@@ -1495,6 +1717,13 @@ export function TicketDetail({
 
     return (
       <div className="flex min-h-0 flex-1 flex-col">
+                  {addedOnThread.length > 0 && (
+                    <p className="shrink-0 border-b border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] leading-snug text-amber-950">
+                      {addedOnThread.join(", ")}{" "}
+                      {addedOnThread.length === 1 ? "was" : "were"} added on this thread
+                      and included in Cc, so the next reply does not drop them.
+                    </p>
+                  )}
                   <div className="shrink-0 border-b border-zendesk-border bg-white text-xs">
                     <label className="flex items-center gap-2 border-b border-zendesk-border/60 px-2.5 py-1">
                       <span className="w-9 shrink-0 text-zendesk-muted">To</span>
@@ -1787,7 +2016,9 @@ export function TicketDetail({
                           )}
                         >
                           <CircleCheck className="h-4 w-4" />
-                          {markingPendingHours !== null ? "Setting…" : "Set to Pending"}
+                          {markingPendingHours !== null || markingStatusOnly === "longterm_hold"
+                            ? "Setting…"
+                            : "Set to Pending"}
                         </button>
                         <button
                           type="button"
@@ -1801,7 +2032,7 @@ export function TicketDetail({
                             sendQueueBusy
                           }
                           aria-expanded={pendingMenuOpen}
-                          aria-label="Choose pending duration"
+                          aria-label="Choose pending duration or Longterm Hold"
                           className={actionButtonClass(
                             "set-pending-menu",
                             "rounded-r border border-l-0 border-zendesk-border bg-white px-1 py-1 text-xs text-zendesk-navy hover:bg-gray-100 disabled:opacity-50"
@@ -1812,7 +2043,7 @@ export function TicketDetail({
                           />
                         </button>
                         {pendingMenuOpen && (
-                          <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[10rem] rounded border border-zendesk-border bg-white py-1 shadow-md">
+                          <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[12rem] rounded border border-zendesk-border bg-white py-1 shadow-md">
                             {PENDING_WITHOUT_EMAIL_HOURS_OPTIONS.map((hours) => (
                               <button
                                 key={hours}
@@ -1832,13 +2063,28 @@ export function TicketDetail({
                                 Pending {hours}h
                               </button>
                             ))}
+                            <div className="my-1 border-t border-zendesk-border" />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void setStatusWithoutEmail(
+                                  "longterm_hold",
+                                  { adminNote: LONGTERM_HOLD_WITHOUT_EMAIL_NOTE },
+                                  "set-longterm-hold"
+                                )
+                              }
+                              title="Reopens to Open when the customer replies"
+                              className="block w-full px-3 py-1.5 text-left text-xs text-zendesk-navy hover:bg-gray-100"
+                            >
+                              Longterm Hold/Bugs
+                            </button>
                           </div>
                         )}
                       </div>
                       <button
                         type="button"
-                        onClick={() => queueSend("resolved", "send-resolved")}
-                        disabled={sendQueueBusy || isSending}
+                        onClick={() => void requestCloseIfNeeded({ kind: "send-resolved" })}
+                        disabled={sendQueueBusy || isSending || closeIntent !== null}
                         className={actionButtonClass(
                           "send-resolved",
                           "flex items-center gap-1 rounded border border-[#FF5A5F] bg-[#FF5A5F] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#e84e53] disabled:opacity-50"
@@ -1849,17 +2095,9 @@ export function TicketDetail({
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          void setStatusWithoutEmail(
-                            "resolved",
-                            {
-                              adminNote: RESOLVED_WITHOUT_EMAIL_NOTE,
-                              closeTicket: true,
-                            },
-                            "set-resolved"
-                          )
-                        }
+                        onClick={() => void requestCloseIfNeeded({ kind: "resolve-close" })}
                         disabled={
+                          closeIntent !== null ||
                           markingStatusOnly !== null ||
                           markingPendingHours !== null ||
                           sendQueueBusy ||
@@ -1921,7 +2159,11 @@ export function TicketDetail({
                       {statusOnlyError && (
                         <p className="text-xs text-red-600">{statusOnlyError}</p>
                       )}
-                      {sendError && <p className="text-xs text-red-600">{sendError}</p>}
+                      {sendError && (
+                        <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-medium text-red-800">
+                          Email not sent. {sendError}
+                        </p>
+                      )}
                     </div>
                   </div>
       </div>
@@ -2504,10 +2746,18 @@ export function TicketDetail({
               <label className="flex items-center gap-1 text-[10px]">
                 <span className="text-zendesk-muted">Status</span>
                 <select
-                  value={normalizeStatusId(ticket.status)}
-                  disabled={statusChanging}
+                  value={
+                    closeIntent?.kind === "status"
+                      ? closeIntent.status
+                      : normalizeStatusId(ticket.status)
+                  }
+                  disabled={statusChanging || closeIntent !== null}
                   onChange={async (e) => {
                     const nextStatus = e.target.value;
+                    if (requiresCloseOutcomeAnswers(ticket.status, nextStatus)) {
+                      void requestCloseIfNeeded({ kind: "status", status: nextStatus });
+                      return;
+                    }
                     setStatusChangeError(null);
                     setStatusChanging(true);
                     try {
@@ -2765,6 +3015,11 @@ export function TicketDetail({
                 );
               }
 
+              const addedTo = messageAddedToRecipients(msg, {
+                requesterEmail: ticket.requesterEmail,
+                agentEmails: agentAddressesOnThread(messages),
+              });
+
               return (
                 <div
                   key={msg.id}
@@ -2785,6 +3040,11 @@ export function TicketDetail({
                   <p className="mt-1 text-xs font-medium text-zendesk-muted">{msg.subject}</p>
                   {msg.cc && (
                     <p className="mt-1 text-xs text-zendesk-muted">CC: {msg.cc}</p>
+                  )}
+                  {addedTo.length > 0 && (
+                    <p className="mt-1 text-xs font-medium text-amber-800">
+                      Added on To: {addedTo.join(", ")}
+                    </p>
                   )}
                   {(msg.body !== "(attachment only)" || !msg.attachments?.length) && (
                     <ThreadMessageBody body={msg.body} />
@@ -3242,6 +3502,23 @@ export function TicketDetail({
         )}
       </div>
 
+      {closeIntent && ticket && (
+        <CloseCaseOutcomeModal
+          initial={closeOutcomeFromTicket(ticket)}
+          confirmLabel={
+            closeIntent.kind === "send-resolved"
+              ? "Save and send"
+              : closeIntent.kind === "resolve-close"
+                ? "Resolve & Close"
+                : "Update status"
+          }
+          busy={closeSubmitting || markingStatusOnly === "resolved"}
+          onCancel={() => {
+            if (!closeSubmitting && markingStatusOnly !== "resolved") setCloseIntent(null);
+          }}
+          onConfirm={(answers) => void completeCloseIntent(closeIntent, answers)}
+        />
+      )}
       {redactConfirmMessage && (
         <RedactMessageConfirmModal
           messageSummary={redactConfirmMessage.subject || "Message"}

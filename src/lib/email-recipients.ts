@@ -41,36 +41,123 @@ export function mergeRecipientLists(base: string, extra: string): string {
   return merged;
 }
 
-/** Collect CC parties from synced thread messages, excluding requester and agents. */
+type ThreadRecipientMessage = Pick<ThreadMessage, "cc" | "to" | "from" | "direction">;
+
+function normalizedAddress(raw: string): string | null {
+  const email = extractEmailFromField(raw)?.trim().toLowerCase();
+  if (!email || !email.includes("@")) return null;
+  return email;
+}
+
+function headerAddresses(header: string | null | undefined): string[] {
+  if (!header?.trim()) return [];
+  return parseHeaderRecipientList(header);
+}
+
+/** Agent addresses are whoever sent outbound mail on this ticket. */
+export function agentAddressesOnThread(
+  messages: Pick<ThreadMessage, "from" | "direction">[]
+): string[] {
+  const agents: string[] = [];
+  const seen = new Set<string>();
+  for (const msg of messages) {
+    if (msg.direction !== "outbound") continue;
+    const email = normalizedAddress(msg.from);
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    agents.push(email);
+  }
+  return agents;
+}
+
+/**
+ * Everyone who should stay on the next reply: Cc, extra To addresses, and
+ * inbound senders. The ticket requester stays in To. The agent is omitted.
+ */
 export function deriveThreadCcRecipients(
-  messages: Pick<ThreadMessage, "cc" | "from" | "direction">[],
+  messages: ThreadRecipientMessage[],
   options: { requesterEmail: string }
 ): string {
   const exclude = new Set<string>();
-  const requester = extractEmailFromField(options.requesterEmail)?.toLowerCase();
+  const requester = normalizedAddress(options.requesterEmail);
   if (requester) exclude.add(requester);
-
-  for (const msg of messages) {
-    if (msg.direction !== "outbound") continue;
-    const from = extractEmailFromField(msg.from)?.toLowerCase();
-    if (from) exclude.add(from);
-  }
+  for (const agent of agentAddressesOnThread(messages)) exclude.add(agent);
 
   const collected: string[] = [];
   const seen = new Set<string>();
 
+  function add(raw: string) {
+    const email = extractEmailFromField(raw)?.trim();
+    if (!email) return;
+    const normalized = email.toLowerCase();
+    if (exclude.has(normalized) || seen.has(normalized)) return;
+    seen.add(normalized);
+    collected.push(email);
+  }
+
   for (const msg of messages) {
-    if (!msg.cc?.trim()) continue;
-    for (const raw of parseRecipientList(msg.cc)) {
-      const email = (extractEmailFromField(raw) ?? raw).trim();
-      const normalized = email.toLowerCase();
-      if (!normalized || exclude.has(normalized) || seen.has(normalized)) continue;
-      seen.add(normalized);
-      collected.push(email);
-    }
+    for (const email of headerAddresses(msg.cc)) add(email);
+    for (const email of headerAddresses(msg.to)) add(email);
+    if (msg.direction === "inbound") add(msg.from);
   }
 
   return joinRecipientList(collected);
+}
+
+/**
+ * People on a message's To line who are not the requester, the agent, or
+ * already listed in that message's Cc. Hosts often add someone on To.
+ */
+export function messageAddedToRecipients(
+  msg: Pick<ThreadMessage, "to" | "cc">,
+  options: { requesterEmail: string; agentEmails: string[] }
+): string[] {
+  const exclude = new Set<string>();
+  const requester = normalizedAddress(options.requesterEmail);
+  if (requester) exclude.add(requester);
+  for (const agent of options.agentEmails) {
+    const normalized = normalizedAddress(agent);
+    if (normalized) exclude.add(normalized);
+  }
+  for (const email of headerAddresses(msg.cc)) {
+    const normalized = normalizedAddress(email);
+    if (normalized) exclude.add(normalized);
+  }
+
+  const added: string[] = [];
+  const seen = new Set<string>();
+  for (const email of headerAddresses(msg.to)) {
+    const normalized = normalizedAddress(email);
+    if (!normalized || exclude.has(normalized) || seen.has(normalized)) continue;
+    seen.add(normalized);
+    added.push(email);
+  }
+  return added;
+}
+
+/** Recipients on the thread who were not on the agent's most recent send. */
+export function recipientsAddedSinceLastAgentSend(
+  messages: ThreadRecipientMessage[],
+  options: { requesterEmail: string }
+): string[] {
+  const lastOutbound = [...messages].reverse().find((msg) => msg.direction === "outbound");
+  if (!lastOutbound) return [];
+
+  const already = new Set<string>();
+  for (const email of [
+    ...headerAddresses(lastOutbound.to),
+    ...headerAddresses(lastOutbound.cc),
+  ]) {
+    const normalized = normalizedAddress(email);
+    if (normalized) already.add(normalized);
+  }
+
+  return parseRecipientList(
+    deriveThreadCcRecipients(messages, options)
+  ).filter((email) => {
+    const normalized = normalizedAddress(email);
+    return normalized && !already.has(normalized);
+  });
 }
 
 export function appendRecipient(value: string, email: string): string {

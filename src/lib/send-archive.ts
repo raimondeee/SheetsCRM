@@ -2,7 +2,7 @@
  * Recent-send archive — client facade over SQLite via /api/send-archive.
  * Migrates once from legacy localStorage key sheetscrm_send_archive.
  */
-import { readFilesAsAttachmentPayload } from "./outbound-attachments";
+import { inferAttachmentMimeType, readFilesAsAttachmentPayload } from "./outbound-attachments";
 import { normalizeDraftHtml } from "./html-utils";
 import type { QueuedSendPayload } from "./queued-send";
 import { SEND_ARCHIVE_LIMIT } from "./composer-persistence-constants";
@@ -16,6 +16,8 @@ export type {
 export { SEND_ARCHIVE_LIMIT } from "./composer-persistence-constants";
 
 const LEGACY_STORAGE_KEY = "sheetscrm_send_archive";
+/** Keep recent-send JSON small; compose restore uses in-memory File objects. */
+const ARCHIVE_INLINE_ATTACHMENT_MAX_BYTES = 1024 * 1024;
 
 type SendArchiveListener = () => void;
 const listeners = new Set<SendArchiveListener>();
@@ -146,14 +148,29 @@ export function newSendArchiveId(): string {
   return `send-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+async function attachmentsForArchive(
+  files: File[]
+): Promise<SendArchiveEntry["attachments"]> {
+  return Promise.all(
+    files.map(async (file) => {
+      if (file.size > ARCHIVE_INLINE_ATTACHMENT_MAX_BYTES) {
+        return {
+          filename: file.name,
+          mimeType: inferAttachmentMimeType(file.name, file.type),
+          data: "",
+        };
+      }
+      const [payload] = await readFilesAsAttachmentPayload([file]);
+      return payload;
+    })
+  );
+}
+
 export async function recordQueuedSend(
   payload: QueuedSendPayload,
   archiveId = newSendArchiveId()
 ): Promise<string> {
-  const attachments =
-    payload.attachmentFiles.length > 0
-      ? await readFilesAsAttachmentPayload(payload.attachmentFiles)
-      : [];
+  const attachments = await attachmentsForArchive(payload.attachmentFiles);
 
   const entry: SendArchiveEntry = {
     id: archiveId,

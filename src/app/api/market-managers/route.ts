@@ -4,8 +4,13 @@ import {
   loadMarketManagerDirectory,
   saveMarketManagerDirectory,
 } from "@/lib/market-managers-store";
+import { withApiRequestLog } from "@/lib/ops-diagnostics";
 
-export async function GET() {
+export async function GET(request: Request) {
+  return withApiRequestLog(request, "/api/market-managers", handleGet);
+}
+
+async function handleGet() {
   try {
     const directory = loadMarketManagerDirectory();
     return NextResponse.json(directory);

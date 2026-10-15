@@ -41,6 +41,12 @@ import { DEFAULT_TIMER_SETTINGS, type TimerSettings } from "./timer-settings";
 import type { ColumnMapping } from "./types";
 import { withOpsMetric } from "./ops-metrics";
 import { resolveAndAssessIntakeSheet } from "./intake-column-resolve";
+import {
+  CLOSE_OUTCOME_COLUMNS,
+  closeOutcomeLetter,
+  readCloseOutcomeFromRow,
+  type CloseOutcomeAnswers,
+} from "./close-outcome";
 
 export interface FetchTicketsResult {
   tickets: Ticket[];
@@ -235,6 +241,7 @@ function buildTicketFromSheetRow(
     reservationCode: getCellValueByRole(row, config, "reservationCode"),
     claimNumber: getCellValueByRole(row, config, "claimNumber"),
     listingId: getCellValueByRole(row, config, "listingId"),
+    ...readCloseOutcomeFromRow(row, config),
     status: "new",
     statusChangedAt: null,
     pendingReopenHours: null,
@@ -570,6 +577,33 @@ export async function updateUiFieldOnSheet(
   value: string
 ): Promise<void> {
   await updateSheetCellByIndex(config, rowNumber, columnIndex, value);
+}
+
+/** Writes close-case outcome answers to mapped P/Q/R columns (letter fallback). */
+export async function updateCloseOutcomeOnSheet(
+  config: SheetConfig,
+  rowNumber: number,
+  answers: CloseOutcomeAnswers
+): Promise<void> {
+  const auth = await getGoogleAuthClient();
+  if (!auth) throw new Error("Sign in with Google to update the sheet");
+
+  const live = (await resolveLiveSheetConfig(config)).config;
+  const sheets = google.sheets({ version: "v4", auth });
+  const data: CloseOutcomeAnswers = answers;
+
+  for (const column of CLOSE_OUTCOME_COLUMNS) {
+    const letter = closeOutcomeLetter(live, column.role);
+    const range = `'${live.sheetName}'!${letter}${rowNumber}`;
+    await withOpsMetric("sheets", "values.update", () =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId: live.spreadsheetId,
+        range,
+        valueInputOption: "RAW",
+        requestBody: { values: [[data[column.role]]] },
+      })
+    );
+  }
 }
 
 /** Marks the mapped user-emailed column as Yes after a CRM outbound send. */

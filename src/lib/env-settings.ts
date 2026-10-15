@@ -313,5 +313,5 @@ export function getEnvFieldStatuses(): EnvFieldStatus[] {
 
 export function isLocalEnvEditorRequest(request: Request): boolean {
   const host = (request.headers.get("host") ?? "").toLowerCase();
-  return /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
+  return /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
 }

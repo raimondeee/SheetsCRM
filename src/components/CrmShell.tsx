@@ -58,6 +58,7 @@ import {
 import { parseLinkedCase } from "@/lib/linked-cases";
 import { usePersistedBoolean } from "@/hooks/usePersistedBoolean";
 import { usePendingSendQueue } from "@/hooks/usePendingSendQueue";
+import type { QueuedSendPayload } from "@/lib/queued-send";
 import { usePersistedWidth, useResponsivePanelMax } from "@/hooks/usePersistedWidth";
 import { useRefreshCountdown } from "@/hooks/useRefreshCountdown";
 import { useCalendarReminders } from "@/hooks/useCalendarReminders";
@@ -84,6 +85,7 @@ import {
 } from "@/lib/next-ticket-after-send";
 import { isResponseSlaEligibleStatus } from "@/lib/sla-display";
 import { normalizeStatusId } from "@/lib/status-mapper";
+import { ticketFieldsFromCloseOutcome, type CloseOutcomeAnswers } from "@/lib/close-outcome";
 import { InboxVictoryView } from "./InboxVictoryView";
 import { buildContactReasonOptions } from "@/lib/contact-reasons";
 import type { TicketQualityFilter } from "@/lib/ticket-search";
@@ -131,7 +133,15 @@ function DashboardChunkPlaceholder({ label }: { label: string }) {
 const PENDING_SHEET_FIELD_TTL_MS = 20_000;
 
 type PendingSheetFields = Partial<
-  Pick<Ticket, "claimNumber" | "reservationCode" | "listingId">
+  Pick<
+    Ticket,
+    | "claimNumber"
+    | "reservationCode"
+    | "listingId"
+    | "inFavorOfHost"
+    | "csInTheWrong"
+    | "remediationSuccessful"
+  >
 >;
 
 type LoadTicketsOptions = {
@@ -259,6 +269,7 @@ export function CrmShell() {
     Map<string, { fields: PendingSheetFields; at: number }>
   >(new Map());
   const [composeClearedRowId, setComposeClearedRowId] = useState<string | null>(null);
+  const [composeRestore, setComposeRestore] = useState<QueuedSendPayload | null>(null);
   sourceRef.current = source;
 
   function rememberPendingSheetFields(rowId: string, fields: PendingSheetFields) {
@@ -519,6 +530,19 @@ export function CrmShell() {
     void loadTickets({ reason: "initial" });
     loadAuth();
   }, [loadTickets, loadAuth]);
+
+  useEffect(() => {
+    if (auth.method !== "oauth" || source === "mock" || source === "unauthenticated") return;
+    const idle = window.setTimeout(() => {
+      void fetch("/api/mixmax/templates", { cache: "no-store", credentials: "same-origin" }).catch(
+        () => {}
+      );
+      void fetch("/api/gmail/unread?warm=1", { cache: "no-store", credentials: "same-origin" }).catch(
+        () => {}
+      );
+    }, 3000);
+    return () => window.clearTimeout(idle);
+  }, [auth.method, source]);
 
   useEffect(() => {
     if (source === "mock" || source === "unauthenticated") return;
@@ -783,12 +807,22 @@ export function CrmShell() {
     return map;
   }, [tickets]);
 
-  async function handleStatusChange(rowId: string, status: string) {
+  async function handleStatusChange(
+    rowId: string,
+    status: string,
+    options?: { closeOutcome?: CloseOutcomeAnswers }
+  ) {
     const snapshot = tickets;
     const ticket = tickets.find((t) => t.rowId === rowId);
+    const closeFields = options?.closeOutcome
+      ? ticketFieldsFromCloseOutcome(options.closeOutcome)
+      : null;
     const optimistic = tickets.map((t) =>
       t.rowId === rowId
-        ? buildOptimisticStatusFields(t, status, prefsRef.current.defaultSlaHours)
+        ? {
+            ...buildOptimisticStatusFields(t, status, prefsRef.current.defaultSlaHours),
+            ...(closeFields ?? {}),
+          }
         : t
     );
     setTickets(optimistic);
@@ -803,6 +837,7 @@ export function CrmShell() {
           status,
           intakeTimestamp: ticket?.timestamp,
           requesterEmail: ticket?.requesterEmail,
+          ...(options?.closeOutcome ? { closeOutcome: options.closeOutcome } : {}),
         }),
       });
       const data = await res.json();
@@ -833,6 +868,7 @@ export function CrmShell() {
         };
       });
       setTickets(nextTickets);
+      if (closeFields) rememberPendingSheetFields(rowId, closeFields);
 
       const advanced = advanceAfterSend(rowId, status as "pending" | "resolved", nextTickets);
       if (!advanced) {
@@ -910,20 +946,29 @@ export function CrmShell() {
     setSelectedId(null);
   }
 
-  function restoreSentTicket(rowId: string) {
+  function restoreSentTicket(rowId: string, compose?: QueuedSendPayload) {
     setInboxVictory(false);
     setSelectedId(rowId);
+    if (compose && compose.ticketRowId === rowId) {
+      setComposeRestore(compose);
+    }
   }
 
-  async function handleTicketSent(rowId: string, status: "pending" | "resolved" | "unchanged") {
+  async function handleTicketSent(
+    rowId: string,
+    status: "pending" | "resolved" | "unchanged",
+    closeOutcome?: CloseOutcomeAnswers
+  ) {
     if (status === "unchanged") {
       setComposeClearedRowId(rowId);
       return;
     }
 
+    const closeFields = closeOutcome ? ticketFieldsFromCloseOutcome(closeOutcome) : null;
+    if (closeFields) rememberPendingSheetFields(rowId, closeFields);
     const nextTickets = ticketsAfterSend(tickets, rowId, status).map((t) =>
       t.rowId === rowId && status === "resolved"
-        ? { ...t, resolvedClosed: false }
+        ? { ...t, resolvedClosed: false, ...(closeFields ?? {}) }
         : t
     );
     setTickets(nextTickets);
@@ -995,8 +1040,12 @@ export function CrmShell() {
       airbnbUserId?: string;
       airbnbUserIdExempt?: boolean;
       closeTicket?: boolean;
+      closeOutcome?: CloseOutcomeAnswers;
     }
   ) {
+    const closeFields = options?.closeOutcome
+      ? ticketFieldsFromCloseOutcome(options.closeOutcome)
+      : null;
     if (source === "mock") {
       const now = new Date().toISOString();
       const nextTickets = tickets.map((t) => {
@@ -1017,6 +1066,7 @@ export function CrmShell() {
           ...withStatus,
           adminNotes,
           sheetCaseSummary: adminNotes,
+          ...(closeFields ?? {}),
         };
       });
       setTickets(nextTickets);
@@ -1041,6 +1091,7 @@ export function CrmShell() {
         ...withStatus,
         adminNotes,
         sheetCaseSummary: adminNotes,
+        ...(closeFields ?? {}),
       };
     });
     setTickets(optimistic);
@@ -1060,6 +1111,7 @@ export function CrmShell() {
             ? { pendingReopenHours: options.pendingHours }
             : {}),
           ...(options?.closeTicket ? { closeTicket: true } : {}),
+          ...(options?.closeOutcome ? { closeOutcome: options.closeOutcome } : {}),
           ...(options?.airbnbUserIdExempt
             ? { airbnbUserIdExempt: true }
             : options?.airbnbUserId
@@ -1098,6 +1150,7 @@ export function CrmShell() {
         };
       });
       setTickets(nextTickets);
+      if (closeFields) rememberPendingSheetFields(rowId, closeFields);
 
       const advanced = advanceAfterSend(rowId, nextStatus, nextTickets);
       if (!advanced) showInboxVictory();
@@ -1293,18 +1346,34 @@ export function CrmShell() {
   }
 
   async function handleSubjectChange(rowId: string, subject: string) {
-    await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rowId, subject }),
-    });
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.rowId === rowId
-          ? { ...t, subject, crmSubjectLabel: crmSubjectLabelFromStored(subject) }
-          : t
-      )
-    );
+    try {
+      const res = await fetch(`/api/tickets/${encodeURIComponent(rowId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rowId, subject }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || data.error) {
+        setSyncError(data.error ?? "Could not save the subject");
+        return;
+      }
+      setSyncError(null);
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.rowId === rowId
+            ? { ...t, subject, crmSubjectLabel: crmSubjectLabelFromStored(subject) }
+            : t
+        )
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setSyncError(
+        message === "Failed to fetch"
+          ? "Could not save the subject — the CRM server did not respond. Try again."
+          : "Could not save the subject"
+      );
+      logCrmError("Subject save failed", error);
+    }
   }
 
   async function handleContactReasonChange(rowId: string, contactReason: string) {
@@ -1696,6 +1765,13 @@ export function CrmShell() {
                   : undefined
               }
               composeClearedRowId={composeClearedRowId}
+              onComposeCleared={() => setComposeClearedRowId(null)}
+              composeRestore={
+                composeRestore && composeRestore.ticketRowId === selected?.rowId
+                  ? composeRestore
+                  : null
+              }
+              onComposeRestoreApplied={() => setComposeRestore(null)}
               onClearSendError={() => pendingSendQueue.clearSendError(selected?.rowId ?? undefined)}
               onSetStatusWithoutEmail={handleSetStatusWithoutEmail}
               onSubjectChange={handleSubjectChange}
@@ -1761,6 +1837,19 @@ export function CrmShell() {
           onDismiss={pomodoroBreaks.dismiss}
         />
       )}
+
+      {pendingSendQueue.sending &&
+        pendingSendQueue.sendingTicketRowId &&
+        pendingSendQueue.sendingTicketRowId !== selected?.rowId && (
+          <div className="pointer-events-none fixed bottom-16 right-4 z-40">
+            <div className="max-w-md rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 shadow-lg">
+              <p className="text-sm font-medium text-amber-950">Sending email…</p>
+              {pendingSendQueue.queuedSendLabel && (
+                <p className="mt-1 text-sm text-amber-900">{pendingSendQueue.queuedSendLabel}</p>
+              )}
+            </div>
+          </div>
+        )}
 
       {pendingSendQueue.sendError &&
         pendingSendQueue.sendError.rowId !== selected?.rowId && (

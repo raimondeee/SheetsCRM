@@ -4,11 +4,16 @@ import {
   fetchPrimaryUpcomingEvents,
 } from "@/lib/google-calendar";
 import { getSignedInUser } from "@/lib/google-auth";
+import { withApiRequestLog } from "@/lib/ops-diagnostics";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request: Request) {
+  return withApiRequestLog(request, "/api/calendar/upcoming", handleGet);
+}
+
+async function handleGet() {
   try {
     const user = await getSignedInUser();
     if (user.method !== "oauth") {

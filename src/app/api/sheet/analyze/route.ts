@@ -40,7 +40,9 @@ export async function POST(request: Request) {
     const columns = headers.length > 0 ? analyzeHeaders(headers) : buildDefaultSheetConfig().columns;
     const k = columns.find((c) => c.role === "internalToolK");
     const m = columns.find((c) => c.role === "internalToolM");
-    const r = columns.find((c) => c.role === "internalToolR");
+    const p = columns.find((c) => c.role === "inFavorOfHost");
+    const q = columns.find((c) => c.role === "csInTheWrong");
+    const rClose = columns.find((c) => c.role === "remediationSuccessful");
     const n = columns.find((c) => c.role === "status");
 
     const config = await analyzeAndBuildConfig(sheetUrl, parsed.spreadsheetId, parsed.gid);
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
         source: analysisSource,
         headers,
         sheetName,
-        columns: { k, m, r, n },
+        columns: { k, m, p, q, r: rClose, n },
         note:
           headers.length === 0
             ? "Sign in with Google (top-right) to read this private sheet using your account access."

@@ -1,4 +1,5 @@
 import { withOpsMetric } from "./ops-metrics";
+import { coalesceInflight } from "./async-work";
 
 export interface MixmaxSnippet {
   id: string;
@@ -52,14 +53,14 @@ type CacheEntry<T> = {
 const templatesListCache = new Map<string, CacheEntry<MixmaxSnippet[]>>();
 const templateByIdCache = new Map<string, CacheEntry<MixmaxSnippet>>();
 
-function readCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+function readFresh<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
   const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    cache.delete(key);
-    return null;
-  }
+  if (!entry || Date.now() > entry.expiresAt) return null;
   return entry.value;
+}
+
+function peekLast<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  return cache.get(key)?.value ?? null;
 }
 
 function writeCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): void {
@@ -133,12 +134,16 @@ async function fetchMixmaxSnippetRaw(id: string): Promise<MixmaxSnippetRaw> {
 
 export async function fetchMixmaxTemplateById(id: string): Promise<MixmaxSnippet> {
   const cacheKey = id.trim();
-  const cached = readCache(templateByIdCache, cacheKey);
+  const cached = readFresh(templateByIdCache, cacheKey);
   if (cached) return cached;
 
-  const mapped = mapMixmaxSnippet(await fetchMixmaxSnippetRaw(cacheKey));
-  writeCache(templateByIdCache, cacheKey, mapped);
-  return mapped;
+  return coalesceInflight(`mixmax:snippet:${cacheKey}`, async () => {
+    const stillFresh = readFresh(templateByIdCache, cacheKey);
+    if (stillFresh) return stillFresh;
+    const mapped = mapMixmaxSnippet(await fetchMixmaxSnippetRaw(cacheKey));
+    writeCache(templateByIdCache, cacheKey, mapped);
+    return mapped;
+  });
 }
 
 export async function fetchMixmaxTemplates(search?: string): Promise<MixmaxSnippet[]> {
@@ -146,37 +151,43 @@ export async function fetchMixmaxTemplates(search?: string): Promise<MixmaxSnipp
   if (!token) return [];
 
   const cacheKey = listCacheKey(search);
-  const cached = readCache(templatesListCache, cacheKey);
-  if (cached) return cached;
+  const fresh = readFresh(templatesListCache, cacheKey);
+  if (fresh) return fresh;
 
-  const params = new URLSearchParams({
-    limit: "100",
-    isInline: "false",
-    search: buildOwnedTemplatesSearch(search),
+  return coalesceInflight(`mixmax:list:${cacheKey}`, async () => {
+    const stillFresh = readFresh(templatesListCache, cacheKey);
+    if (stillFresh) return stillFresh;
+
+    const params = new URLSearchParams({
+      limit: "100",
+      isInline: "false",
+      search: buildOwnedTemplatesSearch(search),
+    });
+
+    const res = await withOpsMetric("mixmax", "snippets.list", () =>
+      fetch(`${MIXMAX_API_BASE}/snippets?${params.toString()}`, {
+        headers: { "X-API-Token": token },
+        cache: "no-store",
+      })
+    );
+
+    if (!res.ok) {
+      const lastGood = peekLast(templatesListCache, cacheKey);
+      if (lastGood) return lastGood;
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err.message ?? `Mixmax API error (${res.status})`);
+    }
+
+    const data = (await res.json()) as MixmaxSnippetsResponse;
+    const mapped = (data.results ?? []).map(mapMixmaxSnippet);
+    writeCache(templatesListCache, cacheKey, mapped);
+
+    for (const snippet of mapped) {
+      writeCache(templateByIdCache, snippet.id, snippet);
+    }
+
+    return mapped;
   });
-
-  const res = await withOpsMetric("mixmax", "snippets.list", () =>
-    fetch(`${MIXMAX_API_BASE}/snippets?${params.toString()}`, {
-      headers: { "X-API-Token": token },
-      cache: "no-store",
-    })
-  );
-
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message ?? `Mixmax API error (${res.status})`);
-  }
-
-  const data = (await res.json()) as MixmaxSnippetsResponse;
-  const mapped = (data.results ?? []).map(mapMixmaxSnippet);
-  writeCache(templatesListCache, cacheKey, mapped);
-
-  // Warm per-id cache from list results for faster attachment apply.
-  for (const snippet of mapped) {
-    writeCache(templateByIdCache, snippet.id, snippet);
-  }
-
-  return mapped;
 }
 
 /** Ask Mixmax to sync a Gmail draft (used to resolve cloud attachment bytes via Gmail). */

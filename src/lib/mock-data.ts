@@ -46,6 +46,9 @@ export function getMockTickets(
       reservationCode: "HMQW5Y3BCF",
       claimNumber: "CLSF-06100223",
       listingId: "1441333127016254063",
+      inFavorOfHost: "",
+      csInTheWrong: "",
+      remediationSuccessful: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-8842",
         m: "https://dashboard.internal.example/accounts/ACC-12091",
@@ -76,6 +79,9 @@ export function getMockTickets(
       reservationCode: "",
       claimNumber: "",
       listingId: "",
+      inFavorOfHost: "",
+      csInTheWrong: "",
+      remediationSuccessful: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-3310",
         m: "https://metrics.internal.example/tenants/TNT-991",
@@ -106,6 +112,9 @@ export function getMockTickets(
       reservationCode: "",
       claimNumber: "",
       listingId: "",
+      inFavorOfHost: "",
+      csInTheWrong: "",
+      remediationSuccessful: "",
       internalTools: {
         k: "https://admin.internal.example/customers/CUST-5501",
         m: "https://sso.internal.example/orgs/ORG-5501",
