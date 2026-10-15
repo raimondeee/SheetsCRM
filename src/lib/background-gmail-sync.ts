@@ -1,11 +1,12 @@
 /**
- * Polls Gmail for pending/resolved tickets after the ticket list is already shown.
+ * Polls Gmail for pending, longterm-hold, and resolved tickets after the ticket list is already shown.
  *
  * GET /api/tickets remembers the latest ticket snapshot and reports whether any
  * rows are due. POST /api/tickets/background-gmail-sync runs this worker so list
  * refresh is not blocked on Gmail. Skips resolve-closed tickets and archived
- * Gmail links. Intervals: pending ~10m; resolved uses Preferences timer settings
- * (default 24h).
+ * Gmail links. Intervals: pending and longterm hold ~10m; resolved uses
+ * Preferences timer settings (default 24h). This poll does not mark Gmail
+ * threads as read — a host reply stays unread until someone opens it.
  */
 import { syncGmailThreadForTicket } from "./gmail";
 import {
@@ -20,7 +21,7 @@ import { normalizeStatusId } from "./status-mapper";
 import type { TimerSettings } from "./timer-settings";
 import type { Ticket } from "./types";
 
-/** Pending tickets: check Gmail for customer replies every 10 minutes. */
+/** Pending and longterm-hold tickets: check Gmail for customer replies every 10 minutes. */
 export const BACKGROUND_GMAIL_SYNC_PENDING_MS = 10 * 60 * 1000;
 
 /** Default resolved poll interval when prefs are unavailable (24 hours). */
@@ -87,7 +88,9 @@ function resolvedSyncIntervalMs(timerSettings?: TimerSettings): number {
 
 function syncIntervalMs(ticket: Ticket, timerSettings?: TimerSettings): number | null {
   const normalized = normalizeStatusId(ticket.status);
-  if (normalized === "pending") return BACKGROUND_GMAIL_SYNC_PENDING_MS;
+  if (normalized === "pending" || normalized === "longterm_hold") {
+    return BACKGROUND_GMAIL_SYNC_PENDING_MS;
+  }
   if (normalized === "resolved") {
     if (ticket.resolvedClosed) return null;
     if (!ticketHasExplicitGmailLink(ticket.rowId)) return null;
@@ -126,6 +129,7 @@ async function syncOneTicket(ticket: Ticket): Promise<string> {
       ticketRowId: ticket.rowId,
       requesterEmail: ticket.requesterEmail,
       intakeTimestamp: ticket.timestamp,
+      markRead: false,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -157,7 +161,7 @@ async function syncTicketsWithConcurrency(
   return synced;
 }
 
-/** Sync due pending/resolved tickets, then re-merge overlay fields for those rows. */
+/** Sync due pending, longterm-hold, and resolved tickets, then re-merge overlay fields. */
 export async function runBackgroundGmailSyncForTickets(
   tickets: Ticket[],
   timerSettings: TimerSettings

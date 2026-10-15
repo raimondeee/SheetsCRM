@@ -26,7 +26,17 @@ import { encodeMimeHeaderValue } from "./mime-headers";
 import { getGoogleAuthClient, getSignedInUser } from "./google-auth";
 import { joinRecipientList, parseHeaderRecipientList } from "./email-recipients";
 import { stripQuotedReplyHtml, stripQuotedReplyPlainText } from "./email-reply-body";
+import {
+  appendQuotedReply,
+  childThreadIndex,
+  formatReplyAttributionDate,
+  referenceMessageIds,
+  replySubjectForThread,
+  stripReplySubjectPrefixes,
+  threadingHeaderLines,
+} from "./email-reply-quote";
 import { withOpsMetric } from "./ops-metrics";
+import { mapWithConcurrency } from "./async-work";
 import {
   addThreadMessage,
   claimGmailThreadForTicket,
@@ -811,8 +821,7 @@ export async function fetchUnreadGmailThreads(limit = 40): Promise<import("./typ
   });
 
   const refs = listed.data.threads ?? [];
-  const previews = await Promise.all(
-    refs.map(async (ref) => {
+  const previews = await mapWithConcurrency(refs, 4, async (ref) => {
       if (!ref.id) return null;
       try {
         const thread = await gmail.users.threads.get({
@@ -852,7 +861,7 @@ export async function fetchUnreadGmailThreads(limit = 40): Promise<import("./typ
       } catch {
         return null;
       }
-    })
+    }
   );
 
   return previews
@@ -1050,7 +1059,7 @@ function buildAttachmentMimePart(att: OutboundEmailAttachment): string {
   ].join("\r\n");
 }
 
-function encodeMessage(
+function buildRfc822MimeMessage(
   from: string,
   to: string,
   subject: string,
@@ -1058,15 +1067,17 @@ function encodeMessage(
   cc?: string | null,
   htmlBody?: string,
   attachments: OutboundEmailAttachment[] = [],
-  bcc?: string | null
+  bcc?: string | null,
+  extraHeaders: string[] = []
 ): string {
   const headers = [`From: ${from}`, `To: ${to}`];
   if (cc?.trim()) headers.push(`Cc: ${cc.trim()}`);
   if (bcc?.trim()) headers.push(`Bcc: ${bcc.trim()}`);
-  headers.push(`Subject: ${encodeMimeHeaderValue(subject)}`, "MIME-Version: 1.0");
+  headers.push(`Subject: ${encodeMimeHeaderValue(subject)}`);
+  headers.push(...extraHeaders);
+  headers.push("MIME-Version: 1.0");
 
   const bodyPart = buildBodyMimePart(body, htmlBody);
-  let mimeBody: string;
 
   if (attachments.length > 0) {
     const mixedBoundary = `mixed_${Date.now().toString(36)}`;
@@ -1079,11 +1090,12 @@ function encodeMessage(
       ...attachments.flatMap((att) => [`--${mixedBoundary}`, buildAttachmentMimePart(att)]),
       `--${mixedBoundary}--`,
     ];
-    mimeBody = parts.join("\r\n");
-  } else if (htmlBody) {
+    return parts.join("\r\n");
+  }
+  if (htmlBody) {
     const boundary = `sheetscrm_${Date.now().toString(36)}`;
     headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
-    mimeBody = [
+    return [
       ...headers,
       "",
       `--${boundary}`,
@@ -1098,16 +1110,45 @@ function encodeMessage(
       htmlBody,
       `--${boundary}--`,
     ].join("\r\n");
-  } else {
-    headers.push("Content-Type: text/plain; charset=utf-8", "", body);
-    mimeBody = headers.join("\r\n");
   }
+  headers.push("Content-Type: text/plain; charset=utf-8", "", body);
+  return headers.join("\r\n");
+}
 
+function encodeRfc822AsGmailRaw(mimeBody: string): string {
   return Buffer.from(mimeBody)
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
+}
+
+/** Gmail JSON `messages.send` rejects `raw` over ~5MB; larger mail needs media upload. */
+const GMAIL_JSON_SEND_MAX_BYTES = 5 * 1024 * 1024;
+
+async function gmailSendRfc822(
+  gmail: gmail_v1.Gmail,
+  mimeBody: string,
+  threadId?: string | null
+) {
+  const jsonRawBytes = Math.ceil((Buffer.byteLength(mimeBody, "utf8") * 4) / 3);
+  if (jsonRawBytes > GMAIL_JSON_SEND_MAX_BYTES) {
+    return gmail.users.messages.send({
+      userId: "me",
+      requestBody: threadId ? { threadId } : undefined,
+      media: {
+        mimeType: "message/rfc822",
+        body: mimeBody,
+      },
+    });
+  }
+  return gmail.users.messages.send({
+    userId: "me",
+    requestBody: {
+      raw: encodeRfc822AsGmailRaw(mimeBody),
+      threadId: threadId ?? undefined,
+    },
+  });
 }
 
 function getHeader(
@@ -1578,9 +1619,23 @@ export async function syncGmailThreadForTicket(params: {
   ticketRowId: string;
   requesterEmail: string;
   intakeTimestamp?: string;
+  /**
+   * When false, leave the Gmail thread unread. Background polling passes false
+   * so a later host reply is not marked read before anyone opens it.
+   */
+  markRead?: boolean;
 }): Promise<{ messages: ThreadMessage[]; statusReopened: boolean }> {
   return withOpsMetric("gmail", "thread.sync", async () => {
   const gmail = await getGmailClient();
+  const markRead = params.markRead !== false;
+
+  async function markLinkedThreadRead(): Promise<void> {
+    if (!markRead) return;
+    await markTicketGmailThreadAsRead({
+      ticketRowId: params.ticketRowId,
+      requesterEmail: params.requesterEmail,
+    });
+  }
 
   pruneMismatchedThreadMessages(params.ticketRowId);
   dedupeThreadMessagesForTicket(params.ticketRowId);
@@ -1590,10 +1645,7 @@ export async function syncGmailThreadForTicket(params: {
     if (params.intakeTimestamp) {
       refreshResponseSlaDueAt(params.ticketRowId, params.intakeTimestamp);
     }
-    await markTicketGmailThreadAsRead({
-      ticketRowId: params.ticketRowId,
-      requesterEmail: params.requesterEmail,
-    });
+    await markLinkedThreadRead();
     return {
       messages: getThreadMessages(params.ticketRowId),
       statusReopened,
@@ -1614,10 +1666,7 @@ export async function syncGmailThreadForTicket(params: {
     if (params.intakeTimestamp) {
       refreshResponseSlaDueAt(params.ticketRowId, params.intakeTimestamp);
     }
-    await markTicketGmailThreadAsRead({
-      ticketRowId: params.ticketRowId,
-      requesterEmail: params.requesterEmail,
-    });
+    await markLinkedThreadRead();
     return {
       messages: getThreadMessages(params.ticketRowId),
       statusReopened,
@@ -1659,10 +1708,7 @@ export async function syncGmailThreadForTicket(params: {
   if (params.intakeTimestamp) {
     refreshResponseSlaDueAt(params.ticketRowId, params.intakeTimestamp);
   }
-  await markTicketGmailThreadAsRead({
-    ticketRowId: params.ticketRowId,
-    requesterEmail: params.requesterEmail,
-  });
+  await markLinkedThreadRead();
   const messages = getThreadMessages(params.ticketRowId).sort(
     (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
   );
@@ -1707,6 +1753,80 @@ export async function importGmailThreadMessagesForTicket(params: {
   dedupeThreadMessagesForTicket(params.ticketRowId);
 }
 
+interface ThreadReplyContext {
+  inReplyTo: string;
+  references: string;
+  subject: string;
+  exactParentSubject: string;
+  threadTopic: string;
+  threadIndex: string | null;
+  quoteFrom: string;
+  quoteDate: string;
+  quotePlain: string;
+  quoteHtml: string;
+}
+
+function headerMessageId(
+  headers: gmail_v1.Schema$MessagePartHeader[] | undefined
+): string | null {
+  return getHeader(headers, "Message-ID").match(/<[^<>\s]+>/)?.[0] ?? null;
+}
+
+function isGmailThreadRejected(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid thread_id/i.test(message);
+}
+
+/**
+ * Headers and quoted body that make a follow-up stay on the recipient's thread.
+ * Gmail's thread id alone only groups the copy in the sending mailbox.
+ */
+async function loadThreadReplyContext(
+  gmail: gmail_v1.Gmail,
+  threadId: string
+): Promise<ThreadReplyContext | null> {
+  const thread = await gmail.users.threads.get({
+    userId: "me",
+    id: threadId,
+    format: "full",
+  });
+  const messages = [...(thread.data.messages ?? [])].sort(
+    (a, b) => Number(a.internalDate ?? 0) - Number(b.internalDate ?? 0)
+  );
+  if (messages.length === 0) return null;
+
+  const messageIds: string[] = [];
+  for (const msg of messages) {
+    const id = headerMessageId(msg.payload?.headers);
+    if (id) messageIds.push(id);
+  }
+  const latest = messages[messages.length - 1];
+  const inReplyTo = headerMessageId(latest?.payload?.headers);
+  if (!latest || !inReplyTo) return null;
+
+  const parentSubject = getHeader(latest.payload?.headers, "Subject");
+  const parentTopic = getHeader(latest.payload?.headers, "Thread-Topic");
+  const parentIndex = getHeader(latest.payload?.headers, "Thread-Index");
+  const parts = extractBodyParts(latest.payload);
+  const quotePlain = (parts.plain || stripHtmlToText(parts.html)).trim();
+  const quoteHtml = parts.html.trim();
+
+  return {
+    inReplyTo,
+    references: referenceMessageIds([...messageIds, inReplyTo]).join(" "),
+    subject: replySubjectForThread(parentSubject),
+    exactParentSubject: parentSubject.replace(/[\r\n]+/g, " ").trim(),
+    threadTopic:
+      parentTopic.replace(/[\r\n]+/g, " ").trim() ||
+      stripReplySubjectPrefixes(parentSubject),
+    threadIndex: parentIndex ? childThreadIndex(parentIndex) : null,
+    quoteFrom: getHeader(latest.payload?.headers, "From"),
+    quoteDate: formatReplyAttributionDate(getHeader(latest.payload?.headers, "Date")),
+    quotePlain,
+    quoteHtml,
+  };
+}
+
 export async function sendReplyEmail(params: {
   ticketRowId: string;
   to: string;
@@ -1746,31 +1866,77 @@ export async function sendReplyEmail(params: {
 
   const gmail = await getGmailClient();
   if (gmail) {
+    let replyContext: ThreadReplyContext | null = null;
+    if (boundThreadId) {
+      try {
+        replyContext = await loadThreadReplyContext(gmail, boundThreadId);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[SheetsCRM Gmail] Could not load reply headers for thread ${boundThreadId}: ${detail}`
+        );
+      }
+    }
+    if (replyContext?.subject) message.subject = replyContext.subject;
+
     const signatureHtml = await fetchGmailSignature(gmail, from);
     const bodyForSend =
       params.body.trim() ||
       ((params.attachments?.length ?? 0) > 0 ? "(see attachments)" : params.body);
-    const { plain, html } = appendSignatureToBody(bodyForSend, signatureHtml);
-    // Store HTML in the CRM thread so conversation matches draft/Gmail formatting.
-    message.body = html ? sanitizeEmailHtml(html) : plain;
+    const composed = appendSignatureToBody(bodyForSend, signatureHtml);
+    const outgoing = replyContext
+      ? appendQuotedReply({
+          plain: composed.plain,
+          html: composed.html,
+          from: replyContext.quoteFrom,
+          dateLabel: replyContext.quoteDate,
+          parentPlain: replyContext.quotePlain,
+          parentHtml: replyContext.quoteHtml,
+        })
+      : composed;
+    // Store the sent HTML, including the quoted previous message, so the CRM
+    // matches what the recipient sees.
+    message.body = outgoing.html ? sanitizeEmailHtml(outgoing.html) : outgoing.plain;
 
-    const encoded = encodeMessage(
-      from,
-      params.to,
-      params.subject,
-      plain,
-      params.cc,
-      html,
-      params.attachments ?? [],
-      params.bcc
-    );
-    const res = await gmail.users.messages.send({
-      userId: "me",
-      requestBody: {
-        raw: encoded,
-        threadId: boundThreadId ?? undefined,
-      },
-    });
+    const threadingHeaders = replyContext
+      ? threadingHeaderLines({
+          inReplyTo: replyContext.inReplyTo,
+          references: replyContext.references,
+          threadTopic: replyContext.threadTopic,
+          threadIndex: replyContext.threadIndex,
+        })
+      : [];
+    const buildMime = (subject: string) =>
+      buildRfc822MimeMessage(
+        from,
+        params.to,
+        subject,
+        outgoing.plain,
+        params.cc,
+        outgoing.html,
+        params.attachments ?? [],
+        params.bcc,
+        threadingHeaders
+      );
+
+    let mimeBody = buildMime(message.subject);
+    let res;
+    try {
+      res = await gmailSendRfc822(gmail, mimeBody, boundThreadId);
+    } catch (error) {
+      const fallbackSubject = replyContext?.exactParentSubject;
+      if (
+        !replyContext ||
+        !fallbackSubject ||
+        fallbackSubject === message.subject ||
+        !isGmailThreadRejected(error)
+      ) {
+        throw error;
+      }
+      message.subject = fallbackSubject;
+      mimeBody = buildMime(fallbackSubject);
+      res = await gmailSendRfc822(gmail, mimeBody, boundThreadId);
+    }
     message.gmailMessageId = res.data.id ?? null;
     message.gmailThreadId = res.data.threadId ?? boundThreadId;
 
@@ -1827,7 +1993,7 @@ export async function sendStandaloneEmail(params: {
     const bodyForSend = params.body.trim() || "(empty report)";
     const { plain, html } = appendSignatureToBody(bodyForSend, signatureHtml);
 
-    const encoded = encodeMessage(
+    const mimeBody = buildRfc822MimeMessage(
       from,
       to,
       params.subject,
@@ -1837,10 +2003,7 @@ export async function sendStandaloneEmail(params: {
       params.attachments ?? [],
       null
     );
-    const res = await gmail.users.messages.send({
-      userId: "me",
-      requestBody: { raw: encoded },
-    });
+    const res = await gmailSendRfc822(gmail, mimeBody);
     return { messageId: res.data.id ?? null };
   });
 }

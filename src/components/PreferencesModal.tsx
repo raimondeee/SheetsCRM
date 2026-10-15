@@ -607,8 +607,9 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
             <label className="block text-sm">
               <span className="font-medium">Default Response SLA hours</span>
               <p className="mt-0.5 text-xs text-zendesk-muted">
-                Countdown from the customer&apos;s last message while a ticket is Open (per-ticket
-                Response SLA can still be changed in the ticket header)
+                Countdown from the customer&apos;s last message while a ticket is Open. Hours from
+                Friday 5:00 PM through Monday 7:00 AM Pacific do not count (per-ticket Response SLA
+                can still be changed in the ticket header)
               </p>
               <select
                 value={defaultSlaHours}
@@ -626,8 +627,9 @@ export function PreferencesModal({ preferences, onClose, onSaved }: PreferencesM
             <label className="block text-sm">
               <span className="font-medium">Resolved Gmail poll frequency</span>
               <p className="mt-0.5 text-xs text-zendesk-muted">
-                How often (in hours) to check Gmail for customer replies on Resolved tickets that
-                still have a linked thread (Resolve &amp; Close does not poll)
+                How often (in hours) to check Gmail for customer replies on Send/Resolved tickets
+                that still have a linked thread. A reply after resolve reopens the ticket to Open
+                and stays unread in Gmail until you open the case. Resolve &amp; Close does not poll.
               </p>
               <input
                 type="number"

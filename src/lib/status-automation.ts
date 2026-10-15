@@ -16,7 +16,18 @@ import {
 export { isBusinessHour } from "./business-hours";
 export { addWeekdayHours } from "./business-hours";
 
-/** Returns `open` when the customer replied after the ticket was marked pending. */
+/**
+ * Statuses that reopen to Open when the customer sends a newer inbound message.
+ * Resolved (Send/Resolved) is included; Resolve & Close is blocked separately.
+ */
+const CUSTOMER_REPLY_REOPEN_STATUSES = new Set(["pending", "longterm_hold", "resolved"]);
+
+/**
+ * Returns `open` when the customer replied after the ticket was marked pending,
+ * longterm hold, or resolved.
+ * Pass `resolved_at` as `statusChangedAt` for resolved tickets. The overlay
+ * clears its own status-changed timestamp when the case is resolved.
+ */
 export function getReopenOnCustomerReplyStatus(
   status: string,
   latestDirection: "inbound" | "outbound" | null | undefined,
@@ -25,8 +36,18 @@ export function getReopenOnCustomerReplyStatus(
   resolvedClosed = false
 ): "open" | null {
   const normalized = normalizeStatusId(status);
-  if (blocksTicketAutoReopen(normalized, resolvedClosed) || normalized !== "pending") return null;
+  if (blocksTicketAutoReopen(normalized, resolvedClosed)) return null;
+  if (!CUSTOMER_REPLY_REOPEN_STATUSES.has(normalized)) return null;
   if (latestDirection !== "inbound") return null;
+
+  // Hold and Resolved only reopen on a reply after the status started.
+  // Without an anchor, the original intake message must not bounce the ticket back to Open.
+  if (
+    (normalized === "longterm_hold" || normalized === "resolved") &&
+    (!statusChangedAt || !latestMessageAt)
+  ) {
+    return null;
+  }
 
   if (statusChangedAt && latestMessageAt) {
     const changed = new Date(statusChangedAt).getTime();
@@ -111,7 +132,7 @@ export function getAutoReopenStatus(
     if (reopenAt && reopenAt <= now) return "open";
   }
 
-  if (status === "longterm_hold" || status === "on_hold") {
+  if (normalized === "longterm_hold") {
     const reopenAt = new Date(changed);
     reopenAt.setDate(reopenAt.getDate() + settings.longtermHoldReopenDays);
     if (reopenAt <= now) return "open";

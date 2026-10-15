@@ -78,6 +78,7 @@ import {
   clearGmailLinkArchivedAt,
   clearTicketResolvedAt,
   getTicketGmailLinkArchivedAt,
+  getTicketResolvedAt,
   markTicketResolvedNow,
   ticketGmailLinkIsArchived,
 } from "./gmail-link-archive";
@@ -855,7 +856,7 @@ function syncBackgroundGmailSyncForTicket(
   resolvedClosed: boolean
 ): void {
   const next = normalizeStatusId(status);
-  if (next === "pending") {
+  if (next === "pending" || next === "longterm_hold") {
     enableBackgroundGmailSync(rowId);
     return;
   }
@@ -1948,6 +1949,38 @@ function ensurePendingTimerAnchor(
   return readOverlayRow(rowId);
 }
 
+/** Start the hold clock the first time we see Longterm Hold without an anchor. */
+function ensureLongtermHoldStatusAnchor(
+  rowId: string,
+  overlay: TicketOverlay
+): TicketOverlay {
+  if (normalizeStatusId(overlay.status) !== "longterm_hold" || overlay.statusChangedAt) {
+    return overlay;
+  }
+  const now = new Date().toISOString();
+  upsertOverlayRow(rowId, overlayFields(overlay), { statusChangedAt: now });
+  return { ...overlay, statusChangedAt: now };
+}
+
+/** Resolved clears statusChangedAt, so reply checks use the stored resolve time. */
+function replyReopenAnchor(rowId: string, overlay: TicketOverlay): string | null {
+  if (normalizeStatusId(overlay.status) === "resolved") {
+    return getTicketResolvedAt(rowId);
+  }
+  return overlay.statusChangedAt;
+}
+
+/** Archived Gmail links are done watching — a later reply can start a new ticket. */
+function resolvedReplyReopenBlocked(rowId: string, status: string): boolean {
+  return normalizeStatusId(status) === "resolved" && ticketGmailLinkIsArchived(rowId);
+}
+
+function clearResolvedStampAfterReopen(rowId: string, previousStatus: string): void {
+  if (normalizeStatusId(previousStatus) === "resolved") {
+    clearTicketResolvedAt(rowId);
+  }
+}
+
 function logAutomatedReopen(
   rowId: string,
   previousStatus: string,
@@ -1979,16 +2012,19 @@ function queueAutoReopenSheetSync(rowId: string, status: string): void {
     });
 }
 
-/** Move pending → open when the customer sent the latest email. */
+/** Move pending, longterm hold, or Send/Resolved → open when the customer sent the latest email. */
 export function reopenPendingOnCustomerReply(ticketRowId: string): boolean {
-  const overlay = readOverlayRow(ticketRowId);
+  let overlay = readOverlayRow(ticketRowId);
   if (blocksTicketAutoReopen(overlay.status, overlay.resolvedClosed)) return false;
+  if (resolvedReplyReopenBlocked(ticketRowId, overlay.status)) return false;
+  overlay = ensureLongtermHoldStatusAnchor(ticketRowId, overlay);
   const latest = getLatestConversationActivity(ticketRowId);
   const reopen = getReopenOnCustomerReplyStatus(
     overlay.status,
     latest?.direction,
     latest?.sentAt,
-    overlay.statusChangedAt
+    replyReopenAnchor(ticketRowId, overlay),
+    overlay.resolvedClosed
   );
   if (!reopen) return false;
 
@@ -2006,6 +2042,7 @@ export function reopenPendingOnCustomerReply(ticketRowId: string): boolean {
     slaDueAt,
   });
   setOverlayPendingReopenHours(ticketRowId, null);
+  clearResolvedStampAfterReopen(ticketRowId, previousStatus);
   applyBackgroundGmailSyncEligibility(ticketRowId, previousStatus, reopen, false);
   logAutomatedReopen(ticketRowId, previousStatus, "customer_reply");
   queueAutoReopenSheetSync(ticketRowId, reopen);
@@ -2371,14 +2408,22 @@ function resolveTicketAutomatedReopen(
   overlay: TicketOverlay,
   sheetCaseSummary: string,
   timerSettings: TimerSettings
-): "open" | null {
+): { status: "open"; reason: "customer_reply" | "pending_timer" | "hold_timer" } | null {
   if (blocksTicketAutoReopen(overlay.status, overlay.resolvedClosed)) return null;
-  const anchored = ensurePendingTimerAnchor(rowId, overlay, sheetCaseSummary, timerSettings);
+  if (resolvedReplyReopenBlocked(rowId, overlay.status)) return null;
+  const pendingAnchored = ensurePendingTimerAnchor(
+    rowId,
+    overlay,
+    sheetCaseSummary,
+    timerSettings
+  );
+  const anchored = ensureLongtermHoldStatusAnchor(rowId, pendingAnchored);
   const latest = getLatestConversationActivity(rowId);
   const latestOutboundSentAt = getLastOutboundSentAt(rowId);
-  return resolveAutomatedReopenStatus(
+  const replyAnchor = replyReopenAnchor(rowId, anchored);
+  const status = resolveAutomatedReopenStatus(
     anchored.status,
-    anchored.statusChangedAt,
+    replyAnchor,
     latest?.direction,
     latest?.sentAt,
     new Date(),
@@ -2388,6 +2433,19 @@ function resolveTicketAutomatedReopen(
     workspaceBusinessHours(),
     anchored.resolvedClosed
   );
+  if (!status) return null;
+
+  const customerReply = getReopenOnCustomerReplyStatus(
+    anchored.status,
+    latest?.direction,
+    latest?.sentAt,
+    replyAnchor,
+    anchored.resolvedClosed
+  );
+  if (customerReply) return { status, reason: "customer_reply" };
+  const reason =
+    normalizeStatusId(anchored.status) === "longterm_hold" ? "hold_timer" : "pending_timer";
+  return { status, reason };
 }
 
 export function applyStatusAutomations(
@@ -2406,15 +2464,16 @@ export function applyStatusAutomations(
 
     const previousStatus = overlay.status;
     upsertOverlayRow(ticket.rowId, overlayFields(overlay), {
-      status: reopen,
+      status: reopen.status,
       statusSource: "crm",
       statusChangedAt: null,
     });
     setOverlayPendingReopenHours(ticket.rowId, null);
-    logAutomatedReopen(ticket.rowId, previousStatus, "pending_timer");
-    queueAutoReopenSheetSync(ticket.rowId, reopen);
+    clearResolvedStampAfterReopen(ticket.rowId, previousStatus);
+    logAutomatedReopen(ticket.rowId, previousStatus, reopen.reason);
+    queueAutoReopenSheetSync(ticket.rowId, reopen.status);
 
-    return { ...ticket, status: reopen };
+    return { ...ticket, status: reopen.status };
   });
 }
 
@@ -2719,6 +2778,7 @@ export function mergeOverlayOntoTicket(
     contactReasonSource = "sheet";
     const slaHours = timerSettings.defaultSlaHours;
     const slaDueAt = null;
+    const now = new Date().toISOString();
     upsertOverlayRow(ticket.rowId, {
       status,
       statusSource,
@@ -2730,14 +2790,18 @@ export function mergeOverlayOntoTicket(
       gmailThreadId: overlay.gmailThreadId,
       contactReason: sheetContactReason,
       contactReasonSource: "sheet",
-      statusChangedAt: null,
+      statusChangedAt: mappedFromSheet === "longterm_hold" ? now : null,
       slaHours,
       slaDueAt,
       crmAirbnbUserId: null,
       airbnbUserIdSource: "sheet",
       initialResponseSlaCleared: false,
     });
-    if (mappedFromSheet === "pending" || mappedFromSheet === "resolved") {
+    if (
+      mappedFromSheet === "pending" ||
+      mappedFromSheet === "longterm_hold" ||
+      mappedFromSheet === "resolved"
+    ) {
       syncBackgroundGmailSyncForTicket(ticket.rowId, mappedFromSheet, false);
     }
     if (intakeIdentity) writeIntakeIdentity(ticket.rowId, intakeIdentity);
@@ -2766,10 +2830,13 @@ export function mergeOverlayOntoTicket(
           adminNotes: sheetCaseSummaryValue,
           adminNotesSource: "sheet",
         };
-        if (nextStatus === "pending" && previousStatus !== "pending") {
+        if (
+          (nextStatus === "pending" && previousStatus !== "pending") ||
+          (nextStatus === "longterm_hold" && previousStatus !== "longterm_hold")
+        ) {
           sheetStatusUpdates.statusChangedAt = new Date().toISOString();
         } else if (
-          previousStatus === "pending" &&
+          (previousStatus === "pending" || previousStatus === "longterm_hold") &&
           nextStatus !== "pending" &&
           nextStatus !== "longterm_hold"
         ) {
@@ -2789,7 +2856,10 @@ export function mergeOverlayOntoTicket(
           clearTicketResolvedAt(ticket.rowId);
         }
         upsertOverlayRow(ticket.rowId, overlayFields(overlay), sheetStatusUpdates);
-        if (nextStatus === "pending" && previousStatus !== "pending") {
+        if (
+          (nextStatus === "pending" && previousStatus !== "pending") ||
+          (nextStatus === "longterm_hold" && previousStatus !== "longterm_hold")
+        ) {
           setOverlayPendingReopenHours(ticket.rowId, null);
         }
         applyBackgroundGmailSyncEligibility(
@@ -2818,6 +2888,7 @@ export function mergeOverlayOntoTicket(
     sheetCaseSummaryValue ?? ticket.sheetCaseSummary,
     timerSettings
   );
+  refreshed = ensureLongtermHoldStatusAnchor(ticket.rowId, refreshed);
   const reopen = resolveTicketAutomatedReopen(
     ticket.rowId,
     refreshed,
@@ -2827,22 +2898,23 @@ export function mergeOverlayOntoTicket(
   if (reopen) {
     const previousStatus = refreshed.status;
     upsertOverlayRow(ticket.rowId, overlayFields(refreshed), {
-      status: reopen,
+      status: reopen.status,
       statusSource: "crm",
       statusChangedAt: null,
     });
     setOverlayPendingReopenHours(ticket.rowId, null);
-    applyBackgroundGmailSyncEligibility(ticket.rowId, previousStatus, reopen, false);
-    logAutomatedReopen(ticket.rowId, previousStatus, "pending_timer");
-    queueAutoReopenSheetSync(ticket.rowId, reopen);
-    status = reopen;
+    clearResolvedStampAfterReopen(ticket.rowId, previousStatus);
+    applyBackgroundGmailSyncEligibility(ticket.rowId, previousStatus, reopen.status, false);
+    logAutomatedReopen(ticket.rowId, previousStatus, reopen.reason);
+    queueAutoReopenSheetSync(ticket.rowId, reopen.status);
+    status = reopen.status;
     refreshed = readOverlayRow(ticket.rowId);
   } else {
     status = refreshed.status;
   }
 
   const finalStatus = normalizeStatusId(status);
-  if (finalStatus === "pending") {
+  if (finalStatus === "pending" || finalStatus === "longterm_hold") {
     ensureBackgroundGmailSyncEnabled(ticket.rowId);
   } else if (
     finalStatus === "resolved" &&
